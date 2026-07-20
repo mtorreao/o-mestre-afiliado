@@ -1,0 +1,27 @@
+{
+  "name": "o-mestre-afiliado",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "bun run --cwd apps/api dev",
+    "dev:worker": "bun run --cwd apps/worker dev",
+    "dev:web": "bun run --cwd apps/web dev",
+    "dev": "concurrently \"bun dev:api\" \"bun dev:worker\" \"bun dev:web\"",
+    "build:api": "bun run --cwd apps/api build",
+    "build:worker": "bun run --cwd apps/worker build",
+    "build:web": "bun run --cwd apps/web build",
+    "build": "bun build:api && bun build:worker && bun build:web",
+    "shopee": "bun run --cwd packages/converters shopee",
+    "mercadolivre": "bun run --cwd packages/converters mercadolivre",
+    "ml": "bun run --cwd packages/converters mercadolivre"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "concurrently": "^9.1.0",
+    "typescript": "^5"
+  }
+}
