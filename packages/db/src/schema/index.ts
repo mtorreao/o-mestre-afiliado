@@ -14,13 +14,13 @@ import {
  */
 export const omestre = pgSchema('omestre');
 
-// ─── Enums ────────────────────────────────────────────────────────────
+// ─── Enums ──────────────────────────────────────────────────────────
 
 export const marketplaceEnum = pgEnum('marketplace', ['shopee', 'mercadolivre', 'amazon', 'unknown']);
 
 export const offerStatusEnum = pgEnum('offer_status', ['sent', 'failed']);
 
-// ─── Afiliados ─────────────────────────────────────────────────────────
+// ─── Afiliados (WhatsApp Worker) ────────────────────────────────────
 
 export const affiliates = omestre.table('affiliates', {
   id: serial('id').primaryKey(),
@@ -53,7 +53,44 @@ export const affiliates = omestre.table('affiliates', {
     .$onUpdate(() => new Date()),
 });
 
-// ─── Ofertas Refletidas ────────────────────────────────────────────────
+// ─── Afiliados ML (OAuth + Cookies) ─────────────────────────────────
+
+export const mlAffiliates = omestre.table('ml_affiliates', {
+  id: serial('id').primaryKey(),
+
+  // ML user ID (vem do OAuth)
+  mlUserId: text('ml_user_id').notNull().unique(),
+
+  // Apelido no ML (ex: "M.TORREAO")
+  nickname: text('nickname').notNull(),
+
+  // Tokens OAuth
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+
+  // Expiração do access token
+  expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+
+  // Conexão
+  connectedAt: timestamp('connected_at', { mode: 'date' }).notNull(),
+  lastUsedAt: timestamp('last_used_at', { mode: 'date' }).notNull(),
+
+  // URL params de fallback (formato antigo)
+  meliid: text('meliid'),
+  melitat: text('melitat'),
+
+  // Cookies de sessão ML (para link curto meli.la)
+  sessionCookies: text('session_cookies'),
+
+  // Metadados
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+// ─── Ofertas Refletidas ─────────────────────────────────────────────
 
 export const reflectedOffers = omestre.table('reflected_offers', {
   id: serial('id').primaryKey(),
@@ -75,5 +112,5 @@ export const reflectedOffers = omestre.table('reflected_offers', {
   status: offerStatusEnum('status').notNull().default('sent'),
 });
 
-// ─── Índices ───────────────────────────────────────────────────────────
+// ─── Índices ────────────────────────────────────────────────────────
 // Índices serão adicionados via Drizzle quando necessário.

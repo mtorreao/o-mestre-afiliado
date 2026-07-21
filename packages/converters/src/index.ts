@@ -21,6 +21,9 @@ export {
 } from './mercadolivre.ts';
 export type { MercadoLivreCredentials, MlConversionOptions, MlStrategy } from './mercadolivre.ts';
 
+export { generateShortAffiliateLink } from './ml-linkbuilder.ts';
+export type { ShortLinkResult } from './ml-linkbuilder.ts';
+
 /**
  * Converte qualquer URL suportada em link de afiliado.
  * Detecta automaticamente o marketplace.

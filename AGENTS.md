@@ -6,19 +6,26 @@ Guia definitivo para agentes LLM trabalhando neste repositório.
 
 ## 🏗️ Estrutura do Projeto
 
-Monorepo Bun Workspaces com 3 apps (`apps/`) e 3 pacotes compartilhados (`packages/`):
+Monorepo Bun Workspaces com 3 apps (`apps/`), 3 pacotes compartilhados (`packages/`) e uma extensão Chrome:
 
 ```
 o-mestre-afiliado/
 ├── apps/
-│   ├── api/          # Elysia REST API (:3000) + webhook Evolution
+│   ├── api/          # Elysia REST API (:5442)
 │   ├── worker/       # Background worker (fila + polling + pipeline)
-│   └── web/          # React 19 + Vite 6 (:5173)
+│   └── web/          # React 19 + Vite 6 (:5441)
 ├── packages/
 │   ├── shared/       # Tipos e utils (@omestre/shared)
 │   ├── converters/   # Lógica de conversão (@omestre/converters)
 │   └── db/           # Schema Drizzle + conexão PG (@omestre/db)
+├── extensions/
+│   └── chrome-cookie-importer/  # Extensão Chrome para importar cookies de sessão ML
+├── assets/
+│   └── logos/        # Logos do projeto
 ├── docs/             # Documentação de arquitetura
+├── data/             # Store de afiliados (legado — migrado para PostgreSQL)
+├── scripts/          # Scripts auxiliares (dev.ts)
+├── deploy/           # Config de deploy (cloudflared, etc.)
 ├── package.json      # Workspace raiz
 ├── tsconfig.json     # Base compartilhada
 ├── .env.example      # Template de variáveis
@@ -57,7 +64,8 @@ o-mestre-afiliado/
 | Database | PostgreSQL 17 |
 | Cache | Redis 7 |
 | WhatsApp | Evolution API (Baileys) |
-| Conversão | @omestre/converters (Shopee GraphQL, ML OAuth/Cookies/Fallback) |
+| Conversão | @omestre/converters (Shopee GraphQL, ML URL params / link curto) |
+| Extensão Chrome | Cookie Importer (Manifest V3) |
 | TypeScript | ^5, strict mode, verbatimModuleSyntax |
 | Package manager | Bun (bun install, bun add) |
 
@@ -97,6 +105,7 @@ o-mestre-afiliado/
 - Nunca retorne HTTP 5xx para erros de negócio — sempre HTTP 200 com `success: false`.
 - Rotas em `/api/convert` seguem o padrão REST.
 - Use `@elysiajs/cors` e `@elysiajs/swagger` como plugins.
+- Store de afiliados em PostgreSQL via Drizzle (`@omestre/db` + `MlAffiliateRepository`).
 
 ### Worker
 
@@ -108,7 +117,7 @@ o-mestre-afiliado/
 ### Web (React)
 
 - Componente único `App.tsx` com estado local (useState).
-- Proxy Vite em `/api` para API local em `:3000`.
+- Proxy Vite em `/api` para API local em `:5442`.
 - Sem roteador (SPA de página única).
 - Estilo inline (sem CSS modules ou Tailwind).
 
@@ -116,7 +125,21 @@ o-mestre-afiliado/
 
 - Funções de conversão **nunca lançam exceções** — sempre retornam `ConversionResult` com `success`.
 - Erros de credenciais são tratados como `success: false`, não throw.
-- Duas estratégias para ML: `api → cookies`.
+- ML: duas estratégias — `short link (API interna) → URL params (fallback)`.
+
+### ML Link Builder (ml-linkbuilder.ts)
+
+- Função `generateShortAffiliateLink()` para gerar links curtos `meli.la`.
+- Requer cookies de sessão completos (incluindo HttpOnly).
+- Fluxo: GET no linkbuilder → extrai CSRF de `<meta>` → POST `/affiliate-program/api/v2/affiliates/createLink`.
+- Endpoint interno do ML, **não documentado** publicamente.
+- Cookies expirados → fallback automático para URL params.
+
+### Extensão Chrome
+
+- `extensions/chrome-cookie-importer/` — Manifest V3.
+- Usa `chrome.cookies.getAll()` para ler cookies HttpOnly do ML.
+- Envia cookies via `PUT /api/ml/affiliates/:mlUserId` para o store.
 
 ### Shared
 
@@ -135,6 +158,7 @@ o-mestre-afiliado/
 | `bun run dev:web` | Web (Vite dev server) |
 | `bun run shopee <url>` | CLI conversor Shopee |
 | `bun run ml <url>` | CLI conversor Mercado Livre |
+| `bun run build` | Compila todos os apps (api + worker + web) |
 | `./node_modules/.bin/tsc --noEmit` | Typecheck completo |
 | `bun run db:generate` | Gerar migrations Drizzle |
 | `bun run db:migrate` | Aplicar migrations |
@@ -155,19 +179,87 @@ Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
 | `ML_CLIENT_SECRET` | Para ML OAuth | converters, api, worker |
 | `ML_REFRESH_TOKEN` | Para ML OAuth | converters, api, worker |
 | `ML_COOKIES` | Para ML Cookies | converters, api, worker |
-| `API_PORT` | Não (default 3000) | api |
+| `API_PORT` | Não (default 5442) | api |
 | `WORKER_POLL_INTERVAL` | Não (default 30000) | worker |
 | `WORKER_MAX_RETRIES` | Não (default 3) | worker |
 | `WORKER_CONCURRENCY` | Não (default 5) | worker |
 | `EVOLUTION_API_KEY` | Sim | api, worker |
-| `EVOLUTION_WEBHOOK_URL` | Não | api (default http://api:3000/webhook/message) |
-| `POSTGRES_URL` | Não | api, worker (URI completa, sobrescreve vars abaixo) |
+| `EVOLUTION_WEBHOOK_URL` | Não | api |
+| `POSTGRES_URL` | Não | api, worker (URI completa) |
 | `POSTGRES_HOST` | Não (default localhost) | api, worker |
 | `POSTGRES_PORT` | Não (default 5443) | api, worker |
 | `POSTGRES_DATABASE` | Não (default evolution_db) | api, worker |
 | `POSTGRES_USERNAME` | Não (default evolution) | api, worker |
 | `POSTGRES_PASSWORD` | Sim | api, worker |
 | `POSTGRES_SCHEMA` | Não (default omestre) | api, worker |
+| `FRONTEND_URL` | Não (default http://localhost:5441) | api |
+| `ML_REDIRECT_URI` | Não (default http://localhost:5442/api/ml/callback) | api |
+
+---
+
+## 🗺️ Fluxo de Dados — Mercado Livre
+
+```
+Usuário (Web)
+    │
+    │ POST /api/ml/convert { url, mlUserId }
+    ▼
+┌─────────────────────────────────────────────────┐
+│ apps/api/src/index.ts                           │
+│                                                  │
+│  1. Busca afiliado no banco (ml_affiliates)    │
+│  2. Tem sessionCookies?                          │
+│     ├── SIM → generateShortAffiliateLink()       │
+│     │         GET linkbuilder → CSRF            │
+│     │         POST createLink → meli.la/xxx     │
+│     │                                            │
+│     └── NÃO → generateViaUrlParams()            │
+│               URL + ?matt_word= / ?meliid=...   │
+└─────────────────────────────────────────────────┘
+    │
+    ▼
+Usuário recebe link de afiliado
+
+── Extensão Chrome ──────────────────────────────
+chrome.cookies.getAll({ domain: '.mercadolivre' })
+    → PUT /api/ml/affiliates/:mlUserId
+    → store.sessionCookies
+```
+
+### Store de afiliados (PostgreSQL — tabela `ml_affiliates`)
+
+```sql
+CREATE TABLE omestre.ml_affiliates (
+  id SERIAL PRIMARY KEY,
+  ml_user_id TEXT NOT NULL UNIQUE,
+  nickname TEXT NOT NULL,
+  access_token TEXT NOT NULL,        -- OAuth token
+  refresh_token TEXT NOT NULL,       -- OAuth refresh
+  expires_at TIMESTAMP NOT NULL,     -- expiração do access token
+  connected_at TIMESTAMP NOT NULL,
+  last_used_at TIMESTAMP NOT NULL,
+  meliid TEXT,                       -- URL param (formato antigo)
+  melitat TEXT,                      -- etiqueta do afiliado
+  session_cookies TEXT,              -- cookies de sessão ML (para link curto)
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+```
+
+Acesso via `MlAffiliateRepository` em `packages/db/src/repository/mlAffiliates.repository.ts`.  
+Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch()`, `refreshTokens()`, `touch()`, `delete()`.
+
+> O arquivo `data/ml-affiliates.json` ainda existe como legado.  
+> O script `scripts/seed_ml_affiliates.py` fez a migração inicial.  
+> Dados novos são lidos/escritos exclusivamente via PostgreSQL.
+
+### Formatos de link gerados
+
+| Formato | Parâmetros | Exemplo |
+|---------|-----------|---------|
+| Link curto | API interna ML | `https://meli.la/2DSBbLg` |
+| Novo (mtorreao) | `matt_word` + `matt_tool` | `...?matt_word=mtorreao&matt_tool=71835809` |
+| Antigo (om895584) | `meliid` + `melitat` | `...?meliid=...&melitat=om895584` |
 
 ---
 
@@ -189,38 +281,15 @@ Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
    const field = node?.field as string | undefined;
    ```
 
----
+7. **API do Link Builder não é documentada** — endpoint `/affiliate-program/api/v2/affiliates/createLink` é interno do ML, descoberto via F12. Pode mudar sem aviso.
 
-## 🗺️ Fluxo de Dados
+8. **Cookies de sessão expiram** — a cada login no ML, precisam ser reimportados via extensão.
 
-```
-Usuário (CLI)    Usuário (Web)          Usuário (API)
-    │                │                       │
-    │                │ POST /api/convert      │ POST /api/convert
-    ▼                ▼                       ▼
-┌──────────┐   ┌──────────┐           ┌──────────┐
-│ cli-*.ts │   │ App.tsx  │  proxy    │ api/     │
-│ (CLI)    │   │ (React)  │ ──:3000──►│ (Elysia) │
-└────┬─────┘   └──────────┘           └────┬─────┘
-     │                                     │
-     └──────────────┬──────────────────────┘
-                    ▼
-          ┌──────────────────┐
-          │ @omestre/        │
-          │ converters       │
-          │ convertUrl()     │
-          ├──────────────────┤
-          │ Shopee: GraphQL  │
-          │ ML: OAuth/Cookies │
-          └──────────────────┘
-                    │
-                    ▼
-          ┌──────────────────┐
-          │ @omestre/shared  │
-          │ detectMarketplace│
-          │ ConversionResult │
-          └──────────────────┘
-```
+9. **NUNCA usar `convertUrl()` como fallback em fluxo multi-afiliado** — `convertUrl()` lê credenciais do `.env`, que pertencem a um afiliado específico. Isso resultaria em link com conta errada.
+
+10. **Subir extensão Chrome** — após alterar arquivos da extensão, recarregar em `chrome://extensions/`.
+
+11. **Link curto vs URL params** — link curto (`meli.la`) é preferível mas requer cookies de sessão. URL params funcionam sempre, independente de login.
 
 ---
 
@@ -237,12 +306,3 @@ Usuário (CLI)    Usuário (Web)          Usuário (API)
 - **Worker:** logs em JSON (`console.log(JSON.stringify(entry))`).
 - **API:** logs nativos do Elysia (stdout).
 - **CLI:** output formatado com emojis e bordas (`╔═══╗`).
-
-### ADRs implícitas
-
-| Decisão | Motivo |
-|---------|--------|
-| Fila em memória (não Redis/DB) | Projeto pequeno, sem necessidade de persistência |
-| Estrutura plana no Web (sem router) | SPA de página única, sem navegação |
-| Estilo inline no React | Evita dependências de CSS, mantém bundle pequeno |
-| Workspace `*` em vez de semver | Todos os pacotes versionados juntos no monorepo |

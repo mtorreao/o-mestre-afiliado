@@ -1,144 +1,145 @@
-# o-mestre-afiliado 🦸‍♂️
+# 🦸 O Mestre Afiliado
 
-Conversor de links de afiliados para **Shopee** e **Mercado Livre**.
+Conversor de links de afiliados para **Shopee** e **Mercado Livre**. Gera links curtos (`meli.la`) quando possível, com fallback para URL params.
+
+---
 
 ## 📦 Estrutura (Monorepo)
 
 ```
 o-mestre-afiliado/
 ├── apps/
-│   ├── api/          # Elysia API — endpoints REST de conversão
+│   ├── api/          # Elysia API (:5442) — endpoints REST de conversão
 │   ├── worker/       # Background worker — fila de processamento em lote
-│   └── web/          # React + Vite — interface web para conversão
+│   └── web/          # React + Vite (:5441) — interface web
 ├── packages/
 │   ├── shared/       # Tipos e constantes compartilhados
-│   └── converters/   # Lógica de conversão (Shopee, Mercado Livre)
+│   ├── converters/   # Lógica de conversão (Shopee, ML link curto + URL params)
+│   └── db/           # Schema Drizzle + PostgreSQL
+├── extensions/
+│   └── chrome-cookie-importer/  # Extensão Chrome p/ importar cookies de sessão ML
+├── assets/logos/     # Logos do projeto
+├── data/             # Store de afiliados (ml-affiliates.json)
 ├── docs/             # Documentação das APIs de marketplace
-├── package.json      # Raiz do workspace
-└── tsconfig.json     # Config TypeScript base
+└── scripts/          # Scripts auxiliares (dev.ts)
 ```
+
+---
 
 ## 🚀 Começando
 
 ```bash
-# Instalar dependências (raiz instala todos os workspaces)
+# Instalar dependências
 bun install
 
 # Copiar env vars
 cp .env.example .env
 # Edite .env com suas credenciais
-```
 
-## ▶️ Desenvolvimento
-
-### Todos os apps simultaneamente
-```bash
+# Desenvolvimento (API :5442 + Web :5441)
 bun run dev
+
+# Ou sem infraestrutura Docker
+SKIP_INFRA=1 bun run dev
 ```
 
-### Individualmente
-```bash
-# API (Elysia) — http://localhost:3000
-bun run dev:api
+---
 
-# Worker (background processing)
-bun run dev:worker
-
-# Web (React + Vite) — http://localhost:5173
-bun run dev:web
-```
-
-## 🔧 Scripts CLI (herdados do projeto original)
+## 🔧 Scripts CLI
 
 ```bash
 # Shopee
 bun run shopee <url_do_produto>
 
 # Mercado Livre
-bun run mercadolivre <url_do_produto>
-# ou
 bun run ml <url_do_produto>
 ```
 
+---
+
 ## 📡 API Endpoints
+
+### Conversão padrão (usa .env)
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
 | GET | `/` | Info do serviço |
 | GET | `/health` | Health check |
-| POST | `/api/convert` | Converte URL em link de afiliado |
-| GET | `/docs` | Swagger UI (documentação interativa) |
+| POST | `/api/convert` | Converte URL (usa credenciais do .env) |
+| GET | `/docs` | Swagger UI |
+
+### Mercado Livre — Multi-afiliado
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/api/ml/auth` | Iniciar fluxo OAuth |
+| GET | `/api/ml/callback` | Callback OAuth |
+| GET | `/api/ml/affiliates` | Listar afiliados conectados |
+| PUT | `/api/ml/affiliates/:mlUserId` | Atualizar config (meliid, melitat, sessionCookies) |
+| DELETE | `/api/ml/affiliates/:mlUserId` | Remover afiliado |
+| POST | `/api/ml/convert` | Converter link (usa afiliado selecionado) |
+| POST | `/api/ml/refresh` | Refresh token OAuth |
 
 ### Exemplo de conversão
 
 ```bash
-curl -X POST http://localhost:3000/api/convert \
+# Com cookies de sessão → link curto meli.la
+curl -X POST http://localhost:5442/api/ml/convert \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://shopee.com.br/product/123/456"}'
+  -d '{"url": "https://www.mercadolivre.com.br/produto/p/MLB123", "mlUserId": "119874802"}'
+
+# Resposta:
+# { "success": true, "affiliateUrl": "https://meli.la/2DSBbLg", "method": "api" }
 ```
 
-## 🧱 Apps
+---
 
-### API (`apps/api`)
-Servidor HTTP com [Elysia](https://elysiajs.com/), framework web para Bun.
-- Rotas REST para conversão de links
-- CORS habilitado
-- Swagger docs em `/docs`
+## 🍪 Extensão Chrome — Cookie Importer
 
-### Worker (`apps/worker`)
-Processo background para conversão em lote.
+Para gerar **links curtos** (`meli.la`), o backend precisa de cookies de sessão do ML
+(incluindo HttpOnly). A extensão lê esses cookies com `chrome.cookies.getAll()`.
 
-**Modos:**
-- `poll` (default) — polling contínuo de fila em memória
-- `batch` — processa URLs passadas como argumento e sai:
-  ```bash
-  bun run --cwd apps/worker dev --batch "url1" "url2" "url3"
-  ```
-- `once` — executa uma rodada de polling e sai
+### Instalação
 
-### Web (`apps/web`)
-Interface React + Vite com proxy para API.
-- Roda em `http://localhost:5173`
-- Proxy do Vite redireciona `/api/*` para `http://localhost:3000`
+1. Abra `chrome://extensions/`
+2. Ative **"Modo do desenvolvedor"**
+3. Clique em **"Carregar sem compactação"**
+4. Selecione `extensions/chrome-cookie-importer/`
 
-## 📦 Packages
+### Uso
 
-### `@omestre/shared`
-Tipos e utilitários compartilhados:
-- `ConversionResult`, `Marketplace`, `ConversionMethod`
-- `detectMarketplace()` — identifica marketplace pela URL
+1. Faça login no `mercadolivre.com.br`
+2. Clique no ícone 🍪 da extensão
+3. Selecione o afiliado e clique em **"Importar Cookies"**
+4. Agora o protótipo gera links curtos pra essa conta
 
-### `@omestre/converters`
-Lógica de conversão de links:
-- **Shopee:** API GraphQL oficial (`generateShortLink`)
-- **Mercado Livre:** 3 estratégias (API OAuth → Cookies → Fallback URL params)
-- `convertUrl()` — dispatcher automático por marketplace
+---
 
-## 🔐 Variáveis de Ambiente
+## 🧱 Store de Afiliados
 
-```env
-# Shopee
-SHOPEE_APP_ID=seu_app_id
-SHOPEE_SECRET=seu_app_secret
+`data/ml-affiliates.json` — cada afiliado conectado via OAuth tem seus dados:
 
-# Mercado Livre — API OAuth (recomendado)
-ML_CLIENT_ID=seu_client_id
-ML_CLIENT_SECRET=seu_client_secret
-ML_REFRESH_TOKEN=seu_refresh_token
-
-# Mercado Livre — Cookies (alternativa)
-ML_COOKIES="session_id=xxx; ..."
-
-# Mercado Livre — Fallback
-ML_MELIID=seu_meliid
-ML_MELITAT=om895584
-ML_AFFILIATE_TAG=matt:USERNAME:TOOLID
-
-# Worker
-WORKER_POLL_INTERVAL=30000
-WORKER_MAX_RETRIES=3
-WORKER_CONCURRENCY=5
+```json
+{
+  "119874802": {
+    "nickname": "M.TORREAO",
+    "accessToken": "APP_USR-...",
+    "melitat": "mtorreao",
+    "sessionCookies": "ml_affiliates_hub_visit_count=2; _csrf=...",
+    "...": "..."
+  }
+}
 ```
+
+### Formatos de link
+
+| Formato | Quando | Exemplo |
+|---------|--------|---------|
+| Link curto | Cookies de sessão configurados | `https://meli.la/2DSBbLg` |
+| Novo formato | Só melitat configurado | `...?matt_word=mtorreao&matt_tool=71835809` |
+| Formato antigo | meliid + melitat configurados | `...?meliid=...&melitat=om895584` |
+
+---
 
 ## 🛠️ Stack
 
@@ -147,4 +148,8 @@ WORKER_CONCURRENCY=5
 - **API:** [Elysia](https://elysiajs.com/)
 - **Web:** React 19 + Vite 6
 - **Worker:** Bun runtime (processamento background)
-- **Language:** TypeScript 5
+- **Database:** PostgreSQL 17 + Drizzle ORM
+- **Cache:** Redis 7
+- **WhatsApp:** Evolution API (Baileys)
+- **Extensão:** Chrome Manifest V3
+- **Language:** TypeScript 5 (strict mode)

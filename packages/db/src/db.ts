@@ -26,7 +26,7 @@ function getConnectionUrl(): string {
   const database = process.env.POSTGRES_DATABASE || 'evolution_db';
   const schema = process.env.POSTGRES_SCHEMA || 'omestre';
 
-  return `postgresql://${user}:${password}@${host}:${port}/${database}?schema=${schema}`;
+  return `postgresql://${user}:${password}@${host}:${port}/${database}?options=--search_path%3D${schema}`;
 }
 
 /**

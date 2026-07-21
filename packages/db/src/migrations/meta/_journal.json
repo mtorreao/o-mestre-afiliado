@@ -8,6 +8,13 @@
       "when": 1784578054543,
       "tag": "0000_smart_thaddeus_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784600859413,
+      "tag": "0001_supreme_katie_power",
+      "breakpoints": true
     }
   ]
 }

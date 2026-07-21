@@ -14,9 +14,21 @@ export { getDb, closeDb, getClient } from './db.ts';
 export {
   omestre,
   affiliates,
+  mlAffiliates,
   reflectedOffers,
   marketplaceEnum,
   offerStatusEnum,
 } from './schema/index.ts';
 
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+
+// ─── Repository ─────────────────────────────────────────────────────────
+
+export { MlAffiliateRepository } from './repository/mlAffiliates.repository.ts';
+export type {
+  MlAffiliate,
+  NewMlAffiliate,
+  MlAffiliateSummary,
+  MlAffiliateUpsertData,
+  MlAffiliatePatchData,
+} from './repository/mlAffiliates.repository.ts';

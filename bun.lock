@@ -17,6 +17,7 @@
         "@elysiajs/cors": "^1.2.0",
         "@elysiajs/swagger": "^1.2.0",
         "@omestre/converters": "workspace:*",
+        "@omestre/db": "workspace:*",
         "@omestre/shared": "workspace:*",
         "elysia": "^1.2.25",
       },
