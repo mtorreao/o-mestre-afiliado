@@ -1,0 +1,18 @@
+# deploy/cloudflared/config.yml — Cloudflare Tunnel ingress (ref)
+# ==============================================================================
+# Tunnel `omestre-afiliado`: expõe dev.omestreafiliado.com.br → Web (:5441).
+#
+# omestreafiliado.com.br reservado para produção.
+# ==============================================================================
+
+tunnel: f1437a45-faee-4b13-ba05-04a87bbecbae
+credentials-file: C:\Users\torre\.cloudflared\f1437a45-faee-4b13-ba05-04a87bbecbae.json
+
+ingress:
+  - hostname: dev.omestreafiliado.com.br
+    service: http://127.0.0.1:5441
+    originRequest:
+      noTLSVerify: false
+      connectTimeout: 30s
+      noHappyEyeballs: false
+  - service: http_status:404

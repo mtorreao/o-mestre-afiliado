@@ -17,6 +17,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # dotenv environment variable files
 .env
+.env.infra
 .env.development.local
 .env.test.local
 .env.production.local
@@ -38,3 +39,9 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Playwright MCP
 .playwright-mcp/
+
+# OAuth token store (multi-afiliado)
+data/
+
+# Dev server locks
+tmp/

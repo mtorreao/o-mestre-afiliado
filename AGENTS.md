@@ -6,21 +6,24 @@ Guia definitivo para agentes LLM trabalhando neste repositório.
 
 ## 🏗️ Estrutura do Projeto
 
-Monorepo Bun Workspaces com 3 apps (`apps/`) e 2 pacotes compartilhados (`packages/`):
+Monorepo Bun Workspaces com 3 apps (`apps/`) e 3 pacotes compartilhados (`packages/`):
 
 ```
 o-mestre-afiliado/
 ├── apps/
-│   ├── api/          # Elysia REST API (:3000)
-│   ├── worker/       # Background worker (fila + polling)
+│   ├── api/          # Elysia REST API (:3000) + webhook Evolution
+│   ├── worker/       # Background worker (fila + polling + pipeline)
 │   └── web/          # React 19 + Vite 6 (:5173)
 ├── packages/
 │   ├── shared/       # Tipos e utils (@omestre/shared)
-│   └── converters/   # Lógica de conversão (@omestre/converters)
+│   ├── converters/   # Lógica de conversão (@omestre/converters)
+│   └── db/           # Schema Drizzle + conexão PG (@omestre/db)
 ├── docs/             # Documentação de arquitetura
 ├── package.json      # Workspace raiz
 ├── tsconfig.json     # Base compartilhada
-└── .env.example      # Template de variáveis
+├── .env.example      # Template de variáveis
+├── .env.infra        # Variáveis da infra Docker
+└── docker-compose.infra.yml  # Evolution API, PG, Redis
 ```
 
 ### Workspaces
@@ -35,6 +38,8 @@ o-mestre-afiliado/
 ```
 @omestre/shared  ←  @omestre/converters  ←  apps/api
                                           ←  apps/worker
+@omestre/db      ←  apps/api
+                 ←  apps/worker
 ```
 
 ---
@@ -48,6 +53,11 @@ o-mestre-afiliado/
 | API | Elysia 1.x |
 | Web | React 19, Vite 6 |
 | Worker | Bun runtime nativo (setInterval + fila em memória) |
+| Database ORM | Drizzle ORM |
+| Database | PostgreSQL 17 |
+| Cache | Redis 7 |
+| WhatsApp | Evolution API (Baileys) |
+| Conversão | @omestre/converters (Shopee GraphQL, ML OAuth/Cookies/Fallback) |
 | TypeScript | ^5, strict mode, verbatimModuleSyntax |
 | Package manager | Bun (bun install, bun add) |
 
@@ -106,7 +116,7 @@ o-mestre-afiliado/
 
 - Funções de conversão **nunca lançam exceções** — sempre retornam `ConversionResult` com `success`.
 - Erros de credenciais são tratados como `success: false`, não throw.
-- Três estratégias para ML: `api → cookies → fallback`.
+- Duas estratégias para ML: `api → cookies`.
 
 ### Shared
 
@@ -126,6 +136,10 @@ o-mestre-afiliado/
 | `bun run shopee <url>` | CLI conversor Shopee |
 | `bun run ml <url>` | CLI conversor Mercado Livre |
 | `./node_modules/.bin/tsc --noEmit` | Typecheck completo |
+| `bun run db:generate` | Gerar migrations Drizzle |
+| `bun run db:migrate` | Aplicar migrations |
+| `bun run db:push` | Push rápido (dev) |
+| `docker compose --env-file .env.infra -f docker-compose.infra.yml up -d` | Subir infra (Evolution + PG + Redis) |
 
 ---
 
@@ -141,13 +155,19 @@ Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
 | `ML_CLIENT_SECRET` | Para ML OAuth | converters, api, worker |
 | `ML_REFRESH_TOKEN` | Para ML OAuth | converters, api, worker |
 | `ML_COOKIES` | Para ML Cookies | converters, api, worker |
-| `ML_MELIID` | Para ML Fallback | converters, api, worker |
-| `ML_MELITAT` | Para ML Fallback | converters, api, worker |
-| `ML_AFFILIATE_TAG` | Alternativa fallback | converters, api, worker |
 | `API_PORT` | Não (default 3000) | api |
 | `WORKER_POLL_INTERVAL` | Não (default 30000) | worker |
 | `WORKER_MAX_RETRIES` | Não (default 3) | worker |
 | `WORKER_CONCURRENCY` | Não (default 5) | worker |
+| `EVOLUTION_API_KEY` | Sim | api, worker |
+| `EVOLUTION_WEBHOOK_URL` | Não | api (default http://api:3000/webhook/message) |
+| `POSTGRES_URL` | Não | api, worker (URI completa, sobrescreve vars abaixo) |
+| `POSTGRES_HOST` | Não (default localhost) | api, worker |
+| `POSTGRES_PORT` | Não (default 5443) | api, worker |
+| `POSTGRES_DATABASE` | Não (default evolution_db) | api, worker |
+| `POSTGRES_USERNAME` | Não (default evolution) | api, worker |
+| `POSTGRES_PASSWORD` | Sim | api, worker |
+| `POSTGRES_SCHEMA` | Não (default omestre) | api, worker |
 
 ---
 
@@ -191,8 +211,7 @@ Usuário (CLI)    Usuário (Web)          Usuário (API)
           │ convertUrl()     │
           ├──────────────────┤
           │ Shopee: GraphQL  │
-          │ ML: OAuth/Cookies│
-          │      /Fallback   │
+          │ ML: OAuth/Cookies │
           └──────────────────┘
                     │
                     ▼
