@@ -45,3 +45,6 @@ data/
 
 # Dev server locks
 tmp/
+
+# Playwright test results
+test-results/
