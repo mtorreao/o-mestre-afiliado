@@ -27,6 +27,7 @@ interface AffiliateInfo {
   expired: boolean;
   meliid: string | null;
   melitat: string | null;
+  hasSessionCookies: boolean;
 }
 
 const MARKETPLACE_NAMES: Record<Marketplace, string> = {
@@ -59,7 +60,8 @@ function App() {
     nickname: string;
     meliid: string;
     melitat: string;
-  }>({ open: false, mlUserId: '', nickname: '', meliid: '', melitat: '' });
+    sessionCookies: string;
+  }>({ open: false, mlUserId: '', nickname: '', meliid: '', melitat: '', sessionCookies: '' });
 
   // Carregar afiliados ao montar
   const loadAffiliates = useCallback(async () => {
@@ -149,16 +151,22 @@ function App() {
       nickname: a.nickname,
       meliid: a.meliid || '',
       melitat: a.melitat || '',
+      sessionCookies: '',
     });
   }
 
   async function saveConfig() {
-    const { mlUserId, meliid, melitat } = configModal;
+    const { mlUserId, meliid, melitat, sessionCookies } = configModal;
+    const body: Record<string, string | undefined> = {
+      meliid: meliid || undefined,
+      melitat: melitat || undefined,
+    };
+    if (sessionCookies) body.sessionCookies = sessionCookies;
     try {
       const res = await fetch(`/api/ml/affiliates/${mlUserId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meliid: meliid || undefined, melitat: melitat || undefined }),
+        body: JSON.stringify(body),
       });
       const data = await res.json() as { success: boolean; error?: string };
       if (data.success) {
@@ -189,16 +197,15 @@ function App() {
     }}>
       {/* Header */}
       <header style={{ textAlign: 'center', marginBottom: '2rem' }}>
-        <h1 style={{
-          fontSize: '2.5rem',
-          fontWeight: 800,
-          background: 'linear-gradient(135deg, #818cf8, #c084fc)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          margin: '0 0 0.5rem',
-        }}>
-          O Mestre Afiliado
-        </h1>
+        <img
+          src="/logos/logo_full_square.png"
+          alt="O Mestre Afiliado"
+          style={{
+            width: '120px',
+            height: '120px',
+            marginBottom: '0.5rem',
+          }}
+        />
         <p style={{ color: '#94a3b8', fontSize: '1.1rem', margin: 0 }}>
           Converta links de produtos em links de afiliado
         </p>
@@ -299,6 +306,7 @@ function App() {
           <div style={{ padding: '0.75rem 1.25rem' }}>
             {affiliates.map((a) => {
               const hasParams = a.melitat;
+              const hasCookies = a.hasSessionCookies;
               return (
                 <label
                   key={a.mlUserId}
@@ -330,6 +338,11 @@ function App() {
                       {a.expired && (
                         <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#f87171' }}>
                           (token expirado)
+                        </span>
+                      )}
+                      {hasCookies && (
+                        <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#4ade80' }}>
+                          🔗 link curto
                         </span>
                       )}
                     </div>
@@ -432,6 +445,34 @@ function App() {
                   boxSizing: 'border-box',
                 }}
               />
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
+                Cookies de Sessão (para link curto meli.la)
+              </label>
+              <textarea
+                value={configModal.sessionCookies}
+                onChange={(e) => setConfigModal({ ...configModal, sessionCookies: (e.target as HTMLTextAreaElement).value })}
+                placeholder="Cole todos os cookies (formato: nome=valor; nome=valor)..."
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  resize: 'vertical',
+                  fontFamily: 'monospace',
+                }}
+              />
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.3rem' }}>
+                Extraia os cookies do navegador logado no ML (F12 → Application → Cookies) e cole aqui.
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>

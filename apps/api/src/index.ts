@@ -2,16 +2,18 @@
  * @omestre/api — Elysia API para conversão de links de afiliados
  *
  * Inclui fluxo OAuth multi-afiliado para Mercado Livre (protótipo).
- * A conversão de links ML usa URL params (meliid/melitat) por afiliado.
+ * Suporta geração de links curtos (meli.la) via API interna do ML
+ * quando cookies de sessão estão configurados.
+ *
+ * Store de afiliados migrado de JSON file para PostgreSQL via Drizzle ORM.
  */
 
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
-import { convertUrl, getAccessToken, generateViaUrlParams } from '@omestre/converters';
+import { convertUrl, getAccessToken, generateViaUrlParams, generateShortAffiliateLink } from '@omestre/converters';
 import { detectMarketplace } from '@omestre/shared';
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { MlAffiliateRepository } from '@omestre/db';
 
 const PORT = parseInt(process.env.API_PORT || '5442', 10);
 const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
@@ -19,40 +21,9 @@ const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.ML_REDIRECT_URI || 'http://localhost:5442/api/ml/callback';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5441';
 
-// ─── Store de afiliados (JSON file) ─────────────────────────────────────
+// ─── Repository (banco PostgreSQL via Drizzle) ────────────────────────
 
-interface AffiliateRecord {
-  mlUserId: string;
-  nickname: string;
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: string;   // ISO
-  connectedAt: string; // ISO
-  lastUsedAt: string;  // ISO
-  meliid?: string;     // fallback URL param
-  melitat?: string;    // fallback URL param
-}
-
-const DATA_DIR = join(import.meta.dir, '../../../data');
-const STORE_PATH = join(DATA_DIR, 'ml-affiliates.json');
-
-function ensureDataDir() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-}
-
-function readStore(): Record<string, AffiliateRecord> {
-  ensureDataDir();
-  try {
-    return JSON.parse(readFileSync(STORE_PATH, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-function writeStore(store: Record<string, AffiliateRecord>) {
-  ensureDataDir();
-  writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), 'utf-8');
-}
+const mlRepo = new MlAffiliateRepository();
 
 // ─── App ─────────────────────────────────────────────────────────────────
 
@@ -170,39 +141,37 @@ const app = new Elysia()
     }
 
     try {
-      // Trocar code por tokens
       const tokenRes = await getAccessToken(ML_CLIENT_ID, ML_CLIENT_SECRET, code, REDIRECT_URI);
+      const mlUserId = String((tokenRes as { user_id?: number | string }).user_id ?? '');
 
-      const store = readStore();
-      const mlUserId = String(tokenRes.user_id);
-
-      // Buscar nickname do usuário no ML (opcional, só pra exibir bonito)
       let nickname = mlUserId;
       try {
         const meRes = await fetch('https://api.mercadolibre.com/users/me', {
           headers: { Authorization: `Bearer ${tokenRes.access_token}` },
         });
         if (meRes.ok) {
-          const me = await meRes.json() as { nickname?: string };
+          const me = (await meRes.json()) as { nickname?: string };
           if (me.nickname) nickname = me.nickname;
         }
-      } catch { /* fallback: usa mlUserId */ }
+      } catch {
+        /* fallback: usa mlUserId */
+      }
 
-      // Salvar/atualizar (preserva meliid/melitat se já existirem)
-      store[mlUserId] = {
+      // Busca dados existentes para preservar meliid/melitat/sessionCookies
+      const existing = await mlRepo.findByUserId(mlUserId);
+
+      await mlRepo.upsert({
         mlUserId,
         nickname,
         accessToken: tokenRes.access_token,
         refreshToken: tokenRes.refresh_token,
-        expiresAt: new Date(Date.now() + tokenRes.expires_in * 1000).toISOString(),
-        connectedAt: store[mlUserId]?.connectedAt || new Date().toISOString(),
-        lastUsedAt: new Date().toISOString(),
-        meliid: store[mlUserId]?.meliid,
-        melitat: store[mlUserId]?.melitat,
-      };
-      writeStore(store);
+        expiresIn: tokenRes.expires_in,
+        connectedAt: existing?.connectedAt,
+        meliid: existing?.meliid ?? null,
+        melitat: existing?.melitat ?? null,
+        sessionCookies: existing?.sessionCookies ?? null,
+      });
 
-      // Redirecionar pro frontend
       return redirect(`${FRONTEND_URL}?ml_connected=${mlUserId}`);
     } catch (err) {
       set.status = 500;
@@ -214,59 +183,48 @@ const app = new Elysia()
   })
 
   // ─── ML — Listar afiliados conectados ────────────────────────────────
-  .get('/api/ml/affiliates', () => {
-    const store = readStore();
-    const list = Object.values(store).map((a) => ({
-      mlUserId: a.mlUserId,
-      nickname: a.nickname,
-      connectedAt: a.connectedAt,
-      lastUsedAt: a.lastUsedAt,
-      expiresAt: a.expiresAt,
-      expired: new Date(a.expiresAt) < new Date(),
-      meliid: a.meliid || null,
-      melitat: a.melitat || null,
-    }));
-    return { success: true, affiliates: list };
+  .get('/api/ml/affiliates', async () => {
+    const affiliates = await mlRepo.findAll();
+    return { success: true, affiliates };
   })
 
-  // ─── ML — Atualizar configurações do afiliado (meliid/melitat) ──────
+  // ─── ML — Atualizar configurações do afiliado ────────────────────────
   .put(
     '/api/ml/affiliates/:mlUserId',
     async ({ params, body, set }) => {
       const { mlUserId } = params as { mlUserId: string };
-      const { meliid, melitat } = body as { meliid?: string; melitat?: string };
+      const { meliid, melitat, sessionCookies } = body as {
+        meliid?: string;
+        melitat?: string;
+        sessionCookies?: string;
+      };
 
-      const store = readStore();
-      if (!store[mlUserId]) {
+      const updated = await mlRepo.patch(mlUserId, { meliid, melitat, sessionCookies });
+      if (!updated) {
         set.status = 404;
         return { success: false, error: 'Afiliado não encontrado' };
       }
 
-      store[mlUserId] = {
-        ...store[mlUserId],
-        ...(meliid !== undefined ? { meliid } : {}),
-        ...(melitat !== undefined ? { melitat } : {}),
-      };
-      writeStore(store);
-
       return {
         success: true,
         mlUserId,
-        meliid: store[mlUserId].meliid || null,
-        melitat: store[mlUserId].melitat || null,
+        meliid: updated.meliid,
+        melitat: updated.melitat,
+        hasSessionCookies: !!updated.sessionCookies,
       };
     },
     {
       detail: {
-        summary: 'Atualizar parâmetros de afiliado (meliid/melitat)',
+        summary: 'Atualizar configurações do afiliado',
         requestBody: {
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
-                  meliid: { type: 'string', description: 'MELIID para URL params' },
-                  melitat: { type: 'string', description: 'MELITAT para URL params' },
+                  meliid: { type: 'string' },
+                  melitat: { type: 'string' },
+                  sessionCookies: { type: 'string', description: 'Cookies de sessão ML (para link curto)' },
                 },
               },
             },
@@ -276,7 +234,7 @@ const app = new Elysia()
     },
   )
 
-  // ─── ML — Converter usando URL params do afiliado selecionado ───────
+  // ─── ML — Converter: tenta link curto, fallback URL params ──────────
   .post(
     '/api/ml/convert',
     async ({ body, set }) => {
@@ -303,8 +261,7 @@ const app = new Elysia()
         };
       }
 
-      const store = readStore();
-      const affiliate = store[mlUserId];
+      const affiliate = await mlRepo.findByUserId(mlUserId);
 
       if (!affiliate) {
         set.status = 404;
@@ -315,18 +272,55 @@ const app = new Elysia()
         set.status = 400;
         return {
           success: false,
-          error: `Afiliado ${affiliate.nickname} não possui melitat configurado. Configure em "Configurar" no card do afiliado.`,
+          error: `Afiliado ${affiliate.nickname} não possui melitat configurado. Configure em "Configurar".`,
         };
       }
 
       // Atualiza lastUsedAt
-      store[mlUserId] = { ...affiliate, lastUsedAt: new Date().toISOString() };
-      writeStore(store);
+      await mlRepo.touch(mlUserId);
 
-      // Gera link usando URL params do afiliado selecionado
+      // ── Estratégia 1: Link curto via API interna (se tiver cookies) ──
+      if (affiliate.sessionCookies) {
+        const shortResult = await generateShortAffiliateLink(
+          url,
+          affiliate.melitat,
+          affiliate.sessionCookies,
+        );
+
+        if (shortResult.success && shortResult.shortUrl) {
+          return {
+            success: true,
+            originalUrl: url,
+            affiliateUrl: shortResult.shortUrl,
+            longUrl: shortResult.longUrl,
+            marketplace: 'mercadolivre' as const,
+            method: 'api' as const,
+            mlUserId,
+            nickname: affiliate.nickname,
+          };
+        }
+
+        // Se falhou por cookie expirado (erro 401/403), tenta URL params
+        if (shortResult.error?.includes('HTTP 40') || shortResult.error?.includes('Cookies podem estar expirados')) {
+          // Continua pra estratégia 2
+        } else {
+          // Erro específico (tag inválida, produto inelegível) — retorna
+          return {
+            success: false,
+            originalUrl: url,
+            affiliateUrl: null,
+            marketplace: 'mercadolivre' as const,
+            method: 'unknown' as const,
+            error: shortResult.error,
+            mlUserId,
+            nickname: affiliate.nickname,
+          };
+        }
+      }
+
+      // ── Estratégia 2: URL params (fallback) ──
       try {
         let targetUrl = url;
-        // Resolver link curto meli.la
         if (/meli\.la\//i.test(url)) {
           const resolved = await fetch(url, { method: 'HEAD', redirect: 'manual' });
           const location = resolved.headers.get('location');
@@ -336,7 +330,7 @@ const app = new Elysia()
         }
 
         const affiliateUrl = generateViaUrlParams(targetUrl, {
-          meliid: affiliate.meliid,
+          meliid: affiliate.meliid ?? undefined,
           melitat: affiliate.melitat,
         });
 
@@ -365,7 +359,7 @@ const app = new Elysia()
     {
       detail: {
         summary: 'Converter link (multi-afiliado)',
-        description: 'Converte URL usando meliid/melitat do afiliado selecionado',
+        description: 'Tenta link curto via cookies. Se falhar, usa URL params do afiliado.',
         requestBody: {
           content: {
             'application/json': {
@@ -373,7 +367,7 @@ const app = new Elysia()
                 type: 'object',
                 properties: {
                   url: { type: 'string' },
-                  mlUserId: { type: 'string', description: 'ID do afiliado (retornado ao conectar)' },
+                  mlUserId: { type: 'string' },
                 },
                 required: ['url', 'mlUserId'],
               },
@@ -392,8 +386,7 @@ const app = new Elysia()
       return { success: false, error: 'mlUserId é obrigatório' };
     }
 
-    const store = readStore();
-    const affiliate = store[mlUserId];
+    const affiliate = await mlRepo.findByUserId(mlUserId);
     if (!affiliate) {
       set.status = 404;
       return { success: false, error: 'Afiliado não encontrado' };
@@ -407,31 +400,90 @@ const app = new Elysia()
         undefined,
         affiliate.refreshToken,
       );
-      store[mlUserId] = {
-        ...affiliate,
-        accessToken: refreshed.access_token,
-        refreshToken: refreshed.refresh_token,
-        expiresAt: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
-        lastUsedAt: new Date().toISOString(),
-      };
-      writeStore(store);
-      return { success: true, mlUserId, expiresAt: store[mlUserId].expiresAt };
+
+      const updated = await mlRepo.refreshTokens(
+        mlUserId,
+        refreshed.access_token,
+        refreshed.refresh_token,
+        refreshed.expires_in,
+      );
+
+      return { success: true, mlUserId, expiresAt: updated!.expiresAt.toISOString() };
     } catch (err) {
       set.status = 500;
       return { success: false, error: err instanceof Error ? err.message : 'Refresh falhou' };
     }
   })
 
+  // ─── ML — Validar cookies de sessão ─────────────────────────────────
+  .post(
+    '/api/ml/affiliates/:mlUserId/validate-cookies',
+    async ({ params, set }) => {
+      const { mlUserId } = params as { mlUserId: string };
+      const affiliate = await mlRepo.findByUserId(mlUserId);
+
+      if (!affiliate) {
+        set.status = 404;
+        return { success: false, error: 'Afiliado não encontrado' };
+      }
+
+      if (!affiliate.sessionCookies) {
+        set.status = 400;
+        return { success: false, error: 'Nenhum cookie salvo para este afiliado' };
+      }
+
+      // Tenta acessar o Link Builder com os cookies
+      try {
+        const res = await fetch('https://www.mercadolivre.com.br/afiliados/linkbuilder', {
+          headers: {
+            Cookie: affiliate.sessionCookies,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          redirect: 'manual',
+        });
+
+        const redirected = res.status === 301 || res.status === 302;
+        const loginPage = res.headers.get('location')?.includes('login');
+
+        if (redirected && loginPage) {
+          return {
+            success: false,
+            valid: false,
+            error: 'Cookies expirados — faça login novamente no ML e reimporte',
+          };
+        }
+
+        if (!res.ok && res.status !== 200) {
+          return {
+            success: false,
+            valid: false,
+            error: `Link Builder retornou HTTP ${res.status}`,
+          };
+        }
+
+        return {
+          success: true,
+          valid: true,
+          message: 'Cookies válidos! Link curto disponível.',
+        };
+      } catch (err) {
+        return {
+          success: false,
+          valid: false,
+          error: err instanceof Error ? err.message : 'Erro ao validar cookies',
+        };
+      }
+    },
+  )
+
   // ─── ML — Remover afiliado ──────────────────────────────────────────
-  .delete('/api/ml/affiliates/:mlUserId', ({ params, set }) => {
+  .delete('/api/ml/affiliates/:mlUserId', async ({ params, set }) => {
     const { mlUserId } = params as { mlUserId: string };
-    const store = readStore();
-    if (!store[mlUserId]) {
+    const deleted = await mlRepo.delete(mlUserId);
+    if (!deleted) {
       set.status = 404;
       return { success: false, error: 'Afiliado não encontrado' };
     }
-    delete store[mlUserId];
-    writeStore(store);
     return { success: true, message: `Afiliado ${mlUserId} removido` };
   });
 
@@ -440,6 +492,6 @@ app.listen(PORT);
 console.log(`🦊 API rodando em http://localhost:${PORT}`);
 console.log(`📖 Swagger docs em http://localhost:${PORT}/docs`);
 console.log(`🔗 ML OAuth iniciar: http://localhost:${PORT}/api/ml/auth`);
-console.log(`📁 Store: ${STORE_PATH}`);
+console.log(`📦 Store: PostgreSQL via Drizzle`);
 
 export type App = typeof app;
