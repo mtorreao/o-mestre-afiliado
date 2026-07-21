@@ -53,13 +53,12 @@
 
 ## 1. Visão Geral
 
-O Mercado Livre possui um programa de afiliados ("Clube de Afiliados") que permite gerar links rastreados a partir de URLs de produtos. O ML oferece **três abordagens** para geração de links de afiliado, em ordem de prioridade:
+O Mercado Livre possui um programa de afiliados ("Clube de Afiliados") que permite gerar links rastreados a partir de URLs de produtos. O ML oferece **duas abordagens** para geração de links de afiliado, em ordem de prioridade:
 
 | # | Abordagem | Volume | Requer | Link Builder |
 |---|-----------|--------|--------|-------------|
 | 1 | **API Oficial OAuth 2.0** — `authorization_code` | Alto (>500 cliques/dia) | App registrada no Dev Center + refresh_token | `POST /affiliates/link-builder` |
 | 2 | **Cookies** — Simulação do painel Link Builder | Médio | Sessão logada no ML (cookies) | POST para página interna |
-| 3 | **Fallback** — Parâmetros na URL | Qualquer | Apenas `meliid` + `melitat` ou `tag` | Nenhum (manipulação de URL) |
 
 > ✅ **A API oficial de conversão (`/affiliates/link-builder`) EXISTE e está confirmada.** Diferente do que documentações anteriores indicavam, o ML possui sim um endpoint REST para gerar links encurtados (`meli.la/xxx`) — o fluxo completo está detalhado nas seções 3 e 4.
 
@@ -101,6 +100,22 @@ Após salvar, você receberá:
 | **Secret Key** | `client_secret` | Corpo do POST `/oauth/token` |
 
 > ⚠️ Armazene a Secret Key de forma segura. Ela não é exibida novamente após a criação.
+
+#### Configuração de Referência — O Mestre Afiliado
+
+Dados da aplicação registrada no Dev Center:
+
+| Item | Valor |
+|------|-------|
+| **App ID** | `8762086145951776` |
+| **Secret Key** | `l8CcS5DsFkewcITnhZxPIDIWKLoL97YN` |
+| **Redirect URI** | `https://omestreafiliado.com.br/` |
+| **Notification Callback** | `https://omestreafiliado.com.br/callback` |
+| **OAuth Flows** | `authorization_code` + `refresh_token` |
+| **Escopo de permissão** | `read` (Leitura) para `Usuários` |
+| **Business Unit** | Mercado Livre |
+
+> ⚠️ A Secret Key acima foi copiada do Dev Center no momento da criação. Se for regenerada, atualize este documento e o `.env`.
 
 ---
 
@@ -228,15 +243,15 @@ Content-Type: application/json
 
 Com um `access_token` válido, converta URLs de produtos comuns em links rastreados:
 
-```
-POST https://api.mercadolivre.com/affiliates/link-builder
+\`\`\`
+POST https://api.mercadolibre.com/affiliates/link-builder
 Authorization: Bearer SEU_ACCESS_TOKEN
 Content-Type: application/json
 
 {
   "url": "https://www.mercadolivre.com.br/produto-X/p/MLB1234567890"
 }
-```
+\`\`\`
 
 **Headers obrigatórios:**
 
@@ -280,7 +295,7 @@ A API do Link Builder pode retornar os seguintes erros:
 
 | Situação | Resposta | Causa Provável |
 |----------|----------|----------------|
-| URL inválida | `"URL invalida"` | URL do produto não reconhecida pelo sistema do ML |
+|| URL inválida | `"URL invalida"` | URL do produto não reconhecida pelo sistema do ML (sem acento) |
 | Token expirado | `401 Unauthorized` | `access_token` expirou (6h) — renovar via `refresh_token` |
 | Credenciais inválidas | `403 Forbidden` | App ID / Secret Key incorretos ou conta desativada |
 | Refresh token inválido | Erro na renovação | `refresh_token` expirou ou foi revogado (logout do usuário) |
@@ -290,7 +305,7 @@ A API do Link Builder pode retornar os seguintes erros:
 - O `authorization_code` tem vida curta (poucos minutos) — deve ser trocado imediatamente
 - Se o `refresh_token` for invalidado, o fluxo manual de autorização (seção 3.1) precisa ser repetido
 - Para erros de URL inválida, verifique se o link do produto está acessível publicamente
-- Em caso de falha na conversão, a API pode retornar mensagens como `"URL invalida"` diretamente no body
+- Em caso de falha na conversão, a API pode retornar a mensagem `"URL invalida"` (sem acento) diretamente no body
 
 **Estratégia de retry recomendada:**
 
@@ -309,16 +324,18 @@ A API do Link Builder pode retornar os seguintes erros:
 |---------|---------|
 | **Volume recomendado** | API indicada para >500 cliques/dia |
 | **Volumes menores** | Abordagens via cookies ou fallback de URL são mais simples |
-| **Alta demanda** | Implementações personalizadas podem usar **filas (Redis)** para gerenciar grandes volumes sem interrupções |
+| **Alta demanda** | Implementações personalizadas podem usar **filas (Redis)** para gerenciar grandes volumes sem interrupções. Ferramentas de automação como **n8n**, **Make** e **Node-RED** são comuns para orquestrar filas + chamadas à API em lote |
 | **Headers de rate limit** | Não confirmados oficialmente (não documentados nas fontes analisadas) |
 | **API pública (sem auth)** | ~10 req/s estimado; mais restritivo |
 | **API autenticada (OAuth)** | Limites maiores, mas não especificados oficialmente |
 
-> 💡 Para operações em escala, considere usar um sistema de fila (Redis/Bull) para processar as conversões de link em lote, evitando estourar limites não documentados.
+> 💡 Para operações em escala, considere usar um sistema de fila (Redis/Bull) ou ferramentas de automação como **n8n** para processar as conversões de link em lote, evitando estourar limites não documentados.
+
+> 💡 O domínio correto da API é `api.mercadolibre.com` (sem 'v'), mesmo para o Brasil.
 
 ---
 
-## 5. Abordagens Alternativas
+## 5. Abordagem Alternativa
 
 ### 5.1 Via Cookies (Link Builder Simulado)
 
@@ -333,47 +350,6 @@ Para médio volume, é possível simular o Link Builder acessando a página inte
 **Resposta:** HTML contendo o link encurtado `meli.la/xxx` ou redirect para o mesmo.
 
 > ⚠️ Cookies expirados redirecionam para a página de login do ML. Nesse caso, é necessário reautenticar manualmente no navegador e extrair os cookies novamente.
-
-### 5.2 Fallback — Parâmetros na URL
-
-Para qualquer volume, sem necessidade de API ou cookies, adicione parâmetros de tracking diretamente na URL do produto.
-
-**Formato com `meliid` + `melitat`:**
-
-```
-https://www.mercadolivre.com.br/produto-X/p/MLB1234567890?meliid=SEU_ID&melitat=SUA_TAG
-```
-
-**Formato com `tag` simples:**
-
-```
-https://www.mercadolivre.com.br/produto-X/p/MLB1234567890?tag=SEUNOME-20
-```
-
-### 5.3 Formato Matt Tool (recomendado para fallback)
-
-Se sua tag de afiliado usa o formato mais recente de rastreamento granular:
-
-```
-https://www.mercadolivre.com.br/produto-X/p/MLB1234567890?matt_word=USERNAME&matt_tool=TOOLID
-```
-
-**Estrutura da tag:** `matt:USERNAME:TOOLID`
-
-| Parte | Exemplo | Descrição |
-|-------|---------|-----------|
-| `USERNAME` | `pamelabenachio` | Seu username de afiliado |
-| `TOOLID` | `78793736` | ID da ferramenta/ferramenta de divulgação |
-
-**Como descobrir sua tag:**
-
-1. Acesse https://afiliados.mercadolivre.com.br/
-2. Faça login na sua conta de afiliado
-3. Gere um link de afiliado para qualquer produto
-4. Analise a URL gerada:
-   - Se contiver `?tag=...` → use o formato tag simples
-   - Se contiver `matt_word=...&matt_tool=...` → use o formato matt tool
-   - Se contiver `picker=...` → a etiqueta de uso está vinculada a este parâmetro
 
 ---
 
@@ -545,7 +521,7 @@ Acesse: https://afiliados.mercadolivre.com.br/ → aba **"Relatórios"**
 | Abordagem | Descrição | Limitação |
 |-----------|-----------|-----------|
 | **Painel de relatórios** | Acompanhamento manual via aba "Relatórios" no dashboard | Sem automação |
-| **Webhook customizado (sua aplicação)** | Implementações customizadas de API podem configurar um `web_hook` (POST) para notificar a conclusão de tarefas de **geração de links** | É um webhook interno da sua aplicação, não do ML — notifica que o link foi gerado, não que a venda ocorreu |
+| **Webhook customizado (sua aplicação)** | Implementações de automação (como **n8n**, **Make**, **Node-RED**) podem configurar um webhook POST no payload para receber notificações quando a tarefa de **geração de link** ou **scraping de dados** for concluída, contendo o resultado (ex: `shorten_url`) no body da resposta | É um webhook da automação para notificar tarefa completa, **não do ML** — não notifica que a venda ocorreu |
 | **Scraping periódico do painel** | Usar Playwright para acessar o dashboard logado e extrair métricas | Requer manter sessão ativa; sujeito a mudanças no HTML |
 
 ### Prazo de confirmação
@@ -907,9 +883,11 @@ const ML_LINK_REGEX = /mercadolivre\.com\.br\/(?:[^/\s]+\/)?(?:p\/MLB\d+|item\/M
 
 13. **API de relatórios:** Não há endpoint REST público — métricas de desempenho são acessíveis apenas pelo painel web.
 
-14. **Erro `"URL invalida"`:** A API retorna esta mensagem quando a URL do produto não é reconhecida. Verifique se o link está acessível.
+14. **Erro "URL invalida":** A API retorna esta mensagem (sem acento) quando a URL do produto não é reconhecida. Verifique se o link está acessível.
 
 15. **Domínio do Link Builder:** O endpoint `api.mercadolivre.com/affiliates/link-builder` atende **todos os países** (Brasil, Argentina, México, etc.).
+
+16. **Automação com n8n/Make:** Ferramentas de automação como **n8n**, **Make** e **Node-RED** podem orquestrar o fluxo completo de autenticação, geração de links e postagem em grupos, utilizando filas (Redis) para gerenciar escala e evitar rate limits. Consulte os tutoriais nas referências.
 
 ---
 
@@ -923,3 +901,7 @@ const ML_LINK_REGEX = /mercadolivre\.com\.br\/(?:[^/\s]+\/)?(?:p\/MLB\d+|item\/M
 - **Gerador de Links ML (open source):** https://github.com/DeivianDS/mercadolivre-afiliados
 - **Central de Parceiros:** https://centraldeparceiros.mercadolivre.com.br
 - **Portal de Parceiros:** https://partners.mercadolivre.com.br
+- **n8n — Automatizar Links de Afiliado ML:** https://www.youtube.com/results?search_query=n8n+mercado+livre+afiliados
+- **Rally de Vendas:** https://rallydevendas.com.br/
+- **API geradora de links (Fripixel):** https://github.com/Fripixel/mercadolivre-link-de-afiliados
+- **Blog Rally de Vendas — Como Criar Link de Afiliado no ML:** https://blog.rallydevendas.com.br/como-criar-link-de-afiliado-mercado-livre/

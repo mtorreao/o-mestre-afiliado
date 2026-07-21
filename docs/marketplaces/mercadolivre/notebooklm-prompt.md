@@ -1,6 +1,9 @@
 # NotebookLM — Prompt para Análise do Programa de Afiliados Mercado Livre
 
 > Cole este prompt no **NotebookLM** (https://notebooklm.google.com) após adicionar as fontes listadas abaixo.
+>
+> **Última atualização:** 2026-07-20
+> **Fontes verificadas:** NotebookLM do projeto "Mercado Livre Affiliate Link Generation and Automation Guide" (25 fontes: documentação oficial + tutoriais + GitHub + blogs)
 
 ---
 
@@ -8,6 +11,7 @@
 
 Adicione estas URLs como fontes antes de usar o prompt:
 
+### Fontes oficiais
 1. https://developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao
 2. https://developers.mercadolivre.com.br/pt_br/api-docs
 3. https://afiliados.mercadolivre.com.br/ (requer login — faça uma captura da página de ajuda/FAQ e salve como PDF ou texto)
@@ -15,9 +19,11 @@ Adicione estas URLs como fontes antes de usar o prompt:
 5. https://partners.mercadolivre.com.br/
 6. https://developers.mercadolivre.com.br/devcenter
 
-Se conseguir acessar, adicione também:
-- Termos e condições do programa de afiliados (geralmente link no rodapé do dashboard)
-- Documentação da API de Search: https://api.mercadolibre.com/sites/MLB/search?q=exemplo (resposta JSON)
+### Fontes complementares (tutoriais e implementações)
+7. https://blog.rallydevendas.com.br/como-criar-link-de-afiliado-mercado-livre/
+8. https://github.com/Fripixel/mercadolivre-link-de-afiliados
+9. https://github.com/DeivianDS/mercadolivre-afiliados
+10. https://rallydevendas.com.br/
 
 ---
 
@@ -34,15 +40,18 @@ Para os endpoints `POST https://api.mercadolibre.com/oauth/token` e `POST https:
 - Existe limite de tentativas de refresh_token inválido?
 - O que acontece se o `authorization_code` expirar antes da troca?
 - Como a API sinaliza que o `refresh_token` foi invalidado?
+- O erro `"URL invalida"` (sem acento) é a resposta exata ou há variações?
+- Existem códigos HTTP diferentes de 200 para respostas de sucesso parcial?
 
 ### 2. Rate Limits
 
 - Qual o limite de requisições por segundo/minuto/dia para a API autenticada (com OAuth)?
 - Qual o limite para a API pública (sem autenticação)?
 - O rate limit é por `access_token`, por IP, ou por App ID?
-- O header de resposta inclui informações de rate limit (ex: `X-RateLimit-Remaining`)?
+- O header de resposta inclui informações de rate limit (ex: `X-RateLimit-Remaining`, `X-RateLimit-Limit`, `Retry-After`)?
 - Existe rate limit específico para o endpoint `/affiliates/link-builder` diferente da API geral?
 - Como o ML notifica que o limite foi excedido? (status HTTP, body, headers)
+- Existem limites de requisição por dia ou por mês documentados?
 
 ### 3. Diferenças Regionais
 
@@ -63,9 +72,10 @@ Para cada país:
 
 - Existe uma API REST para consultar cliques, conversões e comissões geradas?
 - Qual o endpoint para obter relatório de performance dos links de afiliado?
-- É possível filtrar por período (data inicial/final)?
+- É possível filtrar por período (data inicial/final), link específico ou canal de divulgação?
 - O relatório pode ser exportado em JSON/CSV ou apenas via painel web?
 - Existe endpoint para listar TODOS os links de afiliado gerados por uma conta?
+- O Rally de Vendas tem API própria ou é apenas dashboard?
 
 ### 5. Webhooks / Callbacks
 
@@ -73,6 +83,7 @@ Para cada país:
 - Existe callback de clique no link de afiliado?
 - Se sim, qual o payload format? Como configurar o webhook?
 - Se não, qual a alternativa recomendada para notificações em tempo real?
+- Ferramentas como n8n/Make/Node-RED podem configurar webhooks internos para notificar conclusão de tarefas de automação?
 
 ### 6. Tabela de Comissões
 
@@ -88,6 +99,7 @@ Para cada país:
 - Quantas etiquetas diferentes podem ser criadas?
 - É possível criar/gerenciar etiquetas programaticamente ou só pelo painel?
 - Como a etiqueta aparece no link gerado (qual parâmetro na URL)?
+- Os parâmetros `picker=`, `matt_word=`, `matt_tool=` são equivalentes?
 
 ### 8. Políticas e Restrições
 
@@ -97,13 +109,22 @@ Para cada país:
 - Existe sanção por gerar links para os próprios produtos?
 - É permitido usar encurtadores de link próprios antes do `meli.la`?
 - Pode-se usar a API para disparar links em massa via WhatsApp/email?
+- A automação com bots (n8n, Make, scripts próprios) é permitida ou viola os termos?
 
 ---
 
 ## Como usar este prompt
 
-1. Abra https://notebooklm.google.com e crie um novo notebook
+1. Abra https://notebooklm.google.com e crie um novo notebook (ou use o existente "Mercado Livre Affiliate Link Generation and Automation Guide")
 2. Adicione as URLs listadas em "Fontes para adicionar ao Notebook" como fontes
 3. Cole o prompt inteiro na caixa de chat do NotebookLM
 4. O NotebookLM analisará as fontes e responderá cada pergunta com base no conteúdo delas
 5. As respostas podem ser usadas para atualizar o arquivo `docs/marketplaces/mercadolivre/api-reference.md` no projeto
+
+---
+
+## Histórico de atualizações
+
+| Data | Versão | Alterações |
+|------|--------|------------|
+| 2026-07-20 | v2 | Adicionadas fontes complementares (n8n, GitHub, Rally de Vendas). Prompt refinado com perguntas mais específicas. Baseado em análise do NotebookLM com 25 fontes. |
