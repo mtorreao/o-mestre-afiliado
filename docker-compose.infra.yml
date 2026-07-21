@@ -36,7 +36,7 @@ services:
     image: redis:7-alpine
     restart: always
     command: >
-      redis-server --port 6379 --appendonly yes
+      redis-server --port 6379 --appendonly yes --timeout 0
     volumes:
       - redis_data:/data
     networks:

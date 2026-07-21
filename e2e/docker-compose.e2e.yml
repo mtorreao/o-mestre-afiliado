@@ -42,7 +42,7 @@ services:
     container_name: omestre_e2e_redis
     image: redis:7-alpine
     restart: no
-    command: redis-server --port 6379
+    command: redis-server --port 6379 --timeout 0
     tmpfs: /data
     ports:
       - "127.0.0.1:15445:6379"
