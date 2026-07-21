@@ -14,7 +14,7 @@ services:
   # ─── PostgreSQL ─────────────────────────────────────────────────────
   postgres-e2e:
     container_name: omestre_e2e_postgres
-    image: postgres:17
+    image: postgres:17-alpine
     restart: no
     command:
       - postgres

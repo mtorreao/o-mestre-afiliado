@@ -6,7 +6,7 @@ services:
   # Projeto → schema omestre (Drizzle)
   postgres:
     container_name: omestre_postgres
-    image: postgres:17
+    image: postgres:17-alpine
     restart: always
     command:
       - postgres
