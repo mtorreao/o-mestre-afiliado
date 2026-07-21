@@ -1,15 +1,21 @@
 import { defineConfig } from '@playwright/test';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const WEB_PORT = process.env.WEB_PORT || '15441';
+const API_PORT = process.env.API_PORT || '15442';
 
 export default defineConfig({
-  testDir: '.',
+  testDir: __dirname,
   timeout: 30_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
-  retries: 1,
+  retries: 0,
   workers: 1,
 
   use: {
-    baseURL: 'http://localhost:5441',
+    baseURL: `http://localhost:${WEB_PORT}`,
     extraHTTPHeaders: {
       'Content-Type': 'application/json',
     },

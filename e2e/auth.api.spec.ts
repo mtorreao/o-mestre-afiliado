@@ -15,7 +15,7 @@ import {
   authPut,
 } from './helpers.ts';
 
-const API = process.env.API_URL || 'http://localhost:5446';
+const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 
 // ─── Setup: limpar dados de testes anteriores ───────────────────────────
 

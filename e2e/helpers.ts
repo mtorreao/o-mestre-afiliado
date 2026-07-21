@@ -2,7 +2,7 @@
  * Helpers compartilhados para os testes E2E.
  */
 
-const API_BASE = process.env.API_URL || 'http://localhost:5446';
+const API_BASE = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 
 /**
  * Gera um email único para cada execução de teste.
