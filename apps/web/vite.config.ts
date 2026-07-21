@@ -10,10 +10,15 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5441,
+    strictPort: true,
+    allowedHosts: [
+      '.trycloudflare.com',
+      '.omestreafiliado.com.br',
+    ],
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:5442',
         changeOrigin: true,
       },
     },

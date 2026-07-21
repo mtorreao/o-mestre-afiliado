@@ -2,10 +2,10 @@
  * O Mestre Afiliado — Web App
  *
  * Interface React para conversão de links de afiliados
- * (Shopee, Mercado Livre)
+ * com suporte a múltiplos afiliados do Mercado Livre.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 type Marketplace = 'shopee' | 'mercadolivre' | 'unknown';
 
@@ -16,6 +16,17 @@ interface ConversionResult {
   marketplace: Marketplace;
   method: string;
   error?: string;
+}
+
+interface AffiliateInfo {
+  mlUserId: string;
+  nickname: string;
+  connectedAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  expired: boolean;
+  meliid: string | null;
+  melitat: string | null;
 }
 
 const MARKETPLACE_NAMES: Record<Marketplace, string> = {
@@ -36,30 +47,128 @@ function App() {
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Estado multi-afiliado
+  const [affiliates, setAffiliates] = useState<AffiliateInfo[]>([]);
+  const [selectedAffiliate, setSelectedAffiliate] = useState<string>('');
+  const [mlConnectedMsg, setMlConnectedMsg] = useState<string | null>(null);
+
+  // Modal de configuração
+  const [configModal, setConfigModal] = useState<{
+    open: boolean;
+    mlUserId: string;
+    nickname: string;
+    meliid: string;
+    melitat: string;
+  }>({ open: false, mlUserId: '', nickname: '', meliid: '', melitat: '' });
+
+  // Carregar afiliados ao montar
+  const loadAffiliates = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ml/affiliates');
+      const data = await res.json() as { success: boolean; affiliates: AffiliateInfo[] };
+      if (data.success) {
+        setAffiliates(data.affiliates);
+        if (!selectedAffiliate && data.affiliates.length > 0) {
+          setSelectedAffiliate(data.affiliates[0]!.mlUserId);
+        }
+      }
+    } catch { /* ignora */ }
+  }, [selectedAffiliate]);
+
+  useEffect(() => {
+    loadAffiliates();
+
+    // Verificar se veio de callback OAuth
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get('ml_connected');
+    if (connected) {
+      setMlConnectedMsg(`✅ Conta Mercado Livre conectada! (ID: ${connected})`);
+      // Limpar URL
+      window.history.replaceState({}, '', '/');
+      loadAffiliates();
+    }
+  }, [loadAffiliates]);
+
   async function handleConvert(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setResult(null);
     setError(null);
 
+    const marketplace = detectMarketplace(url);
+
     try {
-      const res = await fetch('/api/convert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-
-      const data = await res.json() as ConversionResult & { error?: string };
-
-      if (data.error) {
-        setError(data.error);
+      if (marketplace === 'mercadolivre' && selectedAffiliate) {
+        // Usar meliid/melitat do afiliado
+        const res = await fetch('/api/ml/convert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, mlUserId: selectedAffiliate }),
+        });
+        const data = await res.json() as ConversionResult & { error?: string };
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setResult(data);
+        }
       } else {
-        setResult(data);
+        // Fallback: API padrão
+        const res = await fetch('/api/convert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await res.json() as ConversionResult & { error?: string };
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setResult(data);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro de conexão');
     } finally {
       setLoading(false);
+    }
+  }
+
+  function detectMarketplace(u: string): Marketplace {
+    if (/shopee\.com\.br/i.test(u)) return 'shopee';
+    if (/mercadolivre\.com\.br/i.test(u) || /meli\.la/i.test(u)) return 'mercadolivre';
+    return 'unknown';
+  }
+
+  function handleConnectML() {
+    window.location.href = '/api/ml/auth';
+  }
+
+  function openConfig(a: AffiliateInfo) {
+    setConfigModal({
+      open: true,
+      mlUserId: a.mlUserId,
+      nickname: a.nickname,
+      meliid: a.meliid || '',
+      melitat: a.melitat || '',
+    });
+  }
+
+  async function saveConfig() {
+    const { mlUserId, meliid, melitat } = configModal;
+    try {
+      const res = await fetch(`/api/ml/affiliates/${mlUserId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meliid: meliid || undefined, melitat: melitat || undefined }),
+      });
+      const data = await res.json() as { success: boolean; error?: string };
+      if (data.success) {
+        setConfigModal({ ...configModal, open: false });
+        loadAffiliates();
+      } else {
+        alert(data.error || 'Erro ao salvar');
+      }
+    } catch {
+      alert('Erro de conexão ao salvar');
     }
   }
 
@@ -126,44 +235,286 @@ function App() {
         ))}
       </div>
 
-      {/* Formulário */}
+      {/* Mensagem de conexão OAuth */}
+      {mlConnectedMsg && (
+        <div style={{
+          marginBottom: '1rem',
+          padding: '0.75rem 1.25rem',
+          background: '#14532d',
+          borderRadius: '12px',
+          border: '1px solid #166534',
+          color: '#86efac',
+          fontSize: '0.95rem',
+          width: '100%',
+          maxWidth: '640px',
+        }}>
+          {mlConnectedMsg}
+        </div>
+      )}
+
+      {/* Seção: Afiliados ML */}
+      <div style={{
+        width: '100%',
+        maxWidth: '640px',
+        marginBottom: '1.5rem',
+        background: '#1e293b',
+        borderRadius: '12px',
+        border: '1px solid #334155',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          padding: '0.75rem 1.25rem',
+          borderBottom: '1px solid #334155',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+            🤝 Afiliados Mercado Livre
+          </span>
+          <button
+            onClick={handleConnectML}
+            style={{
+              padding: '0.4rem 0.75rem',
+              borderRadius: '8px',
+              border: '1px solid #fff059',
+              background: 'transparent',
+              color: '#fff059',
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              fontWeight: 500,
+            }}
+          >
+            + Conectar
+          </button>
+        </div>
+
+        {affiliates.length === 0 ? (
+          <div style={{ padding: '1.5rem 1.25rem', color: '#64748b', textAlign: 'center', fontSize: '0.9rem' }}>
+            Nenhum afiliado conectado ainda.
+            <br />
+            Clique em <strong style={{ color: '#fff059' }}>+ Conectar</strong> para adicionar uma conta do Mercado Livre.
+          </div>
+        ) : (
+          <div style={{ padding: '0.75rem 1.25rem' }}>
+            {affiliates.map((a) => {
+              const hasParams = a.melitat;
+              return (
+                <label
+                  key={a.mlUserId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.5rem 0',
+                    cursor: 'pointer',
+                    borderBottom: '1px solid #1e293b',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="affiliate"
+                    value={a.mlUserId}
+                    checked={selectedAffiliate === a.mlUserId}
+                    onChange={() => setSelectedAffiliate(a.mlUserId)}
+                    style={{ accentColor: '#fff059' }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                      {a.nickname}
+                      {!hasParams && (
+                        <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#f87171' }}>
+                          (sem melitat)
+                        </span>
+                      )}
+                      {a.expired && (
+                        <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#f87171' }}>
+                          (token expirado)
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                      ID: {a.mlUserId} · Conectado: {new Date(a.connectedAt).toLocaleString('pt-BR')}
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => { e.preventDefault(); openConfig(a); }}
+                    style={{
+                      padding: '0.3rem 0.6rem',
+                      borderRadius: '6px',
+                      border: '1px solid #475569',
+                      background: 'transparent',
+                      color: '#94a3b8',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Configurar
+                  </button>
+                  <div style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: hasParams ? (a.expired ? '#f87171' : '#4ade80') : '#64748b',
+                  }} />
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Modal de Configuração */}
+      {configModal.open && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+        }} onClick={() => setConfigModal({ ...configModal, open: false })}>
+          <div style={{
+            background: '#1e293b',
+            borderRadius: '16px',
+            border: '1px solid #334155',
+            padding: '1.5rem',
+            width: '90%',
+            maxWidth: '440px',
+          }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.1rem' }}>
+              ⚙️ {configModal.nickname}
+            </h3>
+            <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: '#64748b' }}>
+              Configure o melitat (etiqueta de afiliado) para gerar links
+            </p>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
+                MELIID (opcional — formato antigo)
+              </label>
+              <input
+                value={configModal.meliid}
+                onChange={(e) => setConfigModal({ ...configModal, meliid: (e.target as HTMLInputElement).value })}
+                placeholder="Insira o MELIID (deixe vazio para novo formato)..."
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
+                MELITAT (etiqueta de afiliado)
+              </label>
+              <input
+                value={configModal.melitat}
+                onChange={(e) => setConfigModal({ ...configModal, melitat: (e.target as HTMLInputElement).value })}
+                placeholder="Ex: mtorreao, om895584..."
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setConfigModal({ ...configModal, open: false })}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid #475569',
+                  background: 'transparent',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveConfig}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#6366f1',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                }}
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Formulário de conversão */}
       <form onSubmit={handleConvert} style={{
         width: '100%',
         maxWidth: '640px',
         display: 'flex',
         gap: '0.75rem',
+        flexDirection: 'column',
       }}>
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => setUrl((e.target as HTMLInputElement).value)}
-          placeholder="Cole a URL do produto (Shopee ou Mercado Livre)..."
-          required
-          style={{
-            flex: 1,
-            padding: '0.875rem 1rem',
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl((e.target as HTMLInputElement).value)}
+            placeholder="Cole a URL do produto (Shopee ou Mercado Livre)..."
+            required
+            style={{
+              flex: 1,
+              padding: '0.875rem 1rem',
+              borderRadius: '12px',
+              border: '1px solid #334155',
+              background: '#1e293b',
+              color: '#e2e8f0',
+              fontSize: '1rem',
+              outline: 'none',
+            }}
+          />
+          <button type="submit" disabled={loading || !url} style={{
+            padding: '0.875rem 1.5rem',
             borderRadius: '12px',
-            border: '1px solid #334155',
-            background: '#1e293b',
-            color: '#e2e8f0',
+            border: 'none',
+            background: loading ? '#6366f180' : '#6366f1',
+            color: 'white',
             fontSize: '1rem',
-            outline: 'none',
-          }}
-        />
-        <button type="submit" disabled={loading || !url} style={{
-          padding: '0.875rem 1.5rem',
-          borderRadius: '12px',
-          border: 'none',
-          background: loading ? '#6366f180' : '#6366f1',
-          color: 'white',
-          fontSize: '1rem',
-          fontWeight: 600,
-          cursor: loading ? 'not-allowed' : 'pointer',
-          transition: 'background 0.2s',
-          whiteSpace: 'nowrap',
-        }}>
-          {loading ? 'Convertendo...' : 'Converter'}
-        </button>
+            fontWeight: 600,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'background 0.2s',
+            whiteSpace: 'nowrap',
+          }}>
+            {loading ? 'Convertendo...' : 'Converter'}
+          </button>
+        </div>
+        {detectMarketplace(url) === 'mercadolivre' && affiliates.length > 0 && (
+          <div style={{ fontSize: '0.8rem', color: '#64748b', paddingLeft: '0.25rem' }}>
+            Usando afiliado: <strong style={{ color: '#94a3b8' }}>{affiliates.find(a => a.mlUserId === selectedAffiliate)?.nickname || 'selecionado'}</strong>
+          </div>
+        )}
       </form>
 
       {/* Status / Erro */}
@@ -213,6 +564,9 @@ function App() {
                 </div>
                 <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
                   {MARKETPLACE_NAMES[result.marketplace]} &middot; Método: {result.method}
+                  {'mlUserId' in result && (result as Record<string, string>).mlUserId && (
+                    <span> &middot; Afiliado: {(result as Record<string, string>).nickname || (result as Record<string, string>).mlUserId}</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -255,7 +609,7 @@ function App() {
                       {result.affiliateUrl}
                     </code>
                     <button
-                      onClick={() => window.navigator.clipboard.writeText(result.affiliateUrl!)}
+                      onClick={() => navigator.clipboard.writeText(result.affiliateUrl!)}
                       style={{
                         padding: '0.5rem 0.75rem',
                         borderRadius: '8px',
@@ -265,7 +619,6 @@ function App() {
                         fontSize: '0.85rem',
                         cursor: 'pointer',
                         whiteSpace: 'nowrap',
-                        transition: 'background 0.2s',
                       }}
                     >
                       Copiar
