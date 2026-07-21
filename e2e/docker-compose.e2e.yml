@@ -69,12 +69,48 @@ services:
     networks:
       - e2e-net
     environment:
+      # Database
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: postgresql://evolution:evolution_pass@postgres-e2e:5432/omestre_db
-      DATABASE_ENABLE_SSL: "false"
-      REDIS_URI: redis://redis-e2e:6379
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution_pass@postgres-e2e:5432/omestre_db?schema=evolution_api
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
+
+      # Server
+      SERVER_NAME: evolution-e2e
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: http://localhost:15444
+
+      # Cache (Redis)
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis-e2e:6379/6
+      CACHE_REDIS_TTL: 604800
+      CACHE_REDIS_PREFIX_KEY: evolution_e2e
+
+      # Auth
       AUTHENTICATION_TYPE: apikey
       AUTHENTICATION_API_KEY: e2e-evolution-api-key
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+
+      # Logs (menos verboso para E2E)
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_BAILEYS: error
+
+      # Desabilitar integrações não utilizadas
+      SQS_ENABLED: "false"
+      WEBSOCKET_ENABLED: "false"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      TYPEBOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+      DIFY_ENABLED: "false"
+      N8N_ENABLED: "false"
+      LANGCHAIN_ENABLED: "false"
 
   # ─── API (O Mestre Afiliado) ────────────────────────────────────────
   api-e2e:
