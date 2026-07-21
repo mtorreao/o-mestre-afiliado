@@ -114,6 +114,9 @@ export const reflectedOffers = omestre.table('reflected_offers', {
 // ─── Índices ────────────────────────────────────────────────────────
 // Índices serão adicionados via Drizzle quando necessário.
 
+// ─── WhatsApp Instances ───────────────────────────────────────────
+export { userWhatsAppInstances } from './userWhatsAppInstances.ts';
+
 // ─── Re-export dos schemas auxiliares ───────────────────────────────
 export { omestre } from './omestre.ts';
 export { users } from './users.ts';

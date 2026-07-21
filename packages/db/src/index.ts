@@ -20,6 +20,7 @@ export {
   offerStatusEnum,
   users,
   userCredentials,
+  userWhatsAppInstances,
 } from './schema/index.ts';
 
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
@@ -40,3 +41,6 @@ export type { User, NewUser, UserPublic } from './repository/users.repository.ts
 
 export { UserCredentialsRepository } from './repository/userCredentials.repository.ts';
 export type { UserCredentials, NewUserCredentials, UserCredentialsInput } from './repository/userCredentials.repository.ts';
+
+export { WhatsAppInstanceRepository } from './repository/whatsAppInstances.repository.ts';
+export type { WhatsAppInstance, NewWhatsAppInstance, WhatsAppInstancePublic } from './repository/whatsAppInstances.repository.ts';

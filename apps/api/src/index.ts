@@ -16,6 +16,7 @@ import { detectMarketplace } from '@omestre/shared';
 import { MlAffiliateRepository, UserRepository, UserCredentialsRepository } from '@omestre/db';
 import { authRoutes } from './modules/auth/auth.routes.ts';
 import { affiliateRoutes } from './modules/affiliate/affiliate.routes.ts';
+import { whatsAppRoutes } from './modules/whatsapp/whatsapp.routes.ts';
 
 const PORT = parseInt(process.env.API_PORT || '5442', 10);
 const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
@@ -45,6 +46,7 @@ const app = new Elysia()
   )
   .use(authRoutes)
   .use(affiliateRoutes)
+  .use(whatsAppRoutes)
   .get('/', () => ({
     service: 'O Mestre Afiliado API',
     version: '1.0.0',
@@ -56,6 +58,9 @@ const app = new Elysia()
       'ml/affiliates': 'GET /api/ml/affiliates',
       'ml/convert': 'POST /api/ml/convert',
       'ml/affiliates/:mlUserId': 'PUT /api/ml/affiliates/:mlUserId',
+      'whatsapp/connect': 'POST /api/whatsapp/connect',
+      'whatsapp/status': 'GET /api/whatsapp/status',
+      'whatsapp/disconnect': 'DELETE /api/whatsapp/disconnect',
       docs: '/docs',
     },
   }))

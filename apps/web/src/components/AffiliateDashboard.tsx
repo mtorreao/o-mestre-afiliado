@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { WppConnection } from './WppConnection.tsx';
 
 interface ProfileData {
   id: number;
@@ -499,6 +500,10 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
             )}
           </div>
         </div>
+
+        {/* Card: WhatsApp Connection */}
+        <WppConnection token={token} />
+
       </div>
     </div>
   );
