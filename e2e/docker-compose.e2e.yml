@@ -102,15 +102,28 @@ services:
   # ─── Web (nginx + static) ──────────────────────────────────────────
   web-e2e:
     container_name: omestre_e2e_web
-    image: nginx:alpine
+    build:
+      context: ../
+      dockerfile: apps/web/Dockerfile
     restart: no
     ports:
       - "127.0.0.1:15441:5441"
-    volumes:
-      - ../apps/web/dist:/usr/share/nginx/html:ro
-      - ../apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - e2e-net
+    depends_on:
+      - api-e2e
+
+  # ─── Worker (background) ───────────────────────────────────────────
+  worker-e2e:
+    container_name: omestre_e2e_worker
+    build:
+      context: ../
+      dockerfile: apps/worker/Dockerfile
+    restart: no
+    networks:
+      - e2e-net
+    environment:
+      WORKER_POLL_INTERVAL: "60000"
     depends_on:
       - api-e2e
 
