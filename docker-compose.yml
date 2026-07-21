@@ -1,0 +1,95 @@
+name: o-mestre-afiliado
+
+services:
+  # ─── API ──────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: api
+    container_name: omestre_api
+    restart: always
+    ports:
+      - "${API_PORT:-127.0.0.1:5442:5442}"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-evolution_pass}"
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: "http://evolution-api:8080"
+      FRONTEND_URL: "${FRONTEND_URL:-http://localhost:5441}"
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+  # ─── Web ──────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: omestre_web
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-127.0.0.1:5441:5441}"
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+
+  # ─── Worker ───────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: omestre_worker
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-evolution_pass}"
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: "http://evolution-api:8080"
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+
+  # ─── Cloudflare Tunnel ────────────────────────────────────────────────
+  cloudflared:
+    image: cloudflare/cloudflared:2024.10.0
+    container_name: omestre_cloudflared
+    restart: always
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - "${HOME}/.cloudflared:/etc/cloudflared:ro"
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+    profiles:
+      - tunnel
+
+networks:
+  omestre-prod-net:
+    name: omestre-prod-net
+    driver: bridge
+  omestre-infra-net:
+    name: omestre-infra-net
+    external: true

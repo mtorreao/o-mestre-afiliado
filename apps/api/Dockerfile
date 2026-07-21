@@ -23,12 +23,24 @@ COPY --from=builder /app/node_modules ./node_modules
 RUN echo '#!/bin/sh' > /entrypoint.sh && \
     echo 'echo "⏳ Aplicando migrations..."' >> /entrypoint.sh && \
     echo 'MIGRATIONS_DIR=/app/migrations' >> /entrypoint.sh && \
-    echo 'PG_URL=$(echo "$POSTGRES_URL" | sed "s/.*evolution:\(.*\)@.*/\1/" | cut -d@ -f1)' >> /entrypoint.sh && \
-    echo 'PG_HOST=$(echo "$POSTGRES_URL" | sed "s/.*@//" | sed "s/:.*//")' >> /entrypoint.sh && \
-    echo 'PG_PORT=$(echo "$POSTGRES_URL" | sed "s/.*://" | sed "s/\\/.*//")' >> /entrypoint.sh && \
-    echo 'for f in $(ls $MIGRATIONS_DIR/*.sql | sort); do' >> /entrypoint.sh && \
+    echo 'PG_URL="${POSTGRES_URL:-}"' >> /entrypoint.sh && \
+    echo 'if [ -z "$PG_URL" ]; then' >> /entrypoint.sh && \
+    echo '  PG_HOST="${POSTGRES_HOST:-postgres}"' >> /entrypoint.sh && \
+    echo '  PG_PORT="${POSTGRES_PORT:-5432}"' >> /entrypoint.sh && \
+    echo '  PG_USER="${POSTGRES_USERNAME:-evolution}"' >> /entrypoint.sh && \
+    echo '  PG_PASS="${POSTGRES_PASSWORD:-evolution_pass}"' >> /entrypoint.sh && \
+    echo '  PG_DB="${POSTGRES_DATABASE:-omestre_db}"' >> /entrypoint.sh && \
+    echo 'else' >> /entrypoint.sh && \
+    echo '  PG_HOST=$(echo "$PG_URL" | sed "s/.*@//" | sed "s/:.*//")' >> /entrypoint.sh && \
+    echo '  PG_PORT=$(echo "$PG_URL" | sed "s/.*://" | sed "s/\\\\/.*//")' >> /entrypoint.sh && \
+    echo '  PG_USER=$(echo "$PG_URL" | sed "s/.*\\/\\///" | sed "s/:.*//")' >> /entrypoint.sh && \
+    echo '  PG_PASS=$(echo "$PG_URL" | sed "s/.*:/\//" | sed "s/@.*//")' >> /entrypoint.sh && \
+    echo '  PG_DB=$(echo "$PG_URL" | sed "s/.*\\///" | sed "s/\\?.*//")' >> /entrypoint.sh && \
+    echo 'fi' >> /entrypoint.sh && \
+    echo 'PGPASSWORD="$PG_PASS" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -c "CREATE SCHEMA IF NOT EXISTS ${POSTGRES_SCHEMA:-omestre}" 2>/dev/null || true' >> /entrypoint.sh && \
+    echo 'for f in $(ls $MIGRATIONS_DIR/*.sql 2>/dev/null | sort); do' >> /entrypoint.sh && \
     echo '  echo "  Running $(basename $f)..."' >> /entrypoint.sh && \
-    echo '  cat "$f" | PGPASSWORD=evolution_pass psql -h postgres-e2e -p 5432 -U evolution -d omestre_db -f - 2>&1 | grep -v "NOTICE\\|CREATE\\|ALTER\\|INSERT 0" || true' >> /entrypoint.sh && \
+    echo '  PGPASSWORD="$PG_PASS" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -f "$f" 2>&1 | grep -v "NOTICE\\\\|CREATE\\\\|ALTER\\\\|INSERT 0" || true' >> /entrypoint.sh && \
     echo 'done' >> /entrypoint.sh && \
     echo 'echo "✅ Migrations concluídas"' >> /entrypoint.sh && \
     echo 'echo "🚀 Iniciando API..."' >> /entrypoint.sh && \
