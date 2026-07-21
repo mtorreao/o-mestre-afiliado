@@ -124,7 +124,12 @@ services:
     networks:
       - e2e-net
     environment:
-      POSTGRES_URL: postgresql://evolution:evolution_pass@postgres-e2e:5432/omestre_db?options=--search_path%3Domestre
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
       API_PORT: "5442"
       JWT_SECRET: e2e-jwt-secret-for-testing-only
       EVOLUTION_API_URL: http://evolution-api-e2e:8080
@@ -148,6 +153,8 @@ services:
       - "127.0.0.1:15441:5441"
     networks:
       - e2e-net
+    environment:
+      API_UPSTREAM: api-e2e:5442
     depends_on:
       - api-e2e
 
