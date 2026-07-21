@@ -10,7 +10,6 @@ import {
   getAccessToken,
   generateViaApi,
   generateViaCookies,
-  generateViaUrlParams,
   refreshSessionCookies,
   isMercadoLivreUrl,
 } from './mercadolivre.ts';
@@ -35,10 +34,6 @@ CAMINHOS DE INTEGRAÇÃO (em ordem de prioridade):
   2) COOKIES (simulação do Link Builder) — médio volume
      .env: ML_COOKIES="session_id=xxx; ..."
      Acessa: https://www.mercadolivre.com.br/afiliados/link-builder
-
-  3) FALLBACK (parâmetros na URL) — qualquer volume
-     .env: ML_MELIID=xxx ML_MELITAT=xxx
-     Adiciona: ?meliid=X&melitat=Y
 
 EXEMPLOS:
   bun run mercadolivre "https://www.mercadolivre.com.br/produto-X/p/MLB123"
@@ -135,14 +130,8 @@ async function main() {
     console.log('');
   }
 
-  // Estratégia 3: Fallback
-  if (!affiliateLink && (creds.meliid || creds.melitat || creds.simpleTag)) {
-    method = '🔗 Fallback (parâmetros na URL)';
-    console.log(`${method}`);
-    affiliateLink = generateViaUrlParams(targetUrl, creds);
-    console.log(`   ✅ Link com parâmetros de afiliado!`);
-    console.log('');
-  }
+  // Fallback não disponível — credenciais foram migradas para o store OAuth
+  // (cada afiliado conectado tem seu próprio token)
 
   if (affiliateLink) {
     console.log('✅ Link de afiliado gerado!');
@@ -157,7 +146,6 @@ async function main() {
     console.error('   Configure ao menos uma das estratégias no .env:');
     console.error('   1) ML_CLIENT_ID + ML_CLIENT_SECRET (± ML_REFRESH_TOKEN)');
     console.error('   2) ML_COOKIES');
-    console.error('   3) ML_MELIID + ML_MELITAT (fallback)');
     process.exit(1);
   }
 }

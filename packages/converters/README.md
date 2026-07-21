@@ -54,7 +54,7 @@ Wrapper que valida o marketplace, chama `generateShortLink` e retorna um `Conver
 
 ## 🏪 Mercado Livre
 
-### Fluxo (3 estratégias em cascata)
+### Fluxo (2 estratégias em cascata)
 
 ```
 URL do produto
@@ -63,13 +63,10 @@ URL do produto
     │   ├── getAccessToken() → access_token
     │   └── generateViaApi(url, token) → link de afiliado
     │
-    ├── Estratégia 2: Cookies (se ML_COOKIES)
-    │   ├── generateViaCookies(url, cookies) → link
-    │   ├── Se falhar: refreshSessionCookies() → renew
-    │   └── generateViaCookies(url, newCookies) → link
-    │
-    └── Estratégia 3: Fallback URL params (se ML_MELIID + ML_MELITAT)
-        └── generateViaUrlParams(url, creds) → url + ?meliid=X&melitat=Y
+    └── Estratégia 2: Cookies (se ML_COOKIES)
+        ├── generateViaCookies(url, cookies) → link
+        ├── Se falhar: refreshSessionCookies() → renew
+        └── generateViaCookies(url, newCookies) → link
 ```
 
 ### Estratégia 1: API OAuth 2.0 (Recomendada)
@@ -84,8 +81,8 @@ const auth = await getAccessToken(clientId, clientSecret, undefined, undefined, 
 const link = await generateViaApi('https://...', auth.access_token);
 ```
 
-**Endpoint OAuth:** `POST https://api.mercadolibre.com/oauth/token`
-**Endpoint Link Builder:** `POST https://api.mercadolivre.com/affiliates/link-builder`
+| **Endpoint OAuth:** `POST https://api.mercadolibre.com/oauth/token`
+| **Endpoint Link Builder:** `POST https://api.mercadolibre.com/affiliates/link-builder`
 
 ### Estratégia 2: Cookies
 
@@ -104,29 +101,15 @@ if (!link) {
 
 Simula o formulário do Link Builder do painel de afiliados do ML. Requer cookies de sessão ativos.
 
-### Estratégia 3: Fallback (URL Params)
+### `convertMercadoLivreUrl`
 
-```typescript
-import { generateViaUrlParams } from '@omestre/converters';
-
-const link = generateViaUrlParams('https://...', {
-  meliid: 'seu_meliid',
-  melitat: 'om895584',
-});
-// → https://...?meliid=seu_meliid&melitat=om895584
-```
-
-Adiciona parâmetros de tracking diretamente na URL do produto. Funciona sempre, mas a comissão pode não ser atribuída se o ML exigir link via API oficial.
-
-### `convertMercadoLivreUrl(url: string, options?): Promise<ConversionResult>`
-
-Wrapper que tenta as 3 estratégias em ordem e retorna um `ConversionResult` padronizado.
+Wrapper que tenta as 2 estratégias em ordem e retorna um `ConversionResult` padronizado.
 
 **Options:**
 
 ```typescript
 interface MlConversionOptions {
-  prefer?: MlStrategy[]; // Ordem de tentativa, default: ['api', 'cookies', 'fallback']
+  prefer?: MlStrategy[]; // Ordem de tentativa, default: ['api', 'cookies']
 }
 ```
 
@@ -158,9 +141,6 @@ bun run ml "https://www.mercadolivre.com.br/produto-X/p/MLB123"
 | `ML_CLIENT_SECRET` | ML API OAuth | Para estratégia 1 |
 | `ML_REFRESH_TOKEN` | ML API OAuth | Para estratégia 1 |
 | `ML_COOKIES` | ML Cookies | Para estratégia 2 |
-| `ML_MELIID` | ML Fallback | Para estratégia 3 |
-| `ML_MELITAT` | ML Fallback | Para estratégia 3 |
-| `ML_AFFILIATE_TAG` | ML Fallback | Alternativa |
 
 ---
 

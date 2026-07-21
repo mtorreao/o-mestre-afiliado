@@ -17,6 +17,7 @@ export {
   refreshSessionCookies,
   isMercadoLivreUrl,
   convertMercadoLivreUrl,
+  convertMercadoLivreUrlWithToken,
 } from './mercadolivre.ts';
 export type { MercadoLivreCredentials, MlConversionOptions, MlStrategy } from './mercadolivre.ts';
 

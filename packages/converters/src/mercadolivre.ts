@@ -14,7 +14,7 @@ import { detectMarketplace } from '@omestre/shared';
 const MELI_LA_REGEX = /meli\.la\/([A-Za-z0-9]+)/;
 
 const OAUTH_TOKEN_URL = 'https://api.mercadolibre.com/oauth/token';
-const LINK_BUILDER_API = 'https://api.mercadolivre.com/affiliates/link-builder';
+const LINK_BUILDER_API = 'https://www.mercadolivre.com.br/afiliados/api/link-builder';
 const LINK_BUILDER_PAGE = 'https://www.mercadolivre.com.br/afiliados/link-builder';
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
@@ -243,10 +243,15 @@ export function generateViaUrlParams(productUrl: string, creds: MercadoLivreCred
   const url = new URL(productUrl);
 
   if (meliid && melitat) {
+    // Formato antigo (Clube de Afiliados): meliid + melitat
     url.searchParams.set('meliid', meliid);
     url.searchParams.set('melitat', melitat);
   } else if (simpleTag) {
     url.searchParams.set('tag', simpleTag);
+  } else if (!meliid && melitat) {
+    // Novo formato (Programa Afiliados e Criadores): matt_word + matt_tool
+    url.searchParams.set('matt_word', melitat);
+    url.searchParams.set('matt_tool', '71835809');
   } else {
     if (meliid) url.searchParams.set('meliid', meliid);
     if (melitat) url.searchParams.set('melitat', melitat);
@@ -326,7 +331,7 @@ export async function convertMercadoLivreUrl(
     let affiliateLink: string | null = null;
     let method: MlStrategy = 'none';
 
-    const strategies = options?.prefer ?? ['api', 'cookies', 'fallback'];
+    const strategies = options?.prefer ?? ['api', 'cookies'];
 
     for (const strat of strategies) {
       if (strat === 'api' && creds.clientId && creds.clientSecret) {
@@ -372,6 +377,57 @@ export async function convertMercadoLivreUrl(
       marketplace: 'mercadolivre',
       method: method === 'none' ? 'unknown' : method,
       error: affiliateLink ? undefined : 'Nenhuma estratégia conseguiu gerar o link',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      originalUrl: url,
+      affiliateUrl: null,
+      marketplace: 'mercadolivre',
+      method: 'unknown',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Converte URL do ML usando credenciais explícitas (para multi-afiliado).
+ * Semelhante a convertMercadoLivreUrl, mas recebe access_token diretamente
+ * em vez de ler do .env.
+ */
+export async function convertMercadoLivreUrlWithToken(
+  url: string,
+  accessToken: string,
+): Promise<ConversionResult> {
+  try {
+    const marketplace = detectMarketplace(url);
+    if (marketplace !== 'mercadolivre') {
+      return {
+        success: false,
+        originalUrl: url,
+        affiliateUrl: null,
+        marketplace,
+        method: 'unknown',
+        error: 'URL não é do Mercado Livre',
+      };
+    }
+
+    // Resolver link curto meli.la
+    let targetUrl = url;
+    if (MELI_LA_REGEX.test(url)) {
+      const resolved = await resolveShortUrl(url);
+      if (resolved && resolved !== url) {
+        targetUrl = resolved;
+      }
+    }
+
+    const affiliateLink = await generateViaApi(targetUrl, accessToken);
+    return {
+      success: true,
+      originalUrl: url,
+      affiliateUrl: affiliateLink,
+      marketplace: 'mercadolivre',
+      method: 'api',
     };
   } catch (error) {
     return {
