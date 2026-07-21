@@ -170,10 +170,11 @@ test.describe('UI - Dashboard', () => {
     await page.reload();
     await page.waitForSelector('text=🛒 Shopee');
 
-    // Preencher credenciais Shopee
-    const shopeeInputs = page.locator('text=🛒 Shopee').locator('..').locator('input');
-    await shopeeInputs.nth(0).fill('e2e-app-id');
-    await shopeeInputs.nth(1).fill('e2e-app-secret');
+    // Preencher credenciais Shopee pelos placeholders
+    const appIdInput = page.locator('input[placeholder="Seu App ID da Shopee"]');
+    const secretInput = page.locator('input[placeholder="Seu App Secret da Shopee"]');
+    await appIdInput.fill('e2e-app-id');
+    await secretInput.fill('e2e-app-secret');
 
     // Clicar em Salvar
     await page.click('button:has-text("Salvar")');
@@ -201,7 +202,7 @@ test.describe('UI - Dashboard', () => {
     await page.waitForSelector('text=🧪 Testar Conversão');
 
     // Preencher URL e testar
-    const testInput = page.locator('text=🧪 Testar Conversão').locator('..').locator('input');
+    const testInput = page.locator('input[placeholder="Cole a URL do produto (Shopee ou ML)..."]');
     await testInput.fill('https://shopee.com.br/product/123');
 
     await page.click('button:has-text("Testar")');
