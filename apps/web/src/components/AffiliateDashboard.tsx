@@ -10,6 +10,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { WppConnection } from './WppConnection.tsx';
+import { GroupOfferAutocomplete } from './GroupOfferAutocomplete.tsx';
+import { GroupDestAutocomplete } from './GroupDestAutocomplete.tsx';
 
 interface ProfileData {
   id: number;
@@ -161,6 +163,13 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
   const [testError, setTestError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
 
+  // Grupos WhatsApp — Configuração de espelhamento
+  const [offerGroups, setOfferGroups] = useState<{ jid: string; name: string }[]>([]);
+  const [destGroup, setDestGroup] = useState<{ jid: string; name: string } | null>(null);
+  const [savingGroups, setSavingGroups] = useState(false);
+  const [groupSaveMessage, setGroupSaveMessage] = useState<string | null>(null);
+  const [groupSaveError, setGroupSaveError] = useState<string | null>(null);
+
   const loadProfile = useCallback(async () => {
     try {
       const res = await fetch('/api/affiliate/profile', {
@@ -224,6 +233,47 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
       setTestError('Erro de conexão');
     }
     setTesting(false);
+  }
+
+  async function handleSaveGroups() {
+    // Validação
+    setGroupSaveError(null);
+    setGroupSaveMessage(null);
+
+    if (offerGroups.length === 0) {
+      setGroupSaveError('Selecione pelo menos 1 grupo de ofertas.');
+      return;
+    }
+
+    if (!destGroup) {
+      setGroupSaveError('Selecione exatamente 1 grupo de destino.');
+      return;
+    }
+
+    setSavingGroups(true);
+    try {
+      const res = await fetch('/api/affiliate/groups-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          sourceGroups: offerGroups,
+          targetGroup: destGroup,
+        }),
+      });
+      const data = await res.json() as { success: boolean; message?: string; error?: string };
+      if (data.success) {
+        setGroupSaveMessage(data.message || 'Espelhamento configurado com sucesso');
+        setTimeout(() => setGroupSaveMessage(null), 4000);
+      } else {
+        setGroupSaveError(data.error || 'Erro ao salvar configuração');
+      }
+    } catch {
+      setGroupSaveError('Erro de conexão ao salvar configuração');
+    }
+    setSavingGroups(false);
   }
 
   function handleConnectML() {
@@ -496,6 +546,111 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
                 >
                   Copiar
                 </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Card: Grupos de Ofertas (1-3) */}
+        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>📢 Grupos de Ofertas</span>
+            <span style={{ fontSize: '0.8rem', color: offerGroups.length > 0 ? '#4ade80' : '#f87171' }}>
+              {offerGroups.length > 0 ? `${offerGroups.length} selecionado(s)` : 'Nenhum selecionado'}
+            </span>
+          </div>
+          <div style={{ padding: '1rem 1.25rem' }}>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+              Selecione de 1 a 3 grupos onde as ofertas serão monitoradas.
+            </div>
+            <GroupOfferAutocomplete
+              token={token}
+              value={offerGroups}
+              onChange={setOfferGroups}
+            />
+          </div>
+        </div>
+
+        {/* Card: Grupo de Destino (exatamente 1) */}
+        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>🎯 Grupo de Destino</span>
+            <span style={{ fontSize: '0.8rem', color: destGroup ? '#4ade80' : '#f87171' }}>
+              {destGroup ? 'Selecionado' : 'Nenhum'}
+            </span>
+          </div>
+          <div style={{ padding: '1rem 1.25rem' }}>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+              Selecione exatamente 1 grupo para onde as ofertas serão espelhadas.
+            </div>
+            <GroupDestAutocomplete
+              token={token}
+              value={destGroup}
+              onChange={setDestGroup}
+            />
+          </div>
+        </div>
+
+        {/* Card: Confirmar Configuração */}
+        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #334155' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>✅ Confirmar Espelhamento</span>
+          </div>
+          <div style={{ padding: '1rem 1.25rem' }}>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
+              {offerGroups.length > 0 && destGroup ? (
+                <>Monitorando <strong>{offerGroups.length}</strong> grupo(s) de ofertas → enviando para <strong>{destGroup.name}</strong></>
+              ) : (
+                <>Configure os grupos acima para ativar o espelhamento de ofertas.</>
+              )}
+            </div>
+
+            <button
+              onClick={handleSaveGroups}
+              disabled={savingGroups || offerGroups.length === 0 || !destGroup}
+              style={{
+                padding: '0.6rem 1.25rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: savingGroups || offerGroups.length === 0 || !destGroup
+                  ? '#6366f180' : '#6366f1',
+                color: 'white',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                cursor: savingGroups || offerGroups.length === 0 || !destGroup
+                  ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {savingGroups ? 'Salvando...' : 'Confirmar'}
+            </button>
+
+            {/* Erro */}
+            {groupSaveError && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem 1rem',
+                background: '#7f1d1d',
+                borderRadius: '8px',
+                border: '1px solid #991b1b',
+                color: '#fca5a5',
+                fontSize: '0.85rem',
+              }}>
+                ❌ {groupSaveError}
+              </div>
+            )}
+
+            {/* Sucesso */}
+            {groupSaveMessage && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem 1rem',
+                background: '#14532d',
+                borderRadius: '8px',
+                border: '1px solid #22c55e40',
+                color: '#4ade80',
+                fontSize: '0.85rem',
+              }}>
+                ✅ {groupSaveMessage}
               </div>
             )}
           </div>

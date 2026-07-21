@@ -1,5 +1,5 @@
 import { Elysia } from 'elysia';
-import { UserRepository, UserCredentialsRepository, MlAffiliateRepository } from '@omestre/db';
+import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { convertShopeeUrlWithCredentials } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
@@ -10,6 +10,7 @@ import { generateViaUrlParams } from '@omestre/converters';
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
 const mlRepo = new MlAffiliateRepository();
+const affiliatesRepo = new AffiliatesRepository();
 
 export const affiliateRoutes = new Elysia()
   .use(createJwtPlugin())
@@ -74,6 +75,48 @@ export const affiliateRoutes = new Elysia()
     });
 
     return { success: true, message: 'Credenciais salvas' };
+  })
+
+  // ─── POST /api/affiliate/groups-config ──────────────────────────
+  .post('/api/affiliate/groups-config', async ({ jwt, request, set, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const { sourceGroups, targetGroup } = body as {
+      sourceGroups?: { jid: string; name: string }[];
+      targetGroup?: { jid: string; name: string };
+    };
+
+    // Validações
+    if (!sourceGroups || sourceGroups.length === 0) {
+      return { success: false, error: 'Selecione pelo menos 1 grupo de ofertas.' };
+    }
+
+    if (sourceGroups.length > 3) {
+      return { success: false, error: 'Máximo de 3 grupos de ofertas.' };
+    }
+
+    if (!targetGroup || !targetGroup.jid) {
+      return { success: false, error: 'Selecione exatamente 1 grupo de destino.' };
+    }
+
+    const evolutionInstanceId = `user-${auth.userId}`;
+
+    const affiliate = await affiliatesRepo.upsertGroups(evolutionInstanceId, {
+      sourceGroups,
+      targetGroups: [targetGroup],
+    });
+
+    return {
+      success: true,
+      message: 'Espelhamento configurado com sucesso',
+      affiliateId: affiliate.id,
+      sourceGroups,
+      targetGroup,
+    };
   })
 
   // ─── POST /api/affiliate/test-conversion ──────────────────────────

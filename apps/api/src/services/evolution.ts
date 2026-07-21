@@ -212,6 +212,68 @@ export async function deleteInstance(instanceName: string): Promise<{
 }
 
 /**
+ * Busca todos os grupos do WhatsApp que a instância participa.
+ *
+ * Evolution API v2: POST /chat/fetchAllGroups/{instanceName}
+ * Retorna lista de grupos com jid, name, etc.
+ */
+export async function fetchGroups(instanceName: string): Promise<{
+  success: boolean;
+  groups?: { jid: string; name: string }[];
+  error?: string;
+}> {
+  try {
+    const res = await fetch(
+      `${EVOLUTION_API_URL}/chat/fetchAllGroups/${instanceName}`,
+      {
+        method: 'POST',
+        headers: headers(),
+      },
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+    }
+
+    const raw = (await res.json()) as Record<string, unknown>;
+
+    // Evolution API v2 retorna o objeto no formato:
+    // { [instanceName]: [ { jid, name, ... }, ... ] }
+    // ou direto um array
+    let groupList: unknown[] = [];
+
+    if (Array.isArray(raw)) {
+      groupList = raw;
+    } else {
+      // Tenta extrair do campo com nome da instância
+      for (const key of Object.keys(raw)) {
+        if (Array.isArray(raw[key])) {
+          groupList = raw[key] as unknown[];
+          break;
+        }
+      }
+    }
+
+    const groups = groupList
+      .map((g) => {
+        const item = g as Record<string, unknown>;
+        const jid = String(item.jid ?? item.id ?? '');
+        const name = String(item.name ?? item.subject ?? '');
+        return { jid, name };
+      })
+      .filter((g) => g.jid && g.name);
+
+    return { success: true, groups };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Erro ao buscar grupos',
+    };
+  }
+}
+
+/**
  * Logout/logout da instância sem deletar.
  */
 export async function logoutInstance(instanceName: string): Promise<{
