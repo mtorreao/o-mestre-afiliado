@@ -33,6 +33,7 @@ export interface MlAffiliateUpsertData {
   refreshToken: string;
   expiresIn: number;   // segundos (vem do OAuth)
   connectedAt?: Date;
+  userId?: number | null;
   meliid?: string | null;
   melitat?: string | null;
   sessionCookies?: string | null;
@@ -85,6 +86,20 @@ export class MlAffiliateRepository {
   }
 
   /**
+   * Busca um afiliado ML pelo platform userId (nossa tabela users).
+   */
+  async findByPlatformUserId(userId: number): Promise<MlAffiliate | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(mlAffiliates)
+      .where(eq(mlAffiliates.userId, userId))
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
+  /**
    * Cria ou atualiza um afiliado (usado no callback OAuth).
    *
    * Se já existir, preserva meliid/melitat/sessionCookies existentes
@@ -97,15 +112,18 @@ export class MlAffiliateRepository {
     const expiresAt = new Date(Date.now() + data.expiresIn * 1000);
 
     if (existing) {
+      const updateData: Record<string, unknown> = {
+        nickname: data.nickname,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        expiresAt,
+        lastUsedAt: now,
+      };
+      if (data.userId !== undefined) updateData.userId = data.userId;
+
       const [row] = await db
         .update(mlAffiliates)
-        .set({
-          nickname: data.nickname,
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-          expiresAt,
-          lastUsedAt: now,
-        })
+        .set(updateData)
         .where(eq(mlAffiliates.mlUserId, data.mlUserId))
         .returning();
 
@@ -122,6 +140,7 @@ export class MlAffiliateRepository {
         expiresAt,
         connectedAt: data.connectedAt ?? now,
         lastUsedAt: now,
+        userId: data.userId ?? null,
         meliid: data.meliid ?? null,
         melitat: data.melitat ?? null,
         sessionCookies: data.sessionCookies ?? null,

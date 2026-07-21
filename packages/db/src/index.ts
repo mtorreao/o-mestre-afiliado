@@ -18,6 +18,8 @@ export {
   reflectedOffers,
   marketplaceEnum,
   offerStatusEnum,
+  users,
+  userCredentials,
 } from './schema/index.ts';
 
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
@@ -32,3 +34,9 @@ export type {
   MlAffiliateUpsertData,
   MlAffiliatePatchData,
 } from './repository/mlAffiliates.repository.ts';
+
+export { UserRepository } from './repository/users.repository.ts';
+export type { User, NewUser, UserPublic } from './repository/users.repository.ts';
+
+export { UserCredentialsRepository } from './repository/userCredentials.repository.ts';
+export type { UserCredentials, NewUserCredentials, UserCredentialsInput } from './repository/userCredentials.repository.ts';

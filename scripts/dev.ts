@@ -90,6 +90,7 @@ const processes = new Map<string, Subprocess>();
 const readTasks: Promise<void>[] = [];
 let lockDir: string | null = null;
 let cleanExit = false;
+let cleaningUp = false;
 let startedInfra = false;
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -109,6 +110,11 @@ function isPortInUse(host: string, port: number): Promise<boolean> {
     });
     server.listen(port, host);
   });
+}
+
+/** Retorna true se existe pelo menos um processo VIVO escutando na porta. */
+function portHasLiveProcess(port: number): boolean {
+  return pidsOnPort(port).some((pid) => isAlive(pid));
 }
 
 /** Retorna PIDs escutando numa porta via netstat. */
@@ -132,7 +138,13 @@ function isAlive(pid: number): boolean {
   if (isWin) {
     const r = Bun.spawnSync(['tasklist', '/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH']);
     const t = r.stdout.toString().trim();
-    return t.length > 0 && !t.includes('INFO: No tasks');
+    // Quando o processo existe, o CSV contém o PID na 2ª coluna:
+    //   "bun.exe","29760","Console",...
+    // Quando não existe, retorna mensagem localizada (diferente por idioma):
+    //   "INFORMAÇÕES: nenhuma tarefa em execução..." (pt-BR)
+    //   "INFO: No tasks are running..." (en-US)
+    // Verificar se o PID aparece no output funciona em qualquer idioma.
+    return t.includes(String(pid));
   }
   try {
     return process.kill(pid, 0);
@@ -150,6 +162,51 @@ function killByPid(pid: number): void {
     try {
       process.kill(pid, 'SIGTERM');
     } catch { /* already dead */ }
+  }
+}
+
+/** Retorna o PID pai de um processo no Windows, ou null se não conseguir. */
+function getParentPid(pid: number): number | null {
+  try {
+    // wmic ainda disponível no Windows 10 (deprecated mas funcional)
+    const r = Bun.spawnSync([
+      'wmic', 'process', 'where', `ProcessId=${pid}`,
+      'get', 'ParentProcessId', '/format:csv',
+    ], { timeout: 5000 });
+    const out = r.stdout.toString().trim();
+    // Formato CSV: Node,ParentProcessId\n<hostname>,<ppid>
+    const lines = out.split('\n').filter(l => l.includes(','));
+    if (lines.length > 0) {
+      const ppid = Number(lines[lines.length - 1].split(',')[1]?.trim());
+      return isNaN(ppid) || ppid === 0 ? null : ppid;
+    }
+  } catch { /* wmic indisponível */ }
+  return null;
+}
+
+/** Mata um PID e, se ele for filho de bun, mata o bun --watch pai também. */
+function killByPidWithParent(pid: number): void {
+  // PRIMEiro descobre o pai (enquanto o filho ainda está vivo)
+  const parentPid = getParentPid(pid);
+  let isParentBun = false;
+  if (parentPid && isAlive(parentPid)) {
+    const tasklist = Bun.spawnSync([
+      'tasklist', '/FI', `PID eq ${parentPid}`, '/FO', 'CSV', '/NH',
+    ]);
+    const name = tasklist.stdout.toString().trim().split(',')[0]?.replace(/"/g, '');
+    const img = name?.toLowerCase() ?? '';
+    isParentBun = img === 'bun.exe' || img === 'node.exe';
+  }
+
+  // Mata o pai primeiro (bun --watch), com taskkill /T que derruba
+  // a árvore inteira — assim o pai não consegue restartar o filho.
+  if (isParentBun) {
+    killByPid(parentPid!);
+  }
+
+  // DEPOIS mata o filho (se ainda estiver vivo)
+  if (isAlive(pid)) {
+    killByPid(pid);
   }
 }
 
@@ -223,15 +280,22 @@ function infraIsRunning(): boolean {
   const out = (r.stdout ?? '').toString().trim();
   const lines = out.split('\n').filter(Boolean);
   if (lines.length === 0) return false;
+
+  const expectedServices = new Set(['postgres', 'redis', 'evolution-api']);
+  const found = new Set<string>();
+
   for (const line of lines) {
     try {
       const s = JSON.parse(line);
       if (s.State !== 'running') return false;
+      found.add(s.Service as string);
     } catch {
       return false;
     }
   }
-  return true;
+
+  // Garante que todos os serviços esperados estão rodando
+  return Array.from(expectedServices).every((s) => found.has(s));
 }
 
 async function ensureInfraRunning(): Promise<boolean> {
@@ -246,6 +310,12 @@ async function ensureInfraRunning(): Promise<boolean> {
   }
 
   console.log('  🚀 [infra] Iniciando PostgreSQL, Redis e Evolution API (docker compose)...');
+
+  // Limpa containers órfãos ou de projetos anteriores que podem conflitar
+  // com os container_names do compose atual (ex: omestre_postgres criado
+  // por --project-name diferente).
+  composeCmd(['down', '--remove-orphans', '--timeout', '5']);
+
   const up = composeCmd(['up', '-d', '--wait']);
 
   if (up.exitCode !== 0) {
@@ -287,29 +357,38 @@ function startOutputReader(
     : (s: string) => process.stdout.write(s);
   const color = colors[label] ?? '';
   const prefix = `  ${color}[${label}]${RESET}`;
-  const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buf = '';
 
-  const task = (async () => {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          writeFn(`${prefix} ${line}\n`);
-        }
+  // Usa WritableStream em vez de ReadableStreamDefaultReader para que
+  // os métodos close()/abort() garantam o flush do buf residual antes
+  // da promise do pipeTo() resolver — essencial para logs não aparecerem
+  // depois da mensagem de finalização.
+  const writable = new WritableStream<Uint8Array>({
+    write(chunk) {
+      if (cleaningUp) return;
+      buf += decoder.decode(chunk, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        writeFn(`${prefix} ${line}\n`);
       }
-      if (buf) writeFn(`${prefix} ${buf}\n`);
-    } catch {
-      // stream fechou durante cleanup — ok
-    }
-  })();
+    },
+    close() {
+      if (!cleaningUp && buf) writeFn(`${prefix} ${buf}\n`);
+    },
+    abort() {
+      if (!cleaningUp && buf) writeFn(`${prefix} ${buf}\n`);
+    },
+  });
 
-  readTasks.push(task);
+  // pipeTo() resolve DEPOIS que close()/abort() executarem, garantindo
+  // que todo o output foi escrito antes da promise ser considerada settled.
+  const pipePromise = stream.pipeTo(writable).catch(() => {
+    // Rejeição esperada quando o pipe é abortado — já tratamos em abort()
+  });
+
+  readTasks.push(pipePromise);
 }
 
 function spawnPrefixed(
@@ -353,6 +432,7 @@ function terminate(label: string, proc: Subprocess): void {
 async function cleanup(exitCode: number): Promise<void> {
   if (cleanExit) return;
   cleanExit = true;
+  cleaningUp = true;
 
   console.log('\n⏳ Parando processos...');
 
@@ -365,26 +445,33 @@ async function cleanup(exitCode: number): Promise<void> {
     }
   }
 
-  // 2. Aguarda as tasks de leitura encerrarem (com timeout)
-  await Promise.race([
-    Promise.allSettled(readTasks),
-    new Promise((r) => setTimeout(r, 3000)),
-  ]);
+  // 2. Aguarda todos os processos realmente encerrarem no SO e os streams
+  //    fecharem — sem isso o reader task pode continuar processando buffers
+  //    residuais e escrevendo logs DEPOIS da mensagem de finalização.
+  await Promise.allSettled(
+    Array.from(processes.values()).map((p) => p.exited),
+  );
+  // Dá um tick extra pro event loop processar o fechamento dos streams
+  await new Promise((r) => setImmediate(r));
 
-  // 3. Libera o lock
+  // 3. Aguarda as tasks de leitura finalizarem (streams já fecharam,
+  //     então os readers resolvem imediatamente com done=true + flush do buf)
+  await Promise.allSettled(readTasks);
+
+  // 4. Libera o lock
   await releaseLock();
 
-  // 4. Derruba containers Docker (a menos que KEEP_INFRA=1)
+  // 5. Derruba containers Docker (a menos que KEEP_INFRA=1)
   if (!KEEP_INFRA) {
     stopInfra();
   } else {
     console.log('  [infra] KEEP_INFRA=1, containers mantidos rodando');
   }
 
-  // 5. Verificação final: portas livres?
+  // 6. Verificação final: portas livres?
   const busy: string[] = [];
   for (const port of [API_PORT, WEB_PORT]) {
-    if (await isPortInUse(HOST, port)) {
+    if (await portHasLiveProcess(port)) {
       busy.push(`porta ${port}`);
     }
   }
@@ -416,29 +503,26 @@ async function main(): Promise<void> {
   // ── 1. Stale locks ──
   await cleanStaleLocks();
 
-  // ── 2. Lock pre-check ──
+  // ── 2. Lock pre-check + auto-kill ──
   const hostSlug = HOST.replace(/[:.]/g, '-');
   const reqLock = path.join(LOCK_ROOT, `dev-${hostSlug}-${API_PORT}.lockdir`);
 
   if (!SKIP_LOCK && existsSync(reqLock)) {
-    const heldPid = await readFile(path.join(reqLock, 'pid'), 'utf-8').catch(() => '?');
-    const heldHost = await readFile(path.join(reqLock, 'host'), 'utf-8').catch(() => '?');
-    const heldPort = await readFile(path.join(reqLock, 'apiport'), 'utf-8').catch(() => '?');
-    console.error(`✗ Já existe um dev server rodando em ${heldHost.trim()}:${heldPort.trim()}`);
-    console.error(`  Lock:   ${reqLock}`);
-    console.error(`  PID:    ${heldPid.trim()}`);
-    if (isAlive(Number(heldPid.trim()))) {
-      console.error('  Como matar:');
-      console.error(`    taskkill /F /PID ${heldPid.trim()}`);
-    } else {
-      console.error('  (PID não está mais vivo — lock stale. Remova com:');
-      console.error(`    rm -rf ${reqLock}`);
+    const heldPid = await readFile(path.join(reqLock, 'pid'), 'utf-8').catch(() => '');
+    const heldPidNum = Number(heldPid.trim());
+
+    if (heldPidNum && isAlive(heldPidNum)) {
+      console.log(`  ⚠ Kill automático: dev server anterior (PID ${heldPidNum}) usando ${reqLock}`);
+      killByPid(heldPidNum);
     }
-    console.error(`  Ou passe outra porta: API_PORT=${API_PORT + 1} bun run scripts/dev.ts`);
-    process.exit(1);
+
+    // Remove lock dir (vivo ou stale) — se o kill acima funcionou o cleanup do outro
+    // processo pode ter removido, então ignore erro.
+    await rm(reqLock, { recursive: true, force: true }).catch(() => {});
+    console.log(`  🧹 Lock removido: ${reqLock}`);
   }
 
-  // ── 3. Kill previous processes ──
+  // ── 3. Kill previous processes (portas) ──
   console.log('🧹 Verificando portas ocupadas...');
 
   let killedAny = false;
@@ -446,7 +530,7 @@ async function main(): Promise<void> {
     const pids = pidsOnPort(port);
     for (const pid of pids) {
       if (isAlive(pid)) {
-        killByPid(pid);
+        killByPidWithParent(pid);
         killedAny = true;
       }
     }
@@ -456,13 +540,27 @@ async function main(): Promise<void> {
     await new Promise((r) => setTimeout(r, 1500));
   }
 
-  // ── 4. Port check final ──
-  for (const [port, name] of [[API_PORT, 'API'], [WEB_PORT, 'WEB']] as const) {
-    if (await isPortInUse(HOST, port)) {
-      console.error(`✗ Porta ${port} (${name}) já está em uso por outro processo.`);
-      console.error(`  Descubra quem: netstat -ano | grep :${port}`);
-      console.error(`  Mate com:      taskkill //F //PID <PID>`);
-      console.error(`  Ou defina:     ${name}_PORT=<porta> bun run scripts/dev.ts`);
+  // ── 4. Port check final (com retry + kill do pai) ──
+  // O kill inicial pode matar só o servidor filho, mas o bun --watch pai
+  // sobrevive e restarta o servidor. Se a porta ainda estiver ocupada,
+  // sobe na árvore de processos e mata o pai também.
+  for (const [port, label] of [[API_PORT, 'API'], [WEB_PORT, 'WEB']] as const) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (!(await portHasLiveProcess(port))) break;
+
+      if (attempt < 2) {
+        console.log(`  ⚠ Porta ${port} ainda ocupada (tentativa ${attempt + 2}) — subindo na árvore...`);
+        const pids = pidsOnPort(port);
+        for (const pid of pids) {
+          if (isAlive(pid)) killByPidWithParent(pid);
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+
+    if (await portHasLiveProcess(port)) {
+      console.error(`✗ Porta ${port} (${label}) continua ocupada após 3 tentativas.`);
+      console.error(`  Para debug: netstat -ano | grep :${port}`);
       process.exit(1);
     }
   }

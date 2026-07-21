@@ -13,7 +13,9 @@ import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
 import { convertUrl, getAccessToken, generateViaUrlParams, generateShortAffiliateLink } from '@omestre/converters';
 import { detectMarketplace } from '@omestre/shared';
-import { MlAffiliateRepository } from '@omestre/db';
+import { MlAffiliateRepository, UserRepository, UserCredentialsRepository } from '@omestre/db';
+import { authRoutes } from './modules/auth/auth.routes.ts';
+import { affiliateRoutes } from './modules/affiliate/affiliate.routes.ts';
 
 const PORT = parseInt(process.env.API_PORT || '5442', 10);
 const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
@@ -41,6 +43,8 @@ const app = new Elysia()
       },
     }),
   )
+  .use(authRoutes)
+  .use(affiliateRoutes)
   .get('/', () => ({
     service: 'O Mestre Afiliado API',
     version: '1.0.0',
@@ -109,15 +113,21 @@ const app = new Elysia()
   )
 
   // ─── ML OAuth — Iniciar fluxo ────────────────────────────────────────
-  .get('/api/ml/auth', ({ redirect }) => {
+  .get('/api/ml/auth', async ({ query, redirect }) => {
     if (!ML_CLIENT_ID) {
       return { success: false, error: 'ML_CLIENT_ID não configurado no .env' };
     }
+
+    // Se veio da plataforma (usuário logado), passa userId como state
+    // para vincular a conta ML após o callback
+    const state = (query as { userId?: string }).userId || '';
+
     const authUrl =
       `https://auth.mercadolivre.com.br/authorization` +
       `?response_type=code` +
       `&client_id=${ML_CLIENT_ID}` +
-      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+      (state ? `&state=${encodeURIComponent(state)}` : '');
     return redirect(authUrl);
   })
 
@@ -160,6 +170,11 @@ const app = new Elysia()
       // Busca dados existentes para preservar meliid/melitat/sessionCookies
       const existing = await mlRepo.findByUserId(mlUserId);
 
+      // Se veio da plataforma (state = userId), vincula ao usuário
+      const platformUserId = (query as { state?: string }).state
+        ? parseInt((query as { state?: string }).state!, 10)
+        : existing?.userId ?? undefined;
+
       await mlRepo.upsert({
         mlUserId,
         nickname,
@@ -167,6 +182,7 @@ const app = new Elysia()
         refreshToken: tokenRes.refresh_token,
         expiresIn: tokenRes.expires_in,
         connectedAt: existing?.connectedAt,
+        userId: platformUserId && !isNaN(platformUserId) ? platformUserId : undefined,
         meliid: existing?.meliid ?? null,
         melitat: existing?.melitat ?? null,
         sessionCookies: existing?.sessionCookies ?? null,
@@ -415,7 +431,7 @@ const app = new Elysia()
     }
   })
 
-  // ─── ML — Validar cookies de sessão ─────────────────────────────────
+  // ─── ML — Validar cookies e extrair melitat ──────────────────────────
   .post(
     '/api/ml/affiliates/:mlUserId/validate-cookies',
     async ({ params, set }) => {
@@ -461,10 +477,26 @@ const app = new Elysia()
           };
         }
 
+        // Extrair tag_in_use do HTML
+        const html = await res.text();
+        const tagMatch = html.match(/tag_in_use["']:\s*["']([^"']+)/i);
+        let detectedMelitat: string | null = null;
+
+        if (tagMatch?.[1]) {
+          detectedMelitat = tagMatch[1];
+
+          // Se o melitat atual está vazio ou diferente, salva automaticamente
+          if (!affiliate.melitat || affiliate.melitat !== detectedMelitat) {
+            await mlRepo.patch(mlUserId, { melitat: detectedMelitat });
+          }
+        }
+
         return {
           success: true,
           valid: true,
           message: 'Cookies válidos! Link curto disponível.',
+          melitat: detectedMelitat,
+          nickname: affiliate.nickname,
         };
       } catch (err) {
         return {

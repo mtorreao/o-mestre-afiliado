@@ -3,16 +3,12 @@ import {
   integer,
   jsonb,
   pgEnum,
-  pgSchema,
   serial,
   text,
   timestamp,
 } from 'drizzle-orm/pg-core';
-
-/**
- * Schema "omestre" — isolado do schema "evolution_api" usado pela Evolution API.
- */
-export const omestre = pgSchema('omestre');
+import { omestre } from './omestre.ts';
+import { users } from './users.ts';
 
 // ─── Enums ──────────────────────────────────────────────────────────
 
@@ -57,6 +53,9 @@ export const affiliates = omestre.table('affiliates', {
 
 export const mlAffiliates = omestre.table('ml_affiliates', {
   id: serial('id').primaryKey(),
+
+  // Vínculo com usuário da plataforma
+  userId: integer('user_id').references(() => users.id),
 
   // ML user ID (vem do OAuth)
   mlUserId: text('ml_user_id').notNull().unique(),
@@ -114,3 +113,8 @@ export const reflectedOffers = omestre.table('reflected_offers', {
 
 // ─── Índices ────────────────────────────────────────────────────────
 // Índices serão adicionados via Drizzle quando necessário.
+
+// ─── Re-export dos schemas auxiliares ───────────────────────────────
+export { omestre } from './omestre.ts';
+export { users } from './users.ts';
+export { userCredentials } from './userCredentials.ts';

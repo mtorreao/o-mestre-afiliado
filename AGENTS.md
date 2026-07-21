@@ -250,7 +250,7 @@ Acesso via `MlAffiliateRepository` em `packages/db/src/repository/mlAffiliates.r
 Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch()`, `refreshTokens()`, `touch()`, `delete()`.
 
 > O arquivo `data/ml-affiliates.json` ainda existe como legado.  
-> O script `scripts/seed_ml_affiliates.py` fez a migração inicial.  
+> O script `bun run seed:ml` (em `apps/api/src/seed-ml.ts`) faz a migração inicial.  
 > Dados novos são lidos/escritos exclusivamente via PostgreSQL.
 
 ### Formatos de link gerados

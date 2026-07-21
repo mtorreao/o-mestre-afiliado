@@ -15,6 +15,13 @@
       "when": 1784600859413,
       "tag": "0001_supreme_katie_power",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784602798142,
+      "tag": "0002_exotic_war_machine",
+      "breakpoints": true
     }
   ]
 }

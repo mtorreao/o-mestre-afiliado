@@ -86,6 +86,95 @@ export async function generateShortLink(originUrl: string): Promise<string | nul
 
 /**
  * Converte uma URL de produto Shopee em link de afiliado
+ * usando credenciais passadas explicitamente.
+ */
+export async function convertShopeeUrlWithCredentials(
+  url: string,
+  credentials: ShopeeCredentials,
+): Promise<ConversionResult> {
+  try {
+    const marketplace = detectMarketplace(url);
+
+    if (marketplace !== 'shopee') {
+      return {
+        success: false,
+        originalUrl: url,
+        affiliateUrl: null,
+        marketplace,
+        method: 'unknown',
+        error: 'URL não é da Shopee',
+      };
+    }
+
+    const { appId, secret } = credentials;
+    const body = JSON.stringify({
+      query: `mutation {
+      generateShortLink(input: { originUrl: "${url}" }) {
+        shortLink
+      }
+    }`,
+    });
+
+    const headers = generateAuthHeaders(appId, secret, body);
+
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers,
+      body,
+    });
+
+    const data = await res.json() as Record<string, unknown>;
+    const dataNode = data?.data as Record<string, unknown> | undefined;
+    const generateNode = dataNode?.generateShortLink as Record<string, unknown> | undefined;
+    const shortLink = generateNode?.shortLink as string | undefined;
+
+    if (shortLink) {
+      return {
+        success: true,
+        originalUrl: url,
+        affiliateUrl: shortLink,
+        marketplace: 'shopee',
+        method: 'api',
+      };
+    }
+
+    // Erro da API
+    if (data?.errors) {
+      const errors = data.errors as Array<{ message: string }>;
+      const err = errors[0];
+      return {
+        success: false,
+        originalUrl: url,
+        affiliateUrl: null,
+        marketplace: 'shopee',
+        method: 'api',
+        error: err?.message || 'Erro na API Shopee',
+      };
+    }
+
+    return {
+      success: false,
+      originalUrl: url,
+      affiliateUrl: null,
+      marketplace: 'shopee',
+      method: 'api',
+      error: 'Falha ao gerar link de afiliado',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      originalUrl: url,
+      affiliateUrl: null,
+      marketplace: 'shopee',
+      method: 'api',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Converte uma URL de produto Shopee em link de afiliado
+ * (usa credenciais do .env).
  */
 export async function convertShopeeUrl(url: string): Promise<ConversionResult> {
   try {

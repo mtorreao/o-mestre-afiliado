@@ -141,7 +141,25 @@ async function importCookies() {
     const data = await res.json();
 
     if (data.success) {
-      showStatus(`✅ Cookies importados com sucesso para ${data.mlUserId}!`, 'success');
+      // Tentar extrair melitat diretamente da página do linkbuilder
+      showStatus(`✅ Cookies salvos! Detectando etiqueta...`, 'loading');
+      try {
+        const tag = await detectMelitat();
+        if (tag) {
+          // Salvar melitat no servidor
+          await fetch(`${apiUrl}/api/ml/affiliates/${selectedUserId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ melitat: tag }),
+          });
+          showStatus(`✅ Etiqueta "${tag}" detectada e salva!`, 'success');
+        } else {
+          showStatus(`✅ Cookies importados! Etiqueta: configure manualmente.`, 'success');
+        }
+      } catch {
+        showStatus(`✅ Cookies importados para ${data.mlUserId}!`, 'success');
+      }
+
       // Update the select option to show the 🔗 badge
       const affiliate = affiliates.find((a) => a.mlUserId === selectedUserId);
       if (affiliate) {
@@ -178,4 +196,41 @@ function updateSelectOptions() {
     sel.appendChild(opt);
   });
   sel.value = currentVal;
+}
+
+/**
+ * Extrai o melitat (etiqueta de afiliado) da página do linkbuilder.
+ * Usa uma tab ativa do ML pra executar um script que lê o tag_in_use.
+ */
+async function detectMelitat() {
+  // Procura uma tab aberta do ML
+  const tabs = await chrome.tabs.query({ url: ['*://*.mercadolivre.com.br/*', '*://*.mercadolibre.com/*'] });
+  if (tabs.length === 0) return null;
+
+  const tab = tabs[0];
+
+  try {
+    // Navega a tab pra página do linkbuilder (se já não estiver)
+    const targetUrl = 'https://www.mercadolivre.com.br/afiliados/linkbuilder';
+    if (!tab.url?.includes('linkbuilder')) {
+      await chrome.tabs.update(tab.id, { url: targetUrl });
+      // Espera a página carregar
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+
+    // Executa script pra extrair o tag_in_use do HTML
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        // Procura no HTML o tag_in_use
+        const html = document.documentElement.innerHTML;
+        const match = html.match(/tag_in_use["']:\s*["']([^"']+)/i);
+        return match ? match[1] : null;
+      },
+    });
+
+    return results?.[0]?.result || null;
+  } catch {
+    return null;
+  }
 }

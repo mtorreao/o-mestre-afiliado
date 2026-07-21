@@ -5,6 +5,7 @@
 export {
   generateShortLink,
   convertShopeeUrl,
+  convertShopeeUrlWithCredentials,
 } from './shopee.ts';
 export type { ShopeeCredentials } from './shopee.ts';
 
