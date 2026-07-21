@@ -23,7 +23,7 @@ function getConnectionUrl(): string {
   const port = process.env.POSTGRES_PORT ? String(process.env.POSTGRES_PORT) : '5443';
   const user = process.env.POSTGRES_USERNAME || 'evolution';
   const password = process.env.POSTGRES_PASSWORD || 'evolution_pass';
-  const database = process.env.POSTGRES_DATABASE || 'evolution_db';
+  const database = process.env.POSTGRES_DATABASE || 'omestre_db';
   const schema = process.env.POSTGRES_SCHEMA || 'omestre';
 
   return `postgresql://${user}:${password}@${host}:${port}/${database}?options=--search_path%3D${schema}`;

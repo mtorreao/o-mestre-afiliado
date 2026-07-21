@@ -188,7 +188,7 @@ Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
 | `POSTGRES_URL` | Não | api, worker (URI completa) |
 | `POSTGRES_HOST` | Não (default localhost) | api, worker |
 | `POSTGRES_PORT` | Não (default 5443) | api, worker |
-| `POSTGRES_DATABASE` | Não (default evolution_db) | api, worker |
+| `POSTGRES_DATABASE` | Não (default omestre_db) | api, worker |
 | `POSTGRES_USERNAME` | Não (default evolution) | api, worker |
 | `POSTGRES_PASSWORD` | Sim | api, worker |
 | `POSTGRES_SCHEMA` | Não (default omestre) | api, worker |

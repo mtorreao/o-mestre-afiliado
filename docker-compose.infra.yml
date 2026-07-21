@@ -15,7 +15,7 @@ services:
       - -c
       - listen_addresses=*
     environment:
-      POSTGRES_DB: ${POSTGRES_DATABASE:-evolution_db}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-omestre_db}
       POSTGRES_USER: ${POSTGRES_USERNAME:-evolution}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
     volumes:
@@ -25,7 +25,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-127.0.0.1:5443:5432}"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-evolution} -d ${POSTGRES_DATABASE:-evolution_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-evolution} -d ${POSTGRES_DATABASE:-omestre_db}"]
       interval: 10s
       timeout: 5s
       retries: 5

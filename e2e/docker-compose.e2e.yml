@@ -23,7 +23,7 @@ services:
       - -c
       - listen_addresses=*
     environment:
-      POSTGRES_DB: evolution_db
+      POSTGRES_DB: omestre_db
       POSTGRES_USER: evolution
       POSTGRES_PASSWORD: evolution_pass
     tmpfs: /var/lib/postgresql/data
@@ -32,7 +32,7 @@ services:
     networks:
       - e2e-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution_db"]
+      test: ["CMD-SHELL", "pg_isready -U evolution -d omestre_db"]
       interval: 3s
       timeout: 5s
       retries: 10
@@ -70,7 +70,7 @@ services:
       - e2e-net
     environment:
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: postgresql://evolution:evolution_pass@postgres-e2e:5432/evolution_db
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution_pass@postgres-e2e:5432/omestre_db
       DATABASE_ENABLE_SSL: "false"
       REDIS_URI: redis://redis-e2e:6379
       AUTHENTICATION_TYPE: apikey
@@ -88,7 +88,7 @@ services:
     networks:
       - e2e-net
     environment:
-      POSTGRES_URL: postgresql://evolution:evolution_pass@postgres-e2e:5432/evolution_db?options=--search_path%3Domestre
+      POSTGRES_URL: postgresql://evolution:evolution_pass@postgres-e2e:5432/omestre_db?options=--search_path%3Domestre
       API_PORT: "5442"
       JWT_SECRET: e2e-jwt-secret-for-testing-only
       ML_CLIENT_ID: ""
