@@ -10,6 +10,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { WppConnection } from './WppConnection.tsx';
+import { GroupOfferAutocomplete } from './GroupOfferAutocomplete.tsx';
+import { GroupDestAutocomplete } from './GroupDestAutocomplete.tsx';
 
 interface ProfileData {
   id: number;
@@ -161,6 +163,32 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
   const [testError, setTestError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
 
+  // Grupos WhatsApp — Configuração de espelhamento
+  const [offerGroups, setOfferGroups] = useState<{ jid: string; name: string }[]>([]);
+  const [destGroup, setDestGroup] = useState<{ jid: string; name: string } | null>(null);
+  const [savingGroups, setSavingGroups] = useState(false);
+  const [groupSaveMessage, setGroupSaveMessage] = useState<string | null>(null);
+  const [groupSaveError, setGroupSaveError] = useState<string | null>(null);
+
+  // Validação de ofertas
+  const [validating, setValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<{
+    validated: boolean;
+    report: {
+      overallRatio: number;
+      totalMessages: number;
+      totalValidOffers: number;
+      groups: {
+        groupName: string;
+        totalMessages: number;
+        validOffers: number;
+        ratio: number;
+        passed: boolean;
+        errors: string[];
+      }[];
+    };
+  } | null>(null);
+
   const loadProfile = useCallback(async () => {
     try {
       const res = await fetch('/api/affiliate/profile', {
@@ -224,6 +252,106 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
       setTestError('Erro de conexão');
     }
     setTesting(false);
+  }
+
+  async function handleSaveGroups() {
+    // Validação
+    setGroupSaveError(null);
+    setGroupSaveMessage(null);
+    setValidationResult(null);
+
+    if (offerGroups.length === 0) {
+      setGroupSaveError('Selecione pelo menos 1 grupo de ofertas.');
+      return;
+    }
+
+    if (!destGroup) {
+      setGroupSaveError('Selecione exatamente 1 grupo de destino.');
+      return;
+    }
+
+    // Passo 1: Validar as últimas 30 mensagens dos grupos de ofertas
+    setValidating(true);
+    try {
+      const validateRes = await fetch('/api/affiliate/validate-groups', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ sourceGroups: offerGroups }),
+      });
+      const validateData = await validateRes.json() as {
+        success: boolean;
+        validated: boolean;
+        report: {
+          overallRatio: number;
+          totalMessages: number;
+          totalValidOffers: number;
+          groups: {
+            groupName: string;
+            totalMessages: number;
+            validOffers: number;
+            ratio: number;
+            passed: boolean;
+            errors: string[];
+          }[];
+        };
+        error?: string;
+      };
+
+      if (!validateData.success) {
+        setGroupSaveError(validateData.error || 'Erro ao validar grupos');
+        setValidating(false);
+        return;
+      }
+
+      // Salva o resultado da validação (mesmo se falhar) para exibição
+      setValidationResult({
+        validated: validateData.validated,
+        report: validateData.report,
+      });
+
+      if (!validateData.validated) {
+        const pct = Math.round(validateData.report.overallRatio * 100);
+        setGroupSaveError(
+          `Validação de ofertas: apenas ${validateData.report.totalValidOffers} de ${validateData.report.totalMessages} mensagens contêm links de marketplaces válidos (${pct}%). Mínimo de 70% necessário. Os grupos selecionados podem não ser adequados para espelhamento.`
+        );
+        setValidating(false);
+        return;
+      }
+    } catch {
+      setGroupSaveError('Erro de conexão ao validar grupos');
+      setValidating(false);
+      return;
+    }
+    setValidating(false);
+
+    // Passo 2: Salvar configuração (validação passou)
+    setSavingGroups(true);
+    try {
+      const res = await fetch('/api/affiliate/groups-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          sourceGroups: offerGroups,
+          targetGroup: destGroup,
+        }),
+      });
+      const data = await res.json() as { success: boolean; message?: string; error?: string };
+      if (data.success) {
+        setGroupSaveMessage(data.message || 'Espelhamento configurado com sucesso');
+        setTimeout(() => setGroupSaveMessage(null), 4000);
+      } else {
+        setGroupSaveError(data.error || 'Erro ao salvar configuração');
+      }
+    } catch {
+      setGroupSaveError('Erro de conexão ao salvar configuração');
+    }
+    setSavingGroups(false);
   }
 
   function handleConnectML() {
@@ -496,6 +624,179 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
                 >
                   Copiar
                 </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Card: Grupos de Ofertas (1-3) */}
+        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>📢 Grupos de Ofertas</span>
+            <span style={{ fontSize: '0.8rem', color: offerGroups.length > 0 ? '#4ade80' : '#f87171' }}>
+              {offerGroups.length > 0 ? `${offerGroups.length} selecionado(s)` : 'Nenhum selecionado'}
+            </span>
+          </div>
+          <div style={{ padding: '1rem 1.25rem' }}>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+              Selecione de 1 a 3 grupos onde as ofertas serão monitoradas.
+            </div>
+            <GroupOfferAutocomplete
+              token={token}
+              value={offerGroups}
+              onChange={setOfferGroups}
+            />
+          </div>
+        </div>
+
+        {/* Card: Grupo de Destino (exatamente 1) */}
+        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>🎯 Grupo de Destino</span>
+            <span style={{ fontSize: '0.8rem', color: destGroup ? '#4ade80' : '#f87171' }}>
+              {destGroup ? 'Selecionado' : 'Nenhum'}
+            </span>
+          </div>
+          <div style={{ padding: '1rem 1.25rem' }}>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+              Selecione exatamente 1 grupo para onde as ofertas serão espelhadas.
+            </div>
+            <GroupDestAutocomplete
+              token={token}
+              value={destGroup}
+              onChange={setDestGroup}
+            />
+          </div>
+        </div>
+
+        {/* Card: Confirmar Configuração */}
+        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #334155' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>✅ Confirmar Espelhamento</span>
+          </div>
+          <div style={{ padding: '1rem 1.25rem' }}>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
+              {offerGroups.length > 0 && destGroup ? (
+                <>Monitorando <strong>{offerGroups.length}</strong> grupo(s) de ofertas → enviando para <strong>{destGroup.name}</strong></>
+              ) : (
+                <>Configure os grupos acima para ativar o espelhamento de ofertas.</>
+              )}
+            </div>
+
+            <button
+              onClick={handleSaveGroups}
+              disabled={savingGroups || validating || offerGroups.length === 0 || !destGroup}
+              style={{
+                padding: '0.6rem 1.25rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: savingGroups || validating || offerGroups.length === 0 || !destGroup
+                  ? '#6366f180' : '#6366f1',
+                color: 'white',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                cursor: savingGroups || validating || offerGroups.length === 0 || !destGroup
+                  ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {validating ? 'Validando ofertas...' : savingGroups ? 'Salvando...' : 'Confirmar'}
+            </button>
+
+            {/* Validação — Progresso */}
+            {validating && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem 1rem',
+                background: '#1e3a5f',
+                borderRadius: '8px',
+                border: '1px solid #3b82f640',
+                color: '#93c5fd',
+                fontSize: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+              }}>
+                <span style={{ fontSize: '1rem' }}>⏳</span>
+                Analisando as últimas 30 mensagens dos grupos de ofertas...
+              </div>
+            )}
+
+            {/* Validação — Resultados por grupo */}
+            {validationResult && !validating && (
+              <div style={{ marginTop: '0.75rem' }}>
+                {validationResult.report.groups.map((g) => (
+                  <div
+                    key={g.groupName}
+                    style={{
+                      padding: '0.6rem 0.75rem',
+                      marginBottom: '0.4rem',
+                      borderRadius: '6px',
+                      background: g.passed ? '#14532d20' : '#7f1d1d20',
+                      border: `1px solid ${g.passed ? '#22c55e40' : '#991b1b40'}`,
+                      fontSize: '0.8rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                      <span style={{ fontWeight: 500, color: '#e2e8f0' }}>{g.groupName}</span>
+                      <span style={{ color: g.passed ? '#4ade80' : '#f87171' }}>
+                        {g.passed ? '✅' : '❌'} {Math.round(g.ratio * 100)}%
+                      </span>
+                    </div>
+                    <div style={{ color: '#94a3b8' }}>
+                      {g.validOffers} ofertas válidas de {g.totalMessages} mensagens
+                    </div>
+                    {g.errors.length > 0 && (
+                      <div style={{ color: '#f87171', marginTop: '0.2rem', fontSize: '0.75rem' }}>
+                        {g.errors.join('; ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div style={{
+                  marginTop: '0.5rem',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '6px',
+                  background: validationResult.validated ? '#14532d30' : '#7f1d1d30',
+                  border: `1px solid ${validationResult.validated ? '#22c55e60' : '#991b1b60'}`,
+                  fontSize: '0.85rem',
+                  fontWeight: 500,
+                  color: validationResult.validated ? '#4ade80' : '#f87171',
+                }}>
+                  {validationResult.validated
+                    ? `✅ Validação aprovada: ${validationResult.report.totalValidOffers}/${validationResult.report.totalMessages} ofertas válidas (${Math.round(validationResult.report.overallRatio * 100)}% ≥ 70%)`
+                    : `❌ Validação reprovada: ${validationResult.report.totalValidOffers}/${validationResult.report.totalMessages} ofertas válidas (${Math.round(validationResult.report.overallRatio * 100)}% < 70%)`
+                  }
+                </div>
+              </div>
+            )}
+
+            {/* Erro */}
+            {groupSaveError && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem 1rem',
+                background: '#7f1d1d',
+                borderRadius: '8px',
+                border: '1px solid #991b1b',
+                color: '#fca5a5',
+                fontSize: '0.85rem',
+              }}>
+                ❌ {groupSaveError}
+              </div>
+            )}
+
+            {/* Sucesso */}
+            {groupSaveMessage && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem 1rem',
+                background: '#14532d',
+                borderRadius: '8px',
+                border: '1px solid #22c55e40',
+                color: '#4ade80',
+                fontSize: '0.85rem',
+              }}>
+                ✅ {groupSaveMessage}
               </div>
             )}
           </div>

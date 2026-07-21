@@ -8,6 +8,7 @@ import {
   logoutInstance,
   getQrCode,
   instanceNameFromUserId,
+  fetchGroups,
 } from '../../services/evolution.ts';
 
 const instanceRepo = new WhatsAppInstanceRepository();
@@ -192,6 +193,43 @@ export const whatsAppRoutes = new Elysia()
           401: { description: 'Não autenticado' },
         },
       },
+    },
+  )
+
+  // ─── GET /api/whatsapp/groups ────────────────────────────────────
+  .get(
+    '/api/whatsapp/groups',
+    async ({ jwt, request, set }) => {
+      const auth = await getAuthUser(jwt, request.headers);
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: 'Não autenticado' };
+      }
+
+      // Verifica se o WhatsApp está conectado
+      const instance = await instanceRepo.findByUserId(auth.userId);
+      if (!instance || instance.status !== 'connected') {
+        return {
+          success: false,
+          error: 'WhatsApp não está conectado. Conecte-se primeiro.',
+        };
+      }
+
+      // Busca grupos na Evolution API
+      const instanceName = instanceNameFromUserId(auth.userId);
+      const result = await fetchGroups(instanceName);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || 'Erro ao buscar grupos do WhatsApp',
+        };
+      }
+
+      return {
+        success: true,
+        groups: result.groups || [],
+      };
     },
   )
 

@@ -44,3 +44,6 @@ export type { UserCredentials, NewUserCredentials, UserCredentialsInput } from '
 
 export { WhatsAppInstanceRepository } from './repository/whatsAppInstances.repository.ts';
 export type { WhatsAppInstance, NewWhatsAppInstance, WhatsAppInstancePublic } from './repository/whatsAppInstances.repository.ts';
+
+export { AffiliatesRepository } from './repository/affiliates.repository.ts';
+export type { Affiliate, NewAffiliate, AffiliateGroupConfig } from './repository/affiliates.repository.ts';
