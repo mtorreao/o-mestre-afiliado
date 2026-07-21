@@ -127,6 +127,8 @@ services:
       POSTGRES_URL: postgresql://evolution:evolution_pass@postgres-e2e:5432/omestre_db?options=--search_path%3Domestre
       API_PORT: "5442"
       JWT_SECRET: e2e-jwt-secret-for-testing-only
+      EVOLUTION_API_URL: http://evolution-api-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
       ML_CLIENT_ID: ""
       ML_CLIENT_SECRET: ""
       FRONTEND_URL: http://localhost:15441

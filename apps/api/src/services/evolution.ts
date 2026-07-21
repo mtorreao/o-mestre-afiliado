@@ -68,8 +68,8 @@ export async function createInstance(instanceName: string): Promise<{
       body: JSON.stringify({
         instanceName,
         token: EVOLUTION_API_KEY,
+        integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
-        number: '', // opcional
       }),
     });
 
