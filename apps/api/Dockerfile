@@ -28,7 +28,7 @@ RUN echo '#!/bin/sh' > /entrypoint.sh && \
     echo 'PG_PORT=$(echo "$POSTGRES_URL" | sed "s/.*://" | sed "s/\\/.*//")' >> /entrypoint.sh && \
     echo 'for f in $(ls $MIGRATIONS_DIR/*.sql | sort); do' >> /entrypoint.sh && \
     echo '  echo "  Running $(basename $f)..."' >> /entrypoint.sh && \
-    echo '  cat "$f" | PGPASSWORD=evolution_pass psql -h postgres-e2e -p 5432 -U evolution -d evolution_db -f - 2>&1 | grep -v "NOTICE\|CREATE\|ALTER\|INSERT 0" || true' >> /entrypoint.sh && \
+    echo '  cat "$f" | PGPASSWORD=evolution_pass psql -h postgres-e2e -p 5432 -U evolution -d omestre_db -f - 2>&1 | grep -v "NOTICE\\|CREATE\\|ALTER\\|INSERT 0" || true' >> /entrypoint.sh && \
     echo 'done' >> /entrypoint.sh && \
     echo 'echo "✅ Migrations concluídas"' >> /entrypoint.sh && \
     echo 'echo "🚀 Iniciando API..."' >> /entrypoint.sh && \
