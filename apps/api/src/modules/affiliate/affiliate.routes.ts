@@ -6,6 +6,8 @@ import type { ShopeeCredentials } from '@omestre/converters';
 import { detectMarketplace } from '@omestre/shared';
 import type { ConversionResult } from '@omestre/shared';
 import { generateViaUrlParams } from '@omestre/converters';
+import { instanceNameFromUserId } from '../../services/evolution.ts';
+import { validateOfferGroups } from '../../services/offerValidator.ts';
 
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
@@ -77,6 +79,51 @@ export const affiliateRoutes = new Elysia()
     return { success: true, message: 'Credenciais salvas' };
   })
 
+  // ─── POST /api/affiliate/validate-groups ──────────────────────────
+  .post('/api/affiliate/validate-groups', async ({ jwt, request, set, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const { sourceGroups } = body as {
+      sourceGroups?: { jid: string; name: string }[];
+    };
+
+    if (!sourceGroups || sourceGroups.length === 0) {
+      return { success: false, error: 'Selecione pelo menos 1 grupo de ofertas.' };
+    }
+
+    if (sourceGroups.length > 3) {
+      return { success: false, error: 'Máximo de 3 grupos de ofertas.' };
+    }
+
+    const instanceName = instanceNameFromUserId(auth.userId);
+
+    const validation = await validateOfferGroups(instanceName, sourceGroups);
+
+    return {
+      success: true,
+      validated: validation.overallPassed,
+      report: {
+        overallRatio: validation.overallRatio,
+        totalMessages: validation.totalMessages,
+        totalValidOffers: validation.totalValidOffers,
+        groups: validation.groups.map((g) => ({
+          groupJid: g.groupJid,
+          groupName: g.groupName,
+          totalMessages: g.totalMessages,
+          validOffers: g.validOffers,
+          invalidMessages: g.invalidMessages,
+          ratio: g.ratio,
+          passed: g.passed,
+          errors: g.errors,
+        })),
+      },
+    };
+  })
+
   // ─── POST /api/affiliate/groups-config ──────────────────────────
   .post('/api/affiliate/groups-config', async ({ jwt, request, set, body }) => {
     const auth = await getAuthUser(jwt, request.headers);
@@ -104,6 +151,28 @@ export const affiliateRoutes = new Elysia()
     }
 
     const evolutionInstanceId = `user-${auth.userId}`;
+
+    // Validação das últimas 30 mensagens antes de salvar
+    const validation = await validateOfferGroups(evolutionInstanceId, sourceGroups);
+    if (!validation.overallPassed) {
+      return {
+        success: false,
+        error: `Validação de ofertas falhou: ${validation.totalValidOffers}/${validation.totalMessages} mensagens contêm links de marketplaces válidos (mínimo 70%). Verifique os grupos selecionados.`,
+        report: {
+          overallRatio: validation.overallRatio,
+          totalMessages: validation.totalMessages,
+          totalValidOffers: validation.totalValidOffers,
+          groups: validation.groups.map((g) => ({
+            groupName: g.groupName,
+            totalMessages: g.totalMessages,
+            validOffers: g.validOffers,
+            ratio: g.ratio,
+            passed: g.passed,
+            errors: g.errors,
+          })),
+        },
+      };
+    }
 
     const affiliate = await affiliatesRepo.upsertGroups(evolutionInstanceId, {
       sourceGroups,

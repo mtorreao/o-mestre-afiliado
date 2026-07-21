@@ -274,6 +274,85 @@ export async function fetchGroups(instanceName: string): Promise<{
 }
 
 /**
+ * Busca mensagens recentes de um grupo ou chat específico.
+ *
+ * Evolution API v2: POST /message/fetchAll/{instanceName}
+ * Retorna a lista de mensagens com text, timestamp, etc.
+ */
+export async function fetchGroupMessages(
+  instanceName: string,
+  groupJid: string,
+  limit: number = 30,
+): Promise<{
+  success: boolean;
+  messages?: { text?: string; timestamp?: number }[];
+  error?: string;
+}> {
+  try {
+    const res = await fetch(
+      `${EVOLUTION_API_URL}/message/fetchAll/${instanceName}`,
+      {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          jid: groupJid,
+          count: limit,
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+    }
+
+    const data = (await res.json()) as Record<string, unknown>;
+
+    // Evolution API v2 retorna a lista de mensagens de várias formas:
+    // 1. Direto como array no root
+    // 2. Dentro de uma chave com nome da instância
+    // 3. Dentro de { messages: [...] }
+    let messageList: unknown[] = [];
+
+    if (Array.isArray(data)) {
+      messageList = data;
+    } else if (Array.isArray(data.messages)) {
+      messageList = data.messages as unknown[];
+    } else {
+      // Tenta extrair de qualquer chave que tenha array
+      for (const key of Object.keys(data)) {
+        if (Array.isArray(data[key])) {
+          messageList = data[key] as unknown[];
+          break;
+        }
+      }
+    }
+
+    const messages = messageList
+      .map((m) => {
+        const item = m as Record<string, unknown>;
+        // Extrai texto da mensagem — pode estar em diferentes campos
+        const msg = item.message as Record<string, unknown> | undefined;
+        const text = String(
+          item.text ?? msg?.conversation ?? (msg?.extendedTextMessage as Record<string, unknown> | undefined)?.text ?? '',
+        );
+        const timestamp = item.messageTimestamp
+          ? Number(item.messageTimestamp)
+          : undefined;
+        return { text: text || '', timestamp };
+      })
+      .filter((m) => m.text.length > 0);
+
+    return { success: true, messages };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Erro ao buscar mensagens do grupo',
+    };
+  }
+}
+
+/**
  * Logout/logout da instância sem deletar.
  */
 export async function logoutInstance(instanceName: string): Promise<{
