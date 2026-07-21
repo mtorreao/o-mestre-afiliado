@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 380px;
+      min-height: 200px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    .container { padding: 16px; }
+    h1 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      background: linear-gradient(135deg, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    select, input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #e2e8f0;
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 12px;
+    }
+    select:focus, input:focus {
+      border-color: #6366f1;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      border: none;
+      background: #6366f1;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #4f46e5; }
+    button:disabled {
+      background: #6366f180;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      margin-top: 8px;
+    }
+    button.secondary:hover { background: #334155; }
+    .status {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.success {
+      display: block;
+      background: #14532d;
+      border: 1px solid #166534;
+      color: #86efac;
+    }
+    .status.error {
+      display: block;
+      background: #7f1d1d;
+      border: 1px solid #991b1b;
+      color: #fca5a5;
+    }
+    .status.loading {
+      display: block;
+      background: #1e3a5f;
+      border: 1px solid #1d4ed8;
+      color: #93c5fd;
+    }
+    .cookie-preview {
+      margin-top: 8px;
+      padding: 8px;
+      background: #0f172a;
+      border-radius: 6px;
+      border: 1px solid #1e293b;
+      font-family: monospace;
+      font-size: 10px;
+      color: #64748b;
+      max-height: 60px;
+      overflow: hidden;
+      word-break: break-all;
+      display: none;
+    }
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .header-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+    }
+    .header-text {
+      flex: 1;
+    }
+    .badge {
+      background: #1e293b;
+      color: #64748b;
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 12px;
+    }
+    .footer {
+      text-align: center;
+      font-size: 11px;
+      color: #475569;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header-row">
+      <img src="icons/icon128.png" alt="O Mestre Afiliado" class="header-logo" />
+      <div class="header-text">
+        <h1>O Mestre Afiliado</h1>
+        <div class="subtitle">Importar cookies de sessão do ML</div>
+      </div>
+      <div class="badge" id="mlStatus">🔴 ML</div>
+    </div>
+
+    <label for="apiUrl">URL da API</label>
+    <input type="url" id="apiUrl" value="https://dev.omestreafiliado.com.br" placeholder="https://dev.omestreafiliado.com.br" />
+
+    <label for="affiliateSelect">Selecione o afiliado</label>
+    <select id="affiliateSelect">
+      <option value="">— Carregando afiliados... —</option>
+    </select>
+
+    <button id="importBtn" disabled>📥 Importar Cookies</button>
+
+    <div class="cookie-preview" id="cookiePreview"></div>
+    <div class="status" id="status"></div>
+
+    <div class="footer">
+      Os cookies são enviados apenas para sua própria API.
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
