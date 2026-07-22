@@ -109,14 +109,55 @@ async function fetchGroupMessages(
       }
     }
 
+    // Evolution API v2 ignora o filtro jid — filtra manualmente por remoteJid
+    messageList = messageList.filter((m) => {
+      const item = m as Record<string, unknown>;
+      const key = item.key as Record<string, unknown> | undefined;
+      return key?.remoteJid === groupJid;
+    });
+
     const messages = messageList
       .map((m) => {
         const item = m as Record<string, unknown>;
         const msg = item.message as Record<string, unknown> | undefined;
+
+        // Extrai caption de mídia NÃO efêmera (imageMessage/videoMessage/documentMessage)
+        function extractMediaCaption(m: Record<string, unknown> | undefined): string | undefined {
+          if (!m) return undefined;
+          const imgMsg = m.imageMessage as Record<string, unknown> | undefined;
+          if (imgMsg?.caption) return String(imgMsg.caption);
+          const vidMsg = m.videoMessage as Record<string, unknown> | undefined;
+          if (vidMsg?.caption) return String(vidMsg.caption);
+          const docMsg = m.documentMessage as Record<string, unknown> | undefined;
+          if (docMsg?.caption) return String(docMsg.caption);
+          return undefined;
+        }
+
+        // Extrai caption de mensagens efêmeras (ephemeralMessage)
+        function extractEphemeralCaption(m: Record<string, unknown> | undefined): string | undefined {
+          if (!m) return undefined;
+          const ephemeral = m.ephemeralMessage as Record<string, unknown> | undefined;
+          if (!ephemeral) return undefined;
+          const innerMsg = ephemeral.message as Record<string, unknown> | undefined;
+          if (!innerMsg) return undefined;
+          const imgMsg = innerMsg.imageMessage as Record<string, unknown> | undefined;
+          if (imgMsg?.caption) return String(imgMsg.caption);
+          const vidMsg = innerMsg.videoMessage as Record<string, unknown> | undefined;
+          if (vidMsg?.caption) return String(vidMsg.caption);
+          const docMsg = innerMsg.documentMessage as Record<string, unknown> | undefined;
+          if (docMsg?.caption) return String(docMsg.caption);
+          if (innerMsg.conversation) return String(innerMsg.conversation);
+          const extMsg = innerMsg.extendedTextMessage as Record<string, unknown> | undefined;
+          if (extMsg?.text) return String(extMsg.text);
+          return undefined;
+        }
+
         const text = String(
           item.text ??
             msg?.conversation ??
             (msg?.extendedTextMessage as Record<string, unknown> | undefined)?.text ??
+            extractMediaCaption(msg) ??
+            extractEphemeralCaption(msg) ??
             '',
         );
         return {

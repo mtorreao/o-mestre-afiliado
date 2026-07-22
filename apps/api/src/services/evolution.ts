@@ -476,6 +476,14 @@ export async function fetchGroupMessages(
       }
     }
 
+    // A Evolution API v2 ignora o filtro jid no POST /chat/findMessages
+    // e retorna mensagens de TODOS os grupos. Filtramos pelo remoteJid.
+    messageList = messageList.filter((m) => {
+      const item = m as Record<string, unknown>;
+      const key = item.key as Record<string, unknown> | undefined;
+      return key?.remoteJid === groupJid;
+    });
+
     // Garante que respeitamos o limite solicitado, mesmo que a Evolution API
     // retorne mais itens que o `count` enviado.
     if (messageList.length > limit) {

@@ -174,7 +174,7 @@ export function detectMarketplaceByPath(url: string): Marketplace {
     const pathname = new URL(url).pathname.toLowerCase();
     if (/\/shopee\b|\/shp\b/i.test(pathname)) return 'shopee';
     if (/\/mercadolivre\b|\/mercadolibre\b|\/ml\b/i.test(pathname)) return 'mercadolivre';
-    if (/\/amazon\b|\/amzn\b/i.test(pathname)) return 'amazon';
+    if (/\/amazon\b|\/amzn\b|\/amz\b/i.test(pathname)) return 'amazon';
   } catch {
     // URL inválida, ignora
   }
