@@ -135,17 +135,6 @@ services:
       PUSHER_ENABLED: "false"
       WEBSOCKET_ENABLED: "false"
 
-  # ─── Manager (opcional — UI web para gerenciar instâncias) ─────
-  evolution-manager:
-    container_name: evolution_manager
-    image: evoapicloud/evolution-manager:v2.3.5
-    restart: always
-    depends_on:
-      - evolution-api
-    ports:
-      - "${EVOLUTION_MANAGER_PORT:-127.0.0.1:5444:80}"
-    networks:
-      - infra-net
 
 volumes:
   evolution_instances:

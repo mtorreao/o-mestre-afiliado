@@ -10,6 +10,8 @@
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:5444';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
+const WEBHOOK_URL =
+  process.env.WEBHOOK_URL || 'http://localhost:5442/webhook/message';
 
 export interface QrCodeResult {
   base64: string | null;
@@ -70,6 +72,19 @@ export async function createInstance(instanceName: string): Promise<{
         token: EVOLUTION_API_KEY,
         integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
+        webhook: {
+          enabled: true,
+          url: WEBHOOK_URL,
+          events: [
+            'messages.upsert',
+            'connection.update',
+            'qrcode.updated',
+            'groups.upsert',
+            'group-participants.update',
+          ],
+          byEvents: true,
+          base64: false,
+        },
       }),
     });
 
@@ -165,9 +180,15 @@ export async function getConnectionState(instanceName: string): Promise<{
       return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
     }
 
-    const data = (await res.json()) as { state?: { connectionState?: string } };
+    const data = (await res.json()) as {
+      state?: { connectionState?: string };
+      instance?: { state?: string };
+    };
 
-    const rawState = data.state?.connectionState;
+    // Evolution API v2.3.7 retorna { instance: { state: "connecting" } }
+    // (versões anteriores usavam { state: { connectionState: "..." } })
+    const rawState =
+      data.instance?.state ?? data.state?.connectionState;
     let state: 'open' | 'close' | 'connecting' = 'close';
     if (rawState === 'open') state = 'open';
     else if (rawState === 'connecting') state = 'connecting';
@@ -214,8 +235,9 @@ export async function deleteInstance(instanceName: string): Promise<{
 /**
  * Busca todos os grupos do WhatsApp que a instância participa.
  *
- * Evolution API v2: POST /chat/fetchAllGroups/{instanceName}
- * Retorna lista de grupos com jid, name, etc.
+ * Evolution API v2: GET /group/fetchAllGroups/{instanceName}?getParticipants=true
+ * Retorna array direto de grupos com id, subject, etc.
+ * (v1 usava POST /chat/fetchAllGroups/{instanceName})
  */
 export async function fetchGroups(instanceName: string): Promise<{
   success: boolean;
@@ -224,9 +246,9 @@ export async function fetchGroups(instanceName: string): Promise<{
 }> {
   try {
     const res = await fetch(
-      `${EVOLUTION_API_URL}/chat/fetchAllGroups/${instanceName}`,
+      `${EVOLUTION_API_URL}/group/fetchAllGroups/${instanceName}?getParticipants=true`,
       {
-        method: 'POST',
+        method: 'GET',
         headers: headers(),
       },
     );
@@ -273,10 +295,46 @@ export async function fetchGroups(instanceName: string): Promise<{
   }
 }
 
+/** 
+ * Extrai caption de mensagens efêmeras (ephemeralMessage).
+ * Evolution API v2: mensagens com tempo de expiração usam este formato.
+ */
+function extractEphemeralCaption(msg: Record<string, unknown> | undefined): string | undefined {
+  if (!msg) return undefined;
+  
+  // ephemeralMessage > message > {imageMessage|videoMessage|documentMessage}.caption
+  const ephemeral = msg.ephemeralMessage as Record<string, unknown> | undefined;
+  if (!ephemeral) return undefined;
+  
+  const innerMsg = ephemeral.message as Record<string, unknown> | undefined;
+  if (!innerMsg) return undefined;
+  
+  // Tenta imageMessage > caption
+  const imgMsg = innerMsg.imageMessage as Record<string, unknown> | undefined;
+  if (imgMsg?.caption) return String(imgMsg.caption);
+  
+  // Tenta videoMessage > caption
+  const vidMsg = innerMsg.videoMessage as Record<string, unknown> | undefined;
+  if (vidMsg?.caption) return String(vidMsg.caption);
+  
+  // Tenta documentMessage > caption
+  const docMsg = innerMsg.documentMessage as Record<string, unknown> | undefined;
+  if (docMsg?.caption) return String(docMsg.caption);
+  
+  // Tenta conversation direta dentro da ephemeral
+  if (innerMsg.conversation) return String(innerMsg.conversation);
+  
+  // Tenta extendedTextMessage
+  const extMsg = innerMsg.extendedTextMessage as Record<string, unknown> | undefined;
+  if (extMsg?.text) return String(extMsg.text);
+  
+  return undefined;
+}
+
 /**
  * Busca mensagens recentes de um grupo ou chat específico.
  *
- * Evolution API v2: POST /message/fetchAll/{instanceName}
+ * Evolution API v2: POST /chat/findMessages/{instanceName}
  * Retorna a lista de mensagens com text, timestamp, etc.
  */
 export async function fetchGroupMessages(
@@ -290,7 +348,7 @@ export async function fetchGroupMessages(
 }> {
   try {
     const res = await fetch(
-      `${EVOLUTION_API_URL}/message/fetchAll/${instanceName}`,
+      `${EVOLUTION_API_URL}/chat/findMessages/${instanceName}`,
       {
         method: 'POST',
         headers: headers(),
@@ -310,16 +368,25 @@ export async function fetchGroupMessages(
 
     // Evolution API v2 retorna a lista de mensagens de várias formas:
     // 1. Direto como array no root
-    // 2. Dentro de uma chave com nome da instância
-    // 3. Dentro de { messages: [...] }
+    // 2. Dentro de { messages: [...] } (array direto)
+    // 3. Dentro de { messages: { records: [...] } } (objeto paginado)
+    // 4. Dentro de uma chave com nome da instância
     let messageList: unknown[] = [];
 
     if (Array.isArray(data)) {
       messageList = data;
     } else if (Array.isArray(data.messages)) {
       messageList = data.messages as unknown[];
-    } else {
-      // Tenta extrair de qualquer chave que tenha array
+    } else if (data.messages && typeof data.messages === 'object') {
+      // Formato paginado: { messages: { records: [...], total, pages } }
+      const msgObj = data.messages as Record<string, unknown>;
+      if (Array.isArray(msgObj.records)) {
+        messageList = msgObj.records as unknown[];
+      }
+    }
+
+    // Se ainda não encontrou, tenta extrair de qualquer chave que tenha array
+    if (messageList.length === 0) {
       for (const key of Object.keys(data)) {
         if (Array.isArray(data[key])) {
           messageList = data[key] as unknown[];
@@ -334,7 +401,12 @@ export async function fetchGroupMessages(
         // Extrai texto da mensagem — pode estar em diferentes campos
         const msg = item.message as Record<string, unknown> | undefined;
         const text = String(
-          item.text ?? msg?.conversation ?? (msg?.extendedTextMessage as Record<string, unknown> | undefined)?.text ?? '',
+          item.text ??
+            msg?.conversation ??
+            (msg?.extendedTextMessage as Record<string, unknown> | undefined)?.text ??
+            // Mensagens efêmeras (ephemeralMessage) com caption em imageMessage/videoMessage
+            extractEphemeralCaption(msg) ??
+            '',
         );
         const timestamp = item.messageTimestamp
           ? Number(item.messageTimestamp)
@@ -375,6 +447,58 @@ export async function logoutInstance(instanceName: string): Promise<{
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Erro ao fazer logout',
+    };
+  }
+}
+
+/**
+ * Envia mensagem de texto para um grupo via Evolution API.
+ *
+ * POST /message/sendText/{instanceName}
+ * O campo "number" aceita JID de grupo (ex: "120363123456789@g.us").
+ */
+export async function sendGroupMessage(
+  instanceName: string,
+  groupJid: string,
+  text: string,
+  delayMs: number = 2000,
+): Promise<{
+  success: boolean;
+  key?: { id: string; remoteJid: string };
+  status?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        number: groupJid,
+        text,
+        delay: delayMs,
+        linkPreview: true,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${body}` };
+    }
+
+    const data = (await res.json()) as {
+      key?: { id: string; remoteJid: string };
+      status?: string;
+    };
+
+    return {
+      success: true,
+      key: data.key,
+      status: data.status,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Erro ao enviar mensagem para o grupo',
     };
   }
 }
