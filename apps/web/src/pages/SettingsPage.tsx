@@ -1,11 +1,11 @@
 /**
- * SettingsPage — Página de configurações com 4 abas
+ * SettingsPage — Página de configurações com 3 abas
  *
- * Abas: WhatsApp, Grupos, Shopee, Mercado Livre
+ * Abas: WhatsApp, Shopee, Mercado Livre
  * Reutiliza seções existentes do dashboard.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Smartphone, Users, Store, Package } from 'lucide-react';
+import { Smartphone, Store, Package } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Loading, Tabs } from '../components/ui/index.ts';
@@ -13,9 +13,6 @@ import { WppConnection } from '../components/WppConnection.tsx';
 import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
 import { MlConfigSection } from './sections/MlConfigSection.tsx';
 import { TestConversionSection } from './sections/TestConversionSection.tsx';
-import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
-import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
-import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
 
 interface ProfileData {
   shopeeAppId: string | null;
@@ -42,7 +39,6 @@ interface SettingsPageProps {
 
 const tabs = [
   { value: 'whatsapp', label: 'WhatsApp', icon: <Smartphone size={16} /> },
-  { value: 'grupos', label: 'Grupos', icon: <Users size={16} /> },
   { value: 'shopee', label: 'Shopee', icon: <Store size={16} /> },
   { value: 'mercadolivre', label: 'Mercado Livre', icon: <Package size={16} /> },
 ];
@@ -91,29 +87,14 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
         {/* Aba 1: WhatsApp */}
         <WppConnection token={token} />
 
-        {/* Aba 2: Grupos */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
-          <MirrorConfigSection token={token} onUpdate={loadProfile} />
-          <MessageTemplateSection
-            token={token}
-            initialTemplate={profile?.messageTemplate || ''}
-            onUpdate={loadProfile}
-          />
-          <ExcludedGroupsSection
-            groups={profile?.excludedGroups || []}
-            token={token}
-            onUpdate={loadProfile}
-          />
-        </div>
-
-        {/* Aba 3: Shopee */}
+        {/* Aba 2: Shopee */}
         <ShopeeConfigSection
           token={token}
           initialAppId={profile?.shopeeAppId || ''}
           onUpdate={loadProfile}
         />
 
-        {/* Aba 4: Mercado Livre */}
+        {/* Aba 3: Mercado Livre */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
           {mlConnected && ml ? (
             <Card
