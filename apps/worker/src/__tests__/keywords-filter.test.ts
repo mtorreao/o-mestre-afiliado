@@ -17,9 +17,14 @@
  * Estratégia: mock.module captura closure de um objeto mutável
  * (mockDbState). Cada teste modifica o estado antes de importar
  * o módulo (que é recarregado via import dinâmico no Bun test).
+ *
+ * NOTA: mock.module() NÃO funciona para módulos locais (import relativo
+ * como ./metrics.ts) no Bun 1.3.14 — apenas para módulos de pacote
+ * (@omestre/*). Por isso usamos interceptação de console.log para
+ * detectar qual filtro foi acionado, em vez de mock de metrics.ts.
  */
 
-import { describe, it, expect, mock, beforeAll, afterAll, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
 import type { MirrorMessageEvent } from '@omestre/shared';
 
 // ========================================================
@@ -52,11 +57,20 @@ const mockDbState: {
   },
 };
 
-/** Holds incrementCounter calls for assertions */
-const metricCalls: Array<{ name: string; labels?: Record<string, string> }> = [];
+/** Entradas de console capturadas (resetadas a cada teste) */
+interface LogEntry {
+  level: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+let capturedLogs: string[] = [];
+let originalConsoleLog: typeof console.log;
+let originalConsoleWarn: typeof console.warn;
+let originalConsoleError: typeof console.error;
 
 function resetTestState() {
-  metricCalls.length = 0;
+  capturedLogs.length = 0;
   mockDbState.noRows = false;
   mockDbState.row.filters.keywords = [];
   mockDbState.row.filters.blacklist = [];
@@ -67,44 +81,53 @@ function setKeywords(kws: string[]) {
   mockDbState.row.filters.keywords = kws;
 }
 
+/** Retorna true se algum console.log contém a mensagem exata */
+function logContains(msg: string): boolean {
+  return capturedLogs.some((l) => l.includes(msg));
+}
+
+/**
+ * Intercepta console para capturar logs estruturados do pipeline.
+ * Cada chamada a console.log/warn/error é armazenada em capturedLogs
+ * e também repassada ao console original para visibilidade nos testes.
+ */
+function installConsoleSpy() {
+  originalConsoleLog = console.log.bind(console);
+  originalConsoleWarn = console.warn.bind(console);
+  originalConsoleError = console.error.bind(console);
+
+  console.log = ((...args: unknown[]) => {
+    const text = args.map(String).join(' ');
+    capturedLogs.push(text);
+    originalConsoleLog(...args);
+  }) as typeof console.log;
+
+  console.warn = ((...args: unknown[]) => {
+    const text = args.map(String).join(' ');
+    capturedLogs.push(text);
+    originalConsoleWarn(...args);
+  }) as typeof console.warn;
+
+  console.error = ((...args: unknown[]) => {
+    const text = args.map(String).join(' ');
+    capturedLogs.push(text);
+    originalConsoleError(...args);
+  }) as typeof console.error;
+}
+
+function restoreConsoleSpy() {
+  console.log = originalConsoleLog;
+  console.warn = originalConsoleWarn;
+  console.error = originalConsoleError;
+}
+
 // ════════════════════════════════════════════════════════
 // Testes
 // ════════════════════════════════════════════════════════
 
 describe('Filtro por keywords (whitelist)', () => {
-  // ✅ beforeAll/afterAll isolam mocks entre test files (mock.module é global)
   beforeAll(() => {
     mock.restore(); // limpa mocks de outros arquivos
-    // ── Cache de conversão (Redis) — sempre miss ──
-    mock.module('./conversion-cache.ts', () => ({
-      getCachedConversion: () => Promise.resolve(null),
-      setCachedConversion: () => Promise.resolve(),
-    }));
-
-    // ── Rate limiter (Redis) — sempre concede slot ──
-    mock.module('./rate-limiter.ts', () => ({
-      tryAcquireSlot: () => Promise.resolve({ acquired: true, waitMs: 0 }),
-      waitForSlot: () => Promise.resolve(true),
-    }));
-
-    // ── Notifier (Redis) — silencioso ──
-    mock.module('./notifier.ts', () => ({
-      processFailure: () => Promise.resolve(),
-      classifyConversionError: () => null,
-    }));
-
-    // ── Dead Letter Queue (Redis) — silenciosa ──
-    mock.module('./dead-letter-queue.ts', () => ({
-      pushToDLQ: () => Promise.resolve(),
-    }));
-
-    // ── Métricas — contador de chamadas ──
-    mock.module('./metrics.ts', () => ({
-      incrementCounter: (name: string, labels?: Record<string, string>) => {
-        metricCalls.push({ name, labels });
-      },
-      observeHistogram: () => {},
-    }));
 
     // ── DB mock — usa estado mutável ──
     mock.module('@omestre/db', () => ({
@@ -142,6 +165,22 @@ describe('Filtro por keywords (whitelist)', () => {
         if (url.includes('amazon')) return 'amazon';
         return 'unknown';
       },
+      MIRROR_CONVERSION_CACHE_PREFIX: 'mirror:conversion:',
+      MIRROR_CONVERSION_CACHE_TTL: 3600,
+      MIRROR_MESSAGE_CHANNEL: 'omestre:mirror:message',
+      MIRROR_STREAM: 'omestre:mirror:stream',
+      MIRROR_CONSUMER_GROUP: 'omestre:mirror:workers',
+      MIRROR_DLQ_LIST: 'mirror:dlq:entries',
+      MIRROR_DLQ_INDEX: 'mirror:dlq:index',
+      MIRROR_DLQ_TTL: 7 * 24 * 3600,
+      MARKETPLACE_DOMAINS: {
+        shopee: [/shopee/, /go\.promozone\.ai\/shopee/],
+        mercadolivre: [/mercadolivre/, /meli/, /go\.promozone\.ai\/mercadolivre/],
+        amazon: [/amazon/, /amzn/, /go\.promozone\.ai\/amazon/],
+        unknown: [],
+      },
+      MirrorMessageEvent: class {},
+      MirrorDLQEntry: class {},
     }));
 
     mock.module('@omestre/converters', () => ({
@@ -159,7 +198,9 @@ describe('Filtro por keywords (whitelist)', () => {
 
   afterAll(() => {
     mock.restore();
+    restoreConsoleSpy();
   });
+
   const BASE_EVENT: MirrorMessageEvent = {
     messageId: 'kw-test',
     instanceName: 'user-1',
@@ -176,23 +217,22 @@ describe('Filtro por keywords (whitelist)', () => {
     messageId: id ?? 'kw-' + Math.random().toString(36).slice(2, 8),
   });
 
-  const blockedByKeywords = () =>
-      metricCalls.some(
-        (c) => c.name === 'mirror_messages_blocked_total' && c.labels?.reason === 'no_keyword_match',
-      );
-
-  const blockedByNoUrl = () =>
-    metricCalls.some(
-      (c) => c.name === 'mirror_messages_blocked_total' && c.labels?.reason === 'no_url',
-    );
-
-  const blockedReason = (reason: string) =>
-    metricCalls.some(
-      (c) => c.name === 'mirror_messages_blocked_total' && c.labels?.reason === reason,
-    );
+  /** Mensagem que o pipeline loga ao filtrar por keywords */
+  const KEYWORDS_BLOCKED_MSG = 'Mensagem filtrada por keywords — nenhuma keyword encontrada';
+  /** Mensagem que o pipeline loga ao filtrar por blacklist */
+  const BLACKLIST_BLOCKED_MSG = 'Mensagem filtrada por blacklist';
+  /** Mensagem que o pipeline loga ao não encontrar URL de marketplace */
+  const NO_URL_BLOCKED_MSG = 'Mensagem sem URL de marketplace — ignorada';
+  /** Mensagem que o pipeline loga para dedup */
+  const DEDUP_MSG = 'Oferta duplicada — ignorada';
 
   beforeEach(() => {
     resetTestState();
+    installConsoleSpy();
+  });
+
+  afterEach(() => {
+    restoreConsoleSpy();
   });
 
   // ══════════════════════════════════════════════════════
@@ -204,7 +244,7 @@ describe('Filtro por keywords (whitelist)', () => {
       setKeywords([]); // explícito
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('qualquer coisa https://shopee.com.br/p/1', 'empty-1'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('keywords undefined — passa sem bloquear por keywords', async () => {
@@ -213,14 +253,14 @@ describe('Filtro por keywords (whitelist)', () => {
       // e keywords?.length é undefined → não entra no if
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('mensagem comum https://shopee.com.br/p/2', 'undef-1'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('noRows (afiliado não encontrado) — getFilters retorna null, passa', async () => {
       mockDbState.noRows = true;
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('sem afiliado https://shopee.com.br/p/3', 'norow-1'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
   });
 
@@ -233,14 +273,14 @@ describe('Filtro por keywords (whitelist)', () => {
       setKeywords(['promoção']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('PROMOÇÃO imperdível! https://shopee.com.br/p/a'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('case insensitive — keyword maiúscula, texto sem acento minúsculo', async () => {
       setKeywords(['PROMOCAO']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('aproveite a promocao https://shopee.com.br/p/b'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('case insensitive — keyword minúscula, texto maiúsculo acentuado', async () => {
@@ -258,14 +298,14 @@ describe('Filtro por keywords (whitelist)', () => {
       setKeywords(['iphone', 'samsung', 'xiaomi', 'motorola', 'lg']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('MOTOROLA EDGE 40 https://shopee.com.br/p/d'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('keyword dentro da URL', async () => {
       setKeywords(['iphone']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Veja: https://shopee.com.br/iphone-15'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('keyword como substring de palavra maior', async () => {
@@ -273,21 +313,21 @@ describe('Filtro por keywords (whitelist)', () => {
       setKeywords(['note']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Notebook Dell https://shopee.com.br/p/e'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('keyword com números', async () => {
       setKeywords(['rtx 4070']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('RTX 4070 Ti https://shopee.com.br/p/f'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('acentos preservados — match funciona', async () => {
       setKeywords(['promoção']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Na promoção hoje! https://shopee.com.br/p/g'));
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
   });
 
@@ -301,23 +341,20 @@ describe('Filtro por keywords (whitelist)', () => {
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Olha que legal! https://shopee.com.br/p/block1'));
 
-      expect(blockedByKeywords()).toBe(true);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(true);
 
       // Verifica que NÃO bloqueou por blacklist nem no_url
-      expect(blockedByNoUrl()).toBe(false);
-      expect(blockedReason('blacklist')).toBe(false);
+      expect(logContains(BLACKLIST_BLOCKED_MSG)).toBe(false);
+      expect(logContains(NO_URL_BLOCKED_MSG)).toBe(false);
     });
 
-    it('bloqueia corretamente — métrica incrementada com reason="no_keyword_match"', async () => {
+    it('failureReason reflete no_keyword_match no log de reflected_offer', async () => {
       setKeywords(['frete grátis']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Produto sem frete gratis https://shopee.com.br/p/block2'));
 
-      const kwBlock = metricCalls.find(
-        (c) => c.name === 'mirror_messages_blocked_total' && c.labels?.reason === 'no_keyword_match',
-      );
-      expect(kwBlock).toBeDefined();
-      expect(kwBlock!.labels).toEqual({ reason: 'no_keyword_match' });
+      // Verifica que o log contém "keywords:" na failureReason
+      expect(logContains('failureReason":"keywords:')).toBe(true);
     });
 
     it('keyword multi-palavra — não corresponde se apenas parte aparece', async () => {
@@ -325,7 +362,7 @@ describe('Filtro por keywords (whitelist)', () => {
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       // "frete" aparece mas "frete grátis" (junto) não aparece
       await processMirrorMessage(msg('Frete hoje mesmo https://shopee.com.br/p/block3'));
-      expect(blockedByKeywords()).toBe(true);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(true);
     });
 
     it('não trata keywords como regex — caractere especial não escapa', async () => {
@@ -333,21 +370,21 @@ describe('Filtro por keywords (whitelist)', () => {
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       // "produto" aparece mas "produto+" não (e .includes() trata literalmente)
       await processMirrorMessage(msg('melhor produto do ano https://shopee.com.br/p/block4'));
-      expect(blockedByKeywords()).toBe(true);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(true);
     });
 
     it('keyword com número diferente — não corresponde', async () => {
       setKeywords(['rtx 4070']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Placa RTX 3060 https://shopee.com.br/p/block5'));
-      expect(blockedByKeywords()).toBe(true);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(true);
     });
 
     it('nenhuma das múltiplas keywords corresponde', async () => {
       setKeywords(['iphone', 'samsung', 'motorola']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Xiaomi Redmi Note https://shopee.com.br/p/block6'));
-      expect(blockedByKeywords()).toBe(true);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(true);
     });
   });
 
@@ -367,8 +404,8 @@ describe('Filtro por keywords (whitelist)', () => {
       );
 
       // Deve bloquear por blacklist, não por keywords
-      expect(blockedReason('blacklist')).toBe(true);
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(BLACKLIST_BLOCKED_MSG)).toBe(true);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
 
     it('mensagem sem URL é bloqueada como no_url antes de qualquer filtro', async () => {
@@ -377,8 +414,8 @@ describe('Filtro por keywords (whitelist)', () => {
       await processMirrorMessage(msg('apenas texto sem link'));
 
       // Deve bloquear como no_url, sem chegar a keywords
-      expect(blockedByNoUrl()).toBe(true);
-      expect(blockedByKeywords()).toBe(false);
+      expect(logContains(NO_URL_BLOCKED_MSG)).toBe(true);
+      expect(logContains(KEYWORDS_BLOCKED_MSG)).toBe(false);
     });
   });
 });
