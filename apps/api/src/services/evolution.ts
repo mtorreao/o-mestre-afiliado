@@ -498,6 +498,90 @@ export async function logoutInstance(instanceName: string): Promise<{
 }
 
 /**
+ * createInstanceWithQR — Cria instância e garante QR code retornado.
+ *
+ * Chama createInstance() e, se qrcode.base64 vier null, faz fallback
+ * a getQrCode().
+ *
+ * Retorno: { success, instance?, qrcode?, error? }
+ * - success = true → qrcode NUNCA é null (ou error é preenchido)
+ * - success = false → detalhe em error
+ */
+export async function createInstanceWithQR(
+  instanceName: string,
+): Promise<{
+  success: boolean;
+  instance?: { instanceName: string; status: string };
+  qrcode?: QrCodeResult;
+  error?: string;
+}> {
+  // Tenta criar instância normalmente
+  const result = await createInstance(instanceName);
+
+  if (!result.success) {
+    return result; // erro real, propaga
+  }
+
+  // Se veio QR, retorna direto
+  if (result.qrcode?.base64) {
+    return result;
+  }
+
+  // QR veio null — faz fallback buscando QR diretamente
+  const qrFallback = await getQrCode(instanceName);
+
+  if (qrFallback.success && qrFallback.qrcode?.base64) {
+    return {
+      success: true,
+      instance: result.instance,
+      qrcode: qrFallback.qrcode,
+    };
+  }
+
+  // QR ausente mesmo após fallback — retorna erro
+  return {
+    success: false,
+    error: 'QR code não disponível. A instância pode já estar conectada ou o QR expirou.',
+  };
+}
+
+/**
+ * refreshInstance — Ciclo completo de renovação de instância.
+ *
+ * Fluxo: 1. logoutInstance  →  2. deleteInstance  →  3. createInstanceWithQR
+ *
+ * Se a Evolution retornar "already in use", repete o ciclo (logout + delete
+ * + create). Pode ser chamada de qualquer rota sem se preocupar com o
+ * estado atual da instância.
+ *
+ * Retorno: { success, instance?, qrcode?, error? }
+ */
+export async function refreshInstance(
+  instanceName: string,
+): Promise<{
+  success: boolean;
+  instance?: { instanceName: string; status: string };
+  qrcode?: QrCodeResult;
+  error?: string;
+}> {
+  // ─── 1. Logout + Delete (ignora 404) ───────────────────────────
+  await logoutInstance(instanceName);
+  await deleteInstance(instanceName);
+
+  // ─── 2. Cria com QR ────────────────────────────────────────────
+  const result = await createInstanceWithQR(instanceName);
+
+  // ─── 3. Se "already in use", repete ciclo ─────────────────────
+  if (!result.success && result.error?.includes('already in use')) {
+    await logoutInstance(instanceName);
+    await deleteInstance(instanceName);
+    return await createInstanceWithQR(instanceName);
+  }
+
+  return result;
+}
+
+/**
  * Envia mensagem de texto para um grupo via Evolution API.
  *
  * POST /message/sendText/{instanceName}
