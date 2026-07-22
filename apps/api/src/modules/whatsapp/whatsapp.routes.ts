@@ -2,11 +2,11 @@ import { Elysia } from 'elysia';
 import { WhatsAppInstanceRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import {
-  createInstance,
   getConnectionState,
   deleteInstance,
   logoutInstance,
   getQrCode,
+  refreshInstance,
   instanceNameFromUserId,
   fetchGroups,
 } from '../../services/evolution.ts';
@@ -49,15 +49,10 @@ export const whatsAppRoutes = new Elysia()
         return { success: false, error: 'WhatsApp já está conectado' };
       }
 
-      // ─── 2. Tenta obter QR da instância na Evolution API ────────
-      // Cobrindo 3 cenários:
-      //   a) Tem registro no banco como 'connecting' → QR renovado
-      //   b) Tem registro no banco como 'disconnected' → reconectar
-      //   c) Nenhum registro no banco → Evolution ainda pode ter instância
+      // ─── 2. Tenta obter QR da instância existente ────────────────
       const qrResult = await getQrCode(instanceName);
 
       if (qrResult.success && qrResult.qrcode?.base64) {
-        // Se já existe no banco, só atualiza o status
         if (existing) {
           await instanceRepo.updateStatus(existing.id, 'connecting');
           return {
@@ -69,7 +64,7 @@ export const whatsAppRoutes = new Elysia()
           };
         }
 
-        // Se não existe no banco, cria registro
+        // Cria registro no banco
         const instance = await instanceRepo.create({
           userId: auth.userId,
           instanceId: instanceName,
@@ -85,41 +80,13 @@ export const whatsAppRoutes = new Elysia()
         };
       }
 
-      // ─── 3. Sem QR disponível — limpa e cria nova instância ─────
+      // ─── 3. Sem QR — refreshInstance limpa e recria ──────────────
       // Remove registro órfão do banco (se existir)
       if (existing) {
         await instanceRepo.deleteByUserId(auth.userId);
       }
 
-      // Tenta logout + delete na Evolution (ignora erros)
-      await logoutInstance(instanceName);
-      await deleteInstance(instanceName);
-
-      const result = await createInstance(instanceName);
-
-      // Se ainda deu "already in use", tenta força bruta
-      if (!result.success && result.error?.includes('already in use')) {
-        await logoutInstance(instanceName);
-        await deleteInstance(instanceName);
-        const retry = await createInstance(instanceName);
-        if (!retry.success) {
-          set.status = 500;
-          return { success: false, error: retry.error ?? 'Erro ao criar instância WhatsApp (após retry)' };
-        }
-        const instance = await instanceRepo.create({
-          userId: auth.userId,
-          instanceId: instanceName,
-          apiKey: process.env.EVOLUTION_API_KEY || '',
-          status: retry.instance?.status === 'open' ? 'connected' : 'connecting',
-        });
-        return {
-          success: true,
-          message: 'Instância WhatsApp criada. Escaneie o QR code.',
-          qrcode: retry.qrcode?.base64 ?? null,
-          instanceId: instance.instanceId,
-          status: instance.status,
-        };
-      }
+      const result = await refreshInstance(instanceName);
 
       if (!result.success) {
         set.status = 500;
@@ -136,8 +103,8 @@ export const whatsAppRoutes = new Elysia()
 
       return {
         success: true,
-        message: 'Instância WhatsApp criada. Escaneie o QR code.',
-        qrcode: result.qrcode?.base64 ?? null,
+        message: 'WhatsApp aguardando escaneamento do QR code',
+        qrcode: result.qrcode!.base64,
         instanceId: instance.instanceId,
         status: instance.status,
       };
@@ -156,7 +123,7 @@ export const whatsAppRoutes = new Elysia()
                   properties: {
                     success: { type: 'boolean' },
                     message: { type: 'string' },
-                    qrcode: { type: 'string', nullable: true },
+                    qrcode: { type: 'string' },
                     instanceId: { type: 'string' },
                     status: { type: 'string' },
                   },
@@ -386,33 +353,11 @@ export const whatsAppRoutes = new Elysia()
       // Invalida cache de grupos
       await cacheDel(`whatsapp:groups:${instanceName}`);
 
-      // Deleta a instância na Evolution API (ignora 404)
-      await logoutInstance(instanceName);
-      await deleteInstance(instanceName);
-
-      // Cria nova instância com o mesmo nome
-      const result = await createInstance(instanceName);
+      // refreshInstance faz logout → delete → createInstanceWithQR
+      // (já trata "already in use" automaticamente)
+      const result = await refreshInstance(instanceName);
 
       if (!result.success) {
-        // Se deu "already in use", tenta força bruta (delete + create)
-        if (result.error?.includes('already in use')) {
-          await logoutInstance(instanceName);
-          await deleteInstance(instanceName);
-          const retry = await createInstance(instanceName);
-          if (!retry.success) {
-            set.status = 500;
-            return { success: false, error: retry.error ?? 'Erro ao recriar instância WhatsApp' };
-          }
-          // Atualiza status no banco
-          await instanceRepo.updateStatus(existing.id, 'connecting');
-          return {
-            success: true,
-            message: 'QR Code regenerado. Escaneie o novo código.',
-            qrcode: retry.qrcode?.base64 ?? null,
-            instanceId: existing.instanceId,
-            status: 'connecting',
-          };
-        }
         set.status = 500;
         return { success: false, error: result.error ?? 'Erro ao recriar instância WhatsApp' };
       }
@@ -423,7 +368,7 @@ export const whatsAppRoutes = new Elysia()
       return {
         success: true,
         message: 'QR Code regenerado. Escaneie o novo código.',
-        qrcode: result.qrcode?.base64 ?? null,
+        qrcode: result.qrcode!.base64,
         instanceId: existing.instanceId,
         status: 'connecting',
       };
@@ -442,7 +387,7 @@ export const whatsAppRoutes = new Elysia()
                   properties: {
                     success: { type: 'boolean' },
                     message: { type: 'string' },
-                    qrcode: { type: 'string', nullable: true },
+                    qrcode: { type: 'string' },
                     instanceId: { type: 'string' },
                     status: { type: 'string' },
                   },
