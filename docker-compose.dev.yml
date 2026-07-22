@@ -1,0 +1,294 @@
+# docker-compose.dev.yml — Stack completa de desenvolvimento/testing
+# =============================================================================
+# DIFERENÇA do dev.ts (bun run dev):
+#   dev.ts       → apps rodam em hot-reload (bun --watch / vite dev server)
+#   dev compose  → apps compilados (production build) nos containers
+#
+# VANTAGENS:
+#   - Ambiente isolado e reproduzível (não depende do runtime do host)
+#   - Testa os Dockerfiles e builds reais (mesmo pipeline da produção)
+#   - Todas as dependências em um único comando
+#   - Evolution API dentro da rede Docker (sem host.docker.internal)
+#
+# USO:
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+# Com override de portas do .env.infra (se 5453 estiver ocupada):
+#   docker compose --env-file .env.infra -f docker-compose.dev.yml up -d --build
+#
+# Com tunnel Cloudflare (requer ~/.cloudflared/omestre-afiliado.yml):
+#   docker compose -f docker-compose.dev.yml --profile tunnel up -d --build
+#
+# PORTAS (dev compose — faixa 545x para evitar conflito com docker-compose.infra.yml que usa 544x):
+#   API        5452  (container:5442)
+#   Web        5451  (container:5441)
+#   PostgreSQL 5453  (container:5432)  ← override via POSTGRES_PORT
+#   Evolution  5454  (container:8080)  ← override via EVOLUTION_API_PORT
+#   Redis      5455  (container:6379)  ← override via REDIS_PORT
+#
+# BUILD:
+#   Depois de alterar código, rebuildar com --build:
+#     docker compose -f docker-compose.dev.yml up -d --build
+#
+# LOGS:
+#   docker compose -f docker-compose.dev.yml logs -f
+#   docker compose -f docker-compose.dev.yml logs -f api
+# =============================================================================
+
+name: o-mestre-afiliado-dev
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE  (PostgreSQL, Redis, Evolution API)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres:
+    container_name: omestre_dev_postgres
+    image: postgres:17-alpine
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - max_connections=1000
+      - -c
+      - listen_addresses=*
+    environment:
+      POSTGRES_DB: omestre_db
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+    volumes:
+      - omestre_dev_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-127.0.0.1:5453:5432}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d omestre_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - omestre-dev-net
+
+  redis:
+    container_name: omestre_dev_redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --port 6379 --appendonly yes --timeout 0
+    volumes:
+      - omestre_dev_redis_data:/data
+    ports:
+      - "${REDIS_PORT:-127.0.0.1:5455:6379}"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - omestre-dev-net
+
+  evolution-api:
+    container_name: omestre_dev_evolution
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${EVOLUTION_API_PORT:-127.0.0.1:5454:8080}"
+    volumes:
+      - omestre_dev_evolution_instances:/evolution/instances
+    environment:
+      # ── Database ──────────────────────────────────────────────────────
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: >-
+        postgresql://evolution:${POSTGRES_PASSWORD:-evolution_pass}@postgres:5432/omestre_db?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: omestre_afiliado_dev
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
+
+      # ── Server ────────────────────────────────────────────────────────
+      SERVER_NAME: evolution
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: http://localhost:8080
+
+      # ── Cache (Redis) ─────────────────────────────────────────────────
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_TTL: 604800
+      CACHE_REDIS_PREFIX_KEY: evolution_omestre_dev
+
+      # ── Auth ──────────────────────────────────────────────────────────
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+
+      # ── Webhook Global ────────────────────────────────────────────────
+      # Aponta para o container api na rede Docker (porta 5442)
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: http://api:5442/webhook/message
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+      WEBHOOK_EVENTS_CONNECTION_UPDATE: "true"
+      WEBHOOK_EVENTS_QRCODE_UPDATED: "true"
+      WEBHOOK_EVENTS_GROUPS_UPSERT: "true"
+      WEBHOOK_EVENTS_GROUPS_UPDATE: "true"
+      WEBHOOK_EVENTS_GROUP_PARTICIPANTS_UPDATE: "true"
+
+      # ── Logs ──────────────────────────────────────────────────────────
+      LOG_LEVEL: ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS,WEBSOCKET
+      LOG_BAILEYS: error
+
+      # ── QR Code ───────────────────────────────────────────────────────
+      QRCODE_LIMIT: 30
+      QRCODE_COLOR: "#175197"
+
+      # ── Misc ──────────────────────────────────────────────────────────
+      DEL_INSTANCE: "false"
+      LANGUAGE: pt-BR
+      CONFIG_SESSION_PHONE_CLIENT: "O Mestre Afiliado (Dev)"
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      CORS_ORIGIN: "*"
+      CORS_CREDENTIALS: "true"
+
+      # ── Desabilitar integrações não utilizadas ────────────────────────
+      TYPEBOT_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+      DIFY_ENABLED: "false"
+      N8N_ENABLED: "false"
+      EVOAI_ENABLED: "false"
+      S3_ENABLED: "false"
+      RABBITMQ_ENABLED: "false"
+      KAFKA_ENABLED: "false"
+      SQS_ENABLED: "false"
+      PUSHER_ENABLED: "false"
+      WEBSOCKET_ENABLED: "false"
+    networks:
+      - omestre-dev-net
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # APPLICATIONS  (production builds via Dockerfile)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: api
+    container_name: omestre_dev_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-127.0.0.1:5452:5442}"
+    env_file:
+      - .env
+    environment:
+      # Sobrescreve .env para apontar para os containers Docker
+      API_PORT: "5442"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5451}
+      # Webhook que a Evolution API usa para chamar de volta
+      WEBHOOK_URL: http://api:5442/webhook/message
+      REDIS_URL: redis://redis:6379
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - omestre-dev-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: omestre_dev_worker
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
+      REDIS_URL: redis://redis:6379
+    networks:
+      - omestre-dev-net
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: omestre_dev_web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-127.0.0.1:5451:5441}"
+    environment:
+      # Já tem default api:5442 no Dockerfile, mas explícito é mais seguro
+      API_UPSTREAM: api:5442
+    networks:
+      - omestre-dev-net
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OPTIONAL: Cloudflare Tunnel
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Ativar com:  --profile tunnel
+  # Requer ~/.cloudflared/omestre-afiliado.yml configurado
+  # Equivalente ao SKIP_TUNNEL=0 no dev.ts
+  tunnel:
+    profiles:
+      - tunnel
+    image: cloudflare/cloudflared:2024.10.0
+    container_name: omestre_dev_tunnel
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/omestre-afiliado.yml run
+    volumes:
+      - "${HOME}/.cloudflared:/etc/cloudflared:ro"
+    networks:
+      - omestre-dev-net
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Networks
+# ═════════════════════════════════════════════════════════════════════════════
+networks:
+  omestre-dev-net:
+    name: omestre-dev-net
+    driver: bridge
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Volumes (persistent data, isolado da produção)
+# ═════════════════════════════════════════════════════════════════════════════
+volumes:
+  omestre_dev_postgres_data:
+    name: omestre-dev-postgres-data
+  omestre_dev_redis_data:
+    name: omestre-dev-redis-data
+  omestre_dev_evolution_instances:
+    name: omestre-dev-evolution-instances
