@@ -48,3 +48,4 @@ tmp/
 
 # Playwright test results
 test-results/
+.worktrees/
