@@ -23,6 +23,7 @@ import { mlRoutes } from './modules/ml/ml.routes.ts';
 
 const PORT = parseInt(process.env.API_PORT || '5442', 10);
 const WORKER_METRICS_URL = process.env.WORKER_METRICS_URL || 'http://localhost:9092';
+const WORKER_METRICS_API_KEY = process.env.METRICS_API_KEY || '';
 
 // ─── App ─────────────────────────────────────────────────────────────────
 
@@ -160,8 +161,13 @@ const app = new Elysia()
   // ─── Worker Status — Proxy para o servidor de métricas do worker ───
   .get('/api/worker/status', async ({ set }) => {
     try {
+      const headers: Record<string, string> = {};
+      if (WORKER_METRICS_API_KEY) {
+        headers['x-api-key'] = WORKER_METRICS_API_KEY;
+      }
       const res = await fetch(`${WORKER_METRICS_URL}/status`, {
         signal: AbortSignal.timeout(5000),
+        headers,
       });
       if (!res.ok) {
         set.status = 502;

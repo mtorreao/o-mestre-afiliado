@@ -9,6 +9,10 @@
 
 export { getDb, closeDb, getClient, checkDbHealth } from './db.ts';
 
+// ─── Criptografia ──────────────────────────────────────────────────────
+
+export { encrypt, decrypt } from './crypto.ts';
+
 // ─── Schema ────────────────────────────────────────────────────────────
 
 export {

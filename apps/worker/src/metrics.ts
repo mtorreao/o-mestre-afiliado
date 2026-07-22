@@ -371,6 +371,7 @@ export async function getStatusResponse(): Promise<Record<string, unknown>> {
 // ─── HTTP Server ─────────────────────────────────────────────────────
 
 const METRICS_PORT = parseInt(process.env.METRICS_PORT || '9092', 10);
+const METRICS_API_KEY = process.env.METRICS_API_KEY || '';
 
 let metricsServer: { stop(): void } | null = null;
 
@@ -379,6 +380,26 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+/**
+ * Verifica se a requisição possui o METRICS_API_KEY correto.
+ * Se METRICS_API_KEY não estiver configurada, pula a verificação (compat retroativa).
+ * Se configurada, aceita Authorization: Bearer <key> ou X-API-Key: <key>.
+ */
+function authenticateRequest(req: Request): boolean {
+  if (!METRICS_API_KEY) return true; // sem chave configurada → livre
+
+  const authHeader = req.headers.get('authorization') || '';
+  const apiKeyHeader = req.headers.get('x-api-key') || '';
+
+  if (authHeader.startsWith('Bearer ') && authHeader.slice(7) === METRICS_API_KEY) {
+    return true;
+  }
+  if (apiKeyHeader === METRICS_API_KEY) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -401,6 +422,16 @@ export function startMetricsServer(portOverride?: number): void {
     async fetch(req) {
       const url = new URL(req.url);
 
+      // /health é livre (usado pelo healthcheck do Docker Compose)
+      if (url.pathname === '/health') {
+        return new Response('OK', { status: 200 });
+      }
+
+      // Demais endpoints requerem autenticação se METRICS_API_KEY estiver configurada
+      if (!authenticateRequest(req)) {
+        return jsonResponse({ error: 'Unauthorized' }, 401);
+      }
+
       if (url.pathname === '/metrics') {
         const body = getMetrics();
         return new Response(body, {
@@ -410,10 +441,6 @@ export function startMetricsServer(portOverride?: number): void {
             'Cache-Control': 'no-cache',
           },
         });
-      }
-
-      if (url.pathname === '/health') {
-        return new Response('OK', { status: 200 });
       }
 
       // ── Status endpoint ───────────────────────────────────────────

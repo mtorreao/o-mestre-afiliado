@@ -2,6 +2,7 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { eq } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { mlAffiliates } from '../schema/index.ts';
+import { encrypt, decrypt } from '../crypto.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ export class MlAffiliateRepository {
 
   /**
    * Busca um afiliado pelo mlUserId.
+   * Descriptografa sessionCookies automaticamente.
    */
   async findByUserId(mlUserId: string): Promise<MlAffiliate | null> {
     const db = getDb();
@@ -82,11 +84,16 @@ export class MlAffiliateRepository {
       .where(eq(mlAffiliates.mlUserId, mlUserId))
       .limit(1);
 
-    return rows[0] ?? null;
+    const row = rows[0] ?? null;
+    if (row && row.sessionCookies) {
+      row.sessionCookies = decrypt(row.sessionCookies);
+    }
+    return row;
   }
 
   /**
    * Busca um afiliado ML pelo platform userId (nossa tabela users).
+   * Descriptografa sessionCookies automaticamente.
    */
   async findByPlatformUserId(userId: number): Promise<MlAffiliate | null> {
     const db = getDb();
@@ -96,7 +103,11 @@ export class MlAffiliateRepository {
       .where(eq(mlAffiliates.userId, userId))
       .limit(1);
 
-    return rows[0] ?? null;
+    const row = rows[0] ?? null;
+    if (row && row.sessionCookies) {
+      row.sessionCookies = decrypt(row.sessionCookies);
+    }
+    return row;
   }
 
   /**
@@ -104,6 +115,7 @@ export class MlAffiliateRepository {
    *
    * Se já existir, preserva meliid/melitat/sessionCookies existentes
    * e atualiza tokens + lastUsedAt.
+   * sessionCookies é criptografado antes de salvar.
    */
   async upsert(data: MlAffiliateUpsertData): Promise<MlAffiliate> {
     const db = getDb();
@@ -143,15 +155,20 @@ export class MlAffiliateRepository {
         userId: data.userId ?? null,
         meliid: data.meliid ?? null,
         melitat: data.melitat ?? null,
-        sessionCookies: data.sessionCookies ?? null,
+        sessionCookies: encrypt(data.sessionCookies),
       })
       .returning();
 
+    // Descriptografa sessionCookies antes de retornar (transparente)
+    if (row!.sessionCookies) {
+      row!.sessionCookies = decrypt(row!.sessionCookies);
+    }
     return row!;
   }
 
   /**
    * Atualiza campos parciais do afiliado (usado no PUT /api/ml/affiliates/:mlUserId).
+   * sessionCookies é criptografado antes de salvar.
    */
   async patch(mlUserId: string, data: MlAffiliatePatchData): Promise<MlAffiliate | null> {
     const db = getDb();
@@ -161,7 +178,7 @@ export class MlAffiliateRepository {
     const updateData: Record<string, unknown> = {};
     if (data.meliid !== undefined) updateData.meliid = data.meliid;
     if (data.melitat !== undefined) updateData.melitat = data.melitat;
-    if (data.sessionCookies !== undefined) updateData.sessionCookies = data.sessionCookies;
+    if (data.sessionCookies !== undefined) updateData.sessionCookies = encrypt(data.sessionCookies);
 
     if (Object.keys(updateData).length === 0) return existing;
 
@@ -171,6 +188,10 @@ export class MlAffiliateRepository {
       .where(eq(mlAffiliates.mlUserId, mlUserId))
       .returning();
 
+    // Descriptografa sessionCookies antes de retornar (transparente)
+    if (row!.sessionCookies) {
+      row!.sessionCookies = decrypt(row!.sessionCookies);
+    }
     return row!;
   }
 

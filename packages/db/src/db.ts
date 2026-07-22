@@ -45,14 +45,14 @@ export function getDb() {
 
   const url = getConnectionUrl();
   _client = postgres(url, {
-    max: 5,            // máximo de conexões no pool
+    max: 5,
     ssl: false,
-    prepare: false,    // Bun não suporta prepared statements nomeados
-    connect_timeout: 10,   // segundos — não travar se banco estiver offline
-    idle_timeout: 15,      // segundos — conexão ociosa é reciclada
-    max_lifetime: 60 * 5,  // segundos — reconecta periodicamente
+    prepare: false,
+    connect_timeout: 10,
+    idle_timeout: 15,
+    max_lifetime: 60 * 5,
     connection: {
-      statement_timeout: 15000,  // ms — query lenta é cancelada
+      statement_timeout: 15000,
     },
   });
 
