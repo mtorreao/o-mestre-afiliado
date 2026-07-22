@@ -476,6 +476,15 @@ export async function fetchGroupMessages(
       }
     }
 
+    // Garante que respeitamos o limite solicitado, mesmo que a Evolution API
+    // retorne mais itens que o `count` enviado.
+    if (messageList.length > limit) {
+      console.log(
+        `[fetchGroupMessages] Evolution API retornou ${messageList.length} itens para count=${limit}. Cortando para ${limit}.`,
+      );
+      messageList = messageList.slice(0, limit);
+    }
+
     const messages = messageList
       .map((m) => {
         const item = m as Record<string, unknown>;
