@@ -13,10 +13,11 @@ import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
 import { convertUrl, getAccessToken, generateViaUrlParams, generateShortAffiliateLink } from '@omestre/converters';
 import { detectMarketplace } from '@omestre/shared';
-import { MlAffiliateRepository, UserRepository, UserCredentialsRepository } from '@omestre/db';
+import { MlAffiliateRepository, UserRepository, UserCredentialsRepository, checkDbHealth } from '@omestre/db';
 import { authRoutes } from './modules/auth/auth.routes.ts';
 import { affiliateRoutes } from './modules/affiliate/affiliate.routes.ts';
 import { whatsAppRoutes } from './modules/whatsapp/whatsapp.routes.ts';
+import { webhookRoutes } from './modules/webhook/webhook.routes.ts';
 
 const PORT = parseInt(process.env.API_PORT || '5442', 10);
 const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
@@ -44,9 +45,36 @@ const app = new Elysia()
       },
     }),
   )
+  // ─── Error handler global ──────────────────────────────────────────
+  .onError(({ code, error, set }) => {
+    // Se for erro de banco (timeout, conexão), retorna 503
+    const msg = error?.message?.toLowerCase() ?? '';
+    if (
+      msg.includes('timeout') ||
+      msg.includes('connect') ||
+      msg.includes('database') ||
+      msg.includes('postgres') ||
+      msg.includes('connection') ||
+      msg.includes('pool') ||
+      msg.includes('select') ||
+      msg.includes('relation') ||
+      msg.includes('db is')
+    ) {
+      set.status = 503;
+      return {
+        success: false,
+        error: 'Serviço temporariamente indisponível. O banco de dados pode estar reiniciando.',
+      };
+    }
+    // Erros internos não tratados
+    console.error('[api] Erro não tratado:', error);
+    set.status = 500;
+    return { success: false, error: 'Erro interno do servidor' };
+  })
   .use(authRoutes)
   .use(affiliateRoutes)
   .use(whatsAppRoutes)
+  .use(webhookRoutes)
   .get('/', () => ({
     service: 'O Mestre Afiliado API',
     version: '1.0.0',
@@ -64,10 +92,23 @@ const app = new Elysia()
       docs: '/docs',
     },
   }))
-  .get('/health', () => ({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-  }))
+  .get('/health', async () => {
+    let dbStatus = 'unknown';
+    let dbLatency: number | null = null;
+    try {
+      const result = await checkDbHealth();
+      dbStatus = 'connected';
+      dbLatency = result.latencyMs;
+    } catch (err) {
+      dbStatus = 'disconnected';
+    }
+    return {
+      status: 'ok',
+      database: dbStatus,
+      dbLatencyMs: dbLatency,
+      timestamp: new Date().toISOString(),
+    };
+  })
 
   // ─── Conversão padrão (usa .env) ─────────────────────────────────────
   .post(
