@@ -5,7 +5,7 @@
  */
 import { useState } from 'react';
 import { Card, Button, Badge } from '../../components/ui/index.ts';
-import { Search, Check, AlertTriangle } from 'lucide-react';
+import { Search, Check, AlertTriangle, RefreshCw } from 'lucide-react';
 import { GroupOfferAutocomplete } from '../../components/GroupOfferAutocomplete.tsx';
 import { GroupDestAutocomplete } from '../../components/GroupDestAutocomplete.tsx';
 
@@ -37,6 +37,11 @@ export function MirrorConfigSection({ token, onUpdate }: MirrorConfigSectionProp
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validationResult, setValidationResult] = useState<{ validated: boolean; report: ValidationReport } | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  function handleRefresh() {
+    setRefreshKey((k) => k + 1);
+  }
 
   async function handleValidate() {
     setError(null);
@@ -124,34 +129,76 @@ export function MirrorConfigSection({ token, onUpdate }: MirrorConfigSectionProp
     <Card title="📢 Configuração de Espelhamento">
       {/* Offer Groups */}
       <div style={{ marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.35rem' }}>
           <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
             Grupos de Ofertas
           </span>
-          <Badge variant={offerGroups.length > 0 ? 'success' : 'neutral'}>
-            {offerGroups.length > 0 ? `${offerGroups.length} selecionado(s)` : 'Nenhum'}
-          </Badge>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Badge variant={offerGroups.length > 0 ? 'success' : 'neutral'}>
+              {offerGroups.length > 0 ? `${offerGroups.length} selecionado(s)` : 'Nenhum'}
+            </Badge>
+            <button
+              onClick={handleRefresh}
+              title="Atualizar lista de grupos"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--color-text-muted)',
+                padding: '0.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'color var(--transition-fast)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-muted)'; }}
+            >
+              <RefreshCw size={14} />
+            </button>
+          </div>
         </div>
         <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
           Selecione de 1 a 3 grupos onde as ofertas serão monitoradas.
         </p>
-        <GroupOfferAutocomplete token={token} value={offerGroups} onChange={setOfferGroups} />
+        <GroupOfferAutocomplete token={token} value={offerGroups} onChange={setOfferGroups} refreshSignal={refreshKey} />
       </div>
 
       {/* Destination Groups */}
       <div style={{ marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.35rem' }}>
           <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
             Grupos de Destino
           </span>
-          <Badge variant={destGroups.length > 0 ? 'success' : 'neutral'}>
-            {destGroups.length > 0 ? `${destGroups.length} selecionado(s)` : 'Nenhum'}
-          </Badge>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Badge variant={destGroups.length > 0 ? 'success' : 'neutral'}>
+              {destGroups.length > 0 ? `${destGroups.length} selecionado(s)` : 'Nenhum'}
+            </Badge>
+            <button
+              onClick={handleRefresh}
+              title="Atualizar lista de grupos"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--color-text-muted)',
+                padding: '0.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'color var(--transition-fast)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-muted)'; }}
+            >
+              <RefreshCw size={14} />
+            </button>
+          </div>
         </div>
         <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
           Selecione pelo menos 1 grupo para onde as ofertas serão espelhadas.
         </p>
-        <GroupDestAutocomplete token={token} value={destGroups} onChange={setDestGroups} />
+        <GroupDestAutocomplete token={token} value={destGroups} onChange={setDestGroups} refreshSignal={refreshKey} />
       </div>
 
       {/* Summary & Actions */}

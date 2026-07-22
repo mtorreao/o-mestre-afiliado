@@ -16,17 +16,27 @@ interface GroupOfferAutocompleteProps {
   token: string;
   value: Group[];
   onChange: (groups: Group[]) => void;
+  refreshSignal?: number;
 }
 
 const MAX_SELECTION = 3;
 
-export function GroupOfferAutocomplete({ token, value, onChange }: GroupOfferAutocompleteProps) {
+export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }: GroupOfferAutocompleteProps) {
   const { groups, loading, error, refresh } = useWhatsAppGroups(token);
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Reage a refreshSignal do pai (ex: botão Atualizar no MirrorConfigSection)
+  const prevSignal = useRef(refreshSignal);
+  useEffect(() => {
+    if (refreshSignal !== undefined && refreshSignal !== prevSignal.current) {
+      prevSignal.current = refreshSignal;
+      refresh(true);
+    }
+  }, [refreshSignal, refresh]);
 
   // Filtra grupos não selecionados
   const selectedJids = new Set(value.map((g) => g.jid));
@@ -132,7 +142,7 @@ export function GroupOfferAutocomplete({ token, value, onChange }: GroupOfferAut
           ❌ {error}
         </div>
         <button
-          onClick={refresh}
+          onClick={() => refresh()}
           style={{
             padding: '0.3rem 0.6rem',
             borderRadius: '4px',
