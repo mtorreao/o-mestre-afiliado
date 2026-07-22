@@ -426,21 +426,12 @@ export function WppConnection({ token }: WppConnectionProps) {
                 {state.phone}
               </div>
             )}
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <button
-                onClick={handleRegenerateQR}
-                disabled={regeneratingRef.current}
-                style={regeneratingRef.current ? { ...orangeButton, opacity: 0.6, cursor: 'not-allowed' } : orangeButton}
-              >
-                {regeneratingRef.current ? 'Regenerando...' : '🔄 Regenerar QR Code'}
-              </button>
-              <button
-                onClick={handleDisconnect}
-                style={redButton}
-              >
-                Desconectar WhatsApp
-              </button>
-            </div>
+            <button
+              onClick={handleDisconnect}
+              style={redButton}
+            >
+              Desconectar WhatsApp
+            </button>
           </>
         );
 
