@@ -5,7 +5,7 @@
  * Operações: list (paginado com filtros), findById, create, update, patchStatus, delete.
  */
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
-import { and, eq, desc, count, sql } from 'drizzle-orm';
+import { and, eq, desc, count, sql, like } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { mirrors } from '../schema/mirrors.ts';
 
@@ -66,7 +66,7 @@ export class MirrorRepository {
       conditions.push(eq(mirrors.userId, filters.userId));
     }
     if (filters.search) {
-      conditions.push(eq(mirrors.name, filters.search));
+      conditions.push(like(mirrors.name, `%${filters.search}%`));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;

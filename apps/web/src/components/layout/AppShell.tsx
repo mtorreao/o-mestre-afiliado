@@ -132,6 +132,10 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
 
           {/* Theme toggle */}
           <ThemeToggle />
+        </header>
+
+        {/* Page content */}
+        {children}
 
       {/* Inline styles for responsive layout */}
       <style>{`
@@ -144,7 +148,6 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
           }
         }
       `}</style>
-      </header>
     </div>
     </div>
   );

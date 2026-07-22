@@ -67,6 +67,7 @@ export const mirrorRoutes = new Elysia()
       const result = await mirrorRepo.list({
         status,
         search,
+        userId: auth.userId,
         page: isNaN(page) ? 1 : page,
         pageSize: isNaN(pageSize) ? 25 : pageSize,
       });
