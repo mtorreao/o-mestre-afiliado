@@ -226,7 +226,7 @@ export const whatsAppRoutes = new Elysia()
   // ─── GET /api/whatsapp/groups ────────────────────────────────────
   .get(
     '/api/whatsapp/groups',
-    async ({ jwt, request, set }) => {
+    async ({ jwt, request, set, query }) => {
       const auth = await getAuthUser(jwt, request.headers);
       if (!auth) {
         set.status = 401;
@@ -244,11 +244,14 @@ export const whatsAppRoutes = new Elysia()
 
       const instanceName = instanceNameFromUserId(auth.userId);
       const cacheKey = `whatsapp:groups:${instanceName}`;
+      const force = query?.force === 'true';
 
-      // Tenta cache primeiro
-      const cached = await cacheGet<{ jid: string; name: string }[]>(cacheKey);
-      if (cached) {
-        return { success: true, groups: cached, fromCache: true };
+      // Tenta cache primeiro (a menos que force=true)
+      if (!force) {
+        const cached = await cacheGet<{ jid: string; name: string }[]>(cacheKey);
+        if (cached) {
+          return { success: true, groups: cached, fromCache: true };
+        }
       }
 
       // Busca grupos na Evolution API
@@ -263,13 +266,24 @@ export const whatsAppRoutes = new Elysia()
 
       const groups = result.groups || [];
 
-      // Cache por 5 minutos
+      // Atualiza cache (mesmo em force=true, para popular com dados frescos)
       await cacheSet(cacheKey, groups, 300);
 
       return {
         success: true,
         groups,
+        ...(force ? { fromCache: false } : {}),
       };
+    },
+    {
+      detail: {
+        summary: 'Listar grupos do WhatsApp',
+        description: 'Retorna a lista de grupos do WhatsApp conectado. Suporta ?force=true para bypass do cache.',
+        responses: {
+          200: { description: 'Lista de grupos' },
+          401: { description: 'Não autenticado' },
+        },
+      },
     },
   )
 
