@@ -74,7 +74,7 @@ function App() {
             <WorkerStatusPage onBack={() => setNav('dashboard')} />
           )}
           {nav === 'dashboard' && (
-            <DashboardPage user={user} token={token} />
+            <DashboardPage user={user} token={token} onNavigate={setNav} />
           )}
         </AppShell>
       </ToastProvider>
