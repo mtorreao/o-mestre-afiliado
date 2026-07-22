@@ -229,6 +229,9 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
           }
         }
         @media (min-width: 769px) {
+          .sidebar-desktop {
+            transform: translateX(0) !important;
+          }
           .hamburger-btn {
             display: none !important;
           }
