@@ -155,6 +155,9 @@ export const reflectedOffers = omestre.table('reflected_offers', {
 // ─── WhatsApp Instances ───────────────────────────────────────────
 export { userWhatsAppInstances } from './userWhatsAppInstances.ts';
 
+// ─── Espelhamentos (mirrors) ────────────────────────────────────────
+export { mirrors } from './mirrors.ts';
+
 // ─── Re-export dos schemas auxiliares ───────────────────────────────
 export { omestre } from './omestre.ts';
 export { users } from './users.ts';
