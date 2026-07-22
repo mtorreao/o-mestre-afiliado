@@ -1,11 +1,12 @@
 /**
  * AppShell — Layout principal para usuários autenticados
  *
- * Estrutura: Sidebar esquerda + conteúdo principal
+ * Estrutura: Sidebar esquerda + (Topbar + conteúdo principal)
  */
 import React, { useState } from 'react';
 import {
   LayoutDashboard,
+  Settings,
   ScrollText,
   Activity,
   LogOut,
@@ -13,23 +14,24 @@ import {
   X,
   ChevronRight,
 } from 'lucide-react';
-import clsx from 'clsx';
 
-export type NavItem = 'dashboard' | 'mirror-logs' | 'worker-status';
+export type NavItem = 'dashboard' | 'settings' | 'mirror-logs' | 'worker-status';
 
 interface AppShellProps {
   currentNav: NavItem;
   onNavigate: (item: NavItem) => void;
   onLogout: () => void;
   userName: string;
+  pageTitle?: string;
   children: React.ReactNode;
 }
 
-export function AppShell({ currentNav, onNavigate, onLogout, userName, children }: AppShellProps) {
+export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle = '', children }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+    { id: 'settings', label: 'Configurações', icon: <Settings size={18} /> },
     { id: 'mirror-logs', label: 'Espelhamento', icon: <ScrollText size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
@@ -54,7 +56,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
         style={{
           width: '260px',
           background: 'var(--color-surface)',
-          borderRight: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-border)',
           display: 'flex',
           flexDirection: 'column',
           position: 'fixed',
@@ -70,7 +72,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
         {/* Logo */}
         <div
           style={{
-            padding: '1.25rem',
+            padding: 'var(--spacing-5)',
             borderBottom: '1px solid var(--color-border-light)',
             display: 'flex',
             alignItems: 'center',
@@ -93,7 +95,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
         </div>
 
         {/* Nav */}
-        <nav style={{ flex: 1, padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+        <nav style={{ flex: 1, padding: 'var(--spacing-3)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-1)' }}>
           {navItems.map((item) => {
             const isActive = currentNav === item.id;
             return (
@@ -107,7 +109,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.625rem',
-                  padding: '0.5rem 0.75rem',
+                  padding: 'var(--spacing-2) var(--spacing-3)',
                   borderRadius: 'var(--radius-md)',
                   border: 'none',
                   background: isActive ? 'var(--color-primary-subtle)' : 'transparent',
@@ -120,7 +122,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
                   width: '100%',
                 }}
                 onMouseEnter={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-surface-hover)';
+                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-primary-subtle)';
                 }}
                 onMouseLeave={(e) => {
                   if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
@@ -135,14 +137,14 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
         </nav>
 
         {/* Logout */}
-        <div style={{ padding: '0.75rem', borderTop: '1px solid var(--color-border-light)' }}>
+        <div style={{ padding: 'var(--spacing-3)', borderTop: '1px solid var(--color-border-light)' }}>
           <button
             onClick={onLogout}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.5rem 0.75rem',
+              gap: 'var(--spacing-2)',
+              padding: 'var(--spacing-2) var(--spacing-3)',
               borderRadius: 'var(--radius-md)',
               border: 'none',
               background: 'transparent',
@@ -162,31 +164,27 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
         </div>
       </aside>
 
-      {/* Main content */}
-      <main
-        style={{
-          flex: 1,
-          marginLeft: '260px',
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+      {/* Main area: topbar + content */}
+      <div
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', marginLeft: '260px' }}
         className="main-content"
       >
-        {/* Mobile top bar */}
+        {/* Topbar — always visible */}
         <div
-          className="mobile-topbar"
+          className="topbar"
           style={{
-            display: 'none',
-            padding: '0.75rem 1rem',
+            display: 'flex',
+            padding: 'var(--spacing-3) var(--spacing-4)',
             borderBottom: '1px solid var(--color-border)',
             background: 'var(--color-surface)',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: '0.5rem',
           }}
         >
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="hamburger-btn"
             style={{
               background: 'transparent',
               border: 'none',
@@ -197,17 +195,27 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
               alignItems: 'center',
               justifyContent: 'center',
             }}
+            aria-label={sidebarOpen ? 'Fechar menu' : 'Abrir menu'}
+            aria-expanded={sidebarOpen}
           >
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
-          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>O Mestre Afiliado</span>
+
+          {pageTitle && (
+            <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+              {pageTitle}
+            </span>
+          )}
+
           <div style={{ width: '20px' }} />
         </div>
 
-        {children}
-      </main>
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {children}
+        </main>
+      </div>
 
-      {/* Inline styles for responsive sidebar */}
+      {/* Responsive styles */}
       <style>{`
         @media (max-width: 768px) {
           .sidebar-desktop {
@@ -219,8 +227,10 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
           .main-content {
             margin-left: 0 !important;
           }
-          .mobile-topbar {
-            display: flex !important;
+        }
+        @media (min-width: 769px) {
+          .hamburger-btn {
+            display: none !important;
           }
         }
       `}</style>

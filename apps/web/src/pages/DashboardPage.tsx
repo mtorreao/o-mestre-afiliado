@@ -1,19 +1,27 @@
 /**
- * DashboardPage — Dashboard principal do afiliado
+ * DashboardPage — Visão geral com métricas e atalhos
  *
- * Compõe todas as seções de configuração do dashboard.
+ * Dashboard principal que exibe indicadores (grupos, ofertas, WhatsApp, marketplaces),
+ * atalhos rápidos para outras páginas e atividade recente de espelhamento.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
-import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Loading } from '../components/ui/index.ts';
-import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
-import { MlConfigSection } from './sections/MlConfigSection.tsx';
-import { TestConversionSection } from './sections/TestConversionSection.tsx';
-import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
-import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
-import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
-import { WppConnection } from '../components/WppConnection.tsx';
+import { Card, Badge, Button, Loading } from '../components/ui/index.ts';
+import type { NavItem } from '../components/layout/AppShell.tsx';
+import {
+  Users,
+  TrendingUp,
+  Smartphone,
+  Store,
+  Settings,
+  ScrollText,
+  Activity,
+  Package,
+  AlertCircle,
+  ChevronRight,
+} from 'lucide-react';
+
+// ─── Types ──────────────────────────────────────────
 
 interface ProfileData {
   id: number;
@@ -25,28 +33,200 @@ interface ProfileData {
     | { connected: false }
     | { connected: true; nickname: string; mlUserId: string; expired: boolean; hasSessionCookies: boolean; meliid: string | null; melitat: string | null };
   sourceGroups?: { jid: string; name: string }[];
-  targetGroups?: { jid: string; name: string }[];
-  excludedGroups?: {
-    groupJid: string;
-    groupName: string;
-    reason: string;
-    ratio: number;
-    totalMessages: number;
-    validOffers: number;
-  }[];
-  messageTemplate?: string | null;
 }
+
+interface MirrorLogRow {
+  id: number;
+  sourceGroupName: string | null;
+  targetGroupName: string | null;
+  marketplace: string;
+  messagePreview: string | null;
+  reflectedAt: string;
+  status: string;
+}
+
+interface MirrorLogResponse {
+  success: boolean;
+  rows: MirrorLogRow[];
+  total: number;
+}
+
+interface WppStatusResponse {
+  success: boolean;
+  connected?: boolean;
+  status?: string;
+}
+
+// ─── Metric card helper ─────────────────────────────
+
+interface MetricCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  badge?: { label: string; variant: 'success' | 'warning' | 'error' | 'neutral' | 'info' };
+  warning?: string;
+}
+
+function MetricCard({ icon, label, value, badge, warning }: MetricCardProps) {
+  return (
+    <div
+      style={{
+        background: 'var(--color-surface)',
+        border: warning ? '1px solid var(--color-warning)' : '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-xl)',
+        padding: 'var(--spacing-5)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--spacing-2)',
+        transition: 'box-shadow var(--transition-fast)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div
+          style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: 'var(--radius-lg)',
+            background: 'var(--color-bg-secondary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-primary)',
+          }}
+        >
+          {icon}
+        </div>
+        {badge && <Badge variant={badge.variant}>{badge.label}</Badge>}
+      </div>
+      <div>
+        <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1.2 }}>
+          {value}
+        </div>
+        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: '0.15rem' }}>
+          {label}
+        </div>
+      </div>
+      {warning && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: 'var(--text-xs)', color: 'var(--color-warning)' }}>
+          <AlertCircle size={12} />
+          <span>{warning}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Quick action card helper ───────────────────────
+
+interface QuickActionProps {
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  onClick: () => void;
+}
+
+function QuickActionCard({ icon, label, description, onClick }: QuickActionProps) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--spacing-4)',
+        padding: 'var(--spacing-4)',
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-xl)',
+        cursor: 'pointer',
+        textAlign: 'left',
+        width: '100%',
+        transition: 'all var(--transition-fast)',
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-primary)';
+        (e.currentTarget as HTMLButtonElement).style.boxShadow = 'var(--shadow-card)';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border)';
+        (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+      }}
+    >
+      <div
+        style={{
+          width: '44px',
+          height: '44px',
+          borderRadius: 'var(--radius-lg)',
+          background: 'var(--color-primary-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--color-primary)',
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>{label}</div>
+        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>{description}</div>
+      </div>
+      <ChevronRight size={16} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
+    </button>
+  );
+}
+
+// ─── Helpers ────────────────────────────────────────
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function statusBadgeVariant(status: string): 'success' | 'error' | 'warning' | 'neutral' {
+  switch (status) {
+    case 'sent': return 'success';
+    case 'failed': return 'error';
+    case 'blocked': return 'warning';
+    default: return 'neutral';
+  }
+}
+
+function marketplaceIcon(mp: string): string {
+  switch (mp) {
+    case 'shopee': return '🛒';
+    case 'mercadolivre': return '📦';
+    case 'amazon': return '📦';
+    default: return '❓';
+  }
+}
+
+// ─── Component ──────────────────────────────────────
 
 interface DashboardPageProps {
   user: { id: number; email: string; name: string };
   token: string;
+  onNavigate?: (nav: NavItem) => void;
 }
 
-export function DashboardPage({ user, token }: DashboardPageProps) {
+export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
   const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState(false);
 
+  const [wppStatus, setWppStatus] = useState<WppStatusResponse | null>(null);
+  const [wppLoading, setWppLoading] = useState(true);
+
+  const [mirrorTotal, setMirrorTotal] = useState<number | null>(null);
+  const [mirrorTotalLoading, setMirrorTotalLoading] = useState(true);
+
+  const [recentLogs, setRecentLogs] = useState<MirrorLogRow[]>([]);
+  const [recentLogsLoading, setRecentLogsLoading] = useState(true);
+
+  // ─── Load profile ───────────────────────────────────
   const loadProfile = useCallback(async () => {
+    setProfileLoading(true);
+    setProfileError(false);
     try {
       const res = await fetch('/api/affiliate/profile', {
         headers: { Authorization: `Bearer ${token}` },
@@ -54,151 +234,199 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
       const data = await res.json() as { success: boolean; profile: ProfileData };
       if (data.success) {
         setProfile(data.profile);
+      } else {
+        setProfileError(true);
       }
-    } catch { /* ignore */ }
-    setLoading(false);
+    } catch {
+      setProfileError(true);
+    }
+    setProfileLoading(false);
   }, [token]);
 
+  // ─── Load WhatsApp status ────────────────────────────
+  const loadWppStatus = useCallback(async () => {
+    setWppLoading(true);
+    try {
+      const res = await fetch('/api/whatsapp/status', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json() as WppStatusResponse;
+      if (data.success) {
+        setWppStatus(data);
+      }
+    } catch { /* ignore */ }
+    setWppLoading(false);
+  }, [token]);
+
+  // ─── Load mirror logs total (pageSize=1 to get total count) ──
+  const loadMirrorTotal = useCallback(async () => {
+    setMirrorTotalLoading(true);
+    try {
+      const res = await fetch('/api/affiliate/mirror-logs?page=1&pageSize=1', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json() as MirrorLogResponse;
+      if (data.success) {
+        setMirrorTotal(data.total);
+      }
+    } catch { /* ignore */ }
+    setMirrorTotalLoading(false);
+  }, [token]);
+
+  // ─── Load recent activity (5 sent) ───────────────────
+  const loadRecentLogs = useCallback(async () => {
+    setRecentLogsLoading(true);
+    try {
+      const res = await fetch('/api/affiliate/mirror-logs?page=1&pageSize=5&status=sent', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json() as MirrorLogResponse;
+      if (data.success) {
+        setRecentLogs(data.rows);
+      }
+    } catch { /* ignore */ }
+    setRecentLogsLoading(false);
+  }, [token]);
+
+  // ─── Load everything in parallel ──────────────────────
   useEffect(() => {
     loadProfile();
-  }, [loadProfile]);
+    loadWppStatus();
+    loadMirrorTotal();
+    loadRecentLogs();
+  }, [loadProfile, loadWppStatus, loadMirrorTotal, loadRecentLogs]);
 
-  if (loading) {
-    return (
-      <PageLayout>
-        <Loading text="Carregando perfil..." />
-      </PageLayout>
-    );
-  }
-
+  // ─── Derive metrics ────────────────────────────────
+  const groupCount = profile?.sourceGroups?.length ?? 0;
+  const shopeeConfigured = !!profile?.shopeeConfigured;
   const mlConnected = profile?.mercadoLivre.connected === true;
-  const ml = mlConnected ? (profile!.mercadoLivre as Exclude<ProfileData['mercadoLivre'], { connected: false }>) : null;
+  const wppConnected = wppStatus?.connected === true;
 
+  const isLoading = profileLoading && wppLoading && mirrorTotalLoading && recentLogsLoading;
+
+  // ─── Render ────────────────────────────────────────
   return (
-    <PageLayout maxWidth="720px">
-      {/* ML Connect Button (always visible) */}
-      {!mlConnected && (
-        <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
-            Conecte sua conta do Mercado Livre para gerar links de afiliado.
-          </p>
-        </div>
-      )}
-
-      {/* Cards grid */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-        {/* Shopee */}
-        <ShopeeConfigSection
-          token={token}
-          initialAppId={profile?.shopeeAppId || ''}
-          onUpdate={loadProfile}
+    <PageLayout>
+      {/* Section 1: Metric cards */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+          gap: 'var(--spacing-4)',
+        }}
+      >
+        <MetricCard
+          icon={<Users size={20} />}
+          label="Grupos Monitorados"
+          value={profileLoading ? '…' : profileError ? '—' : groupCount}
+          warning={profileError ? 'Não foi possível carregar' : undefined}
         />
+        <MetricCard
+          icon={<TrendingUp size={20} />}
+          label="Ofertas Espelhadas"
+          value={mirrorTotalLoading ? '…' : mirrorTotal !== null ? mirrorTotal : '—'}
+          warning={mirrorTotal === null && !mirrorTotalLoading ? 'Indisponível' : undefined}
+        />
+        <MetricCard
+          icon={<Smartphone size={20} />}
+          label="WhatsApp"
+          value={wppLoading ? '…' : wppConnected ? 'Conectado' : 'Desconectado'}
+          badge={
+            !wppLoading
+              ? wppConnected
+                ? { label: 'Conectado', variant: 'success' as const }
+                : { label: 'Desconectado', variant: 'warning' as const }
+              : undefined
+          }
+        />
+        <MetricCard
+          icon={<Store size={20} />}
+          label="Marketplaces"
+          value={
+            profileLoading
+              ? '…'
+              : profileError
+              ? '—'
+              : [shopeeConfigured && 'Shopee', mlConnected && 'ML']
+                  .filter(Boolean)
+                  .join(' + ') || 'Nenhum'
+          }
+          badge={
+            !profileLoading && !profileError
+              ? shopeeConfigured || mlConnected
+                ? { label: `${[shopeeConfigured && 'Shopee', mlConnected && 'ML'].filter(Boolean).length} configurado(s)`, variant: 'success' as const }
+                : { label: 'Nenhum configurado', variant: 'neutral' as const }
+              : undefined
+          }
+          warning={profileError ? 'Não foi possível carregar' : undefined}
+        />
+      </div>
 
-        {/* Mercado Livre */}
-        {mlConnected && ml ? (
-          <div
-            style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-xl)',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                padding: '1rem 1.25rem',
-                borderBottom: '1px solid var(--color-border-light)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 600 }}>📦 Mercado Livre</h3>
-                <p style={{ margin: '0.15rem 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-                  Conectado como <strong>{ml.nickname}</strong>
-                  {ml.expired && (
-                    <span style={{ marginLeft: '0.4rem', color: 'var(--color-error)', fontSize: 'var(--text-xs)' }}>
-                      (token expirado)
-                    </span>
-                  )}
-                </p>
-              </div>
-              <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-success)' }}>
-                ✅ Conectado
-              </span>
-            </div>
-            <div style={{ padding: '1.25rem' }}>
-              <MlConfigSection
-                mlUserId={ml.mlUserId}
-                meliid={ml.meliid || ''}
-                melitat={ml.melitat || ''}
-                hasSessionCookies={ml.hasSessionCookies}
-                token={token}
-                onUpdate={loadProfile}
-              />
-            </div>
+      {/* Section 2: Quick actions */}
+      <Card title="Atalhos Rápidos">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
+          <QuickActionCard
+            icon={<Settings size={20} />}
+            label="Configurar integrações"
+            description="WhatsApp, Shopee e Mercado Livre"
+            onClick={() => onNavigate?.('settings')}
+          />
+          <QuickActionCard
+            icon={<ScrollText size={20} />}
+            label="Ver logs de espelhamento"
+            description="Histórico completo de ofertas espelhadas"
+            onClick={() => onNavigate?.('mirror-logs')}
+          />
+          <QuickActionCard
+            icon={<Activity size={20} />}
+            label="Status do Worker"
+            description="Métricas, filas e saúde do worker"
+            onClick={() => onNavigate?.('worker-status')}
+          />
+        </div>
+      </Card>
+
+      {/* Section 3: Recent activity (optional) */}
+      <Card title="Atividade Recente">
+        {recentLogsLoading ? (
+          <Loading text="Carregando atividade..." size="sm" />
+        ) : recentLogs.length === 0 ? (
+          <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+            Nenhuma oferta espelhada recentemente.
           </div>
         ) : (
-          <div
-            style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-xl)',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                padding: '1.25rem',
-                textAlign: 'center',
-              }}
-            >
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
-                Conecte sua conta do Mercado Livre para gerar links de afiliado.
-              </p>
-              <button
-                onClick={() => { window.location.href = `/api/ml/auth?userId=${user.id}`; }}
+          <div>
+            {recentLogs.map((log) => (
+              <div
+                key={log.id}
                 style={{
-                  padding: '0.5rem 1rem',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid #2563eb',
-                  background: 'transparent',
-                  color: '#2563eb',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.625rem 0',
+                  borderBottom: '1px solid var(--color-border-light)',
                   fontSize: 'var(--text-sm)',
-                  cursor: 'pointer',
-                  fontWeight: 500,
                 }}
               >
-                + Conectar conta ML
-              </button>
-            </div>
+                <Badge variant={statusBadgeVariant(log.status)}>
+                  {log.status === 'sent' ? 'Enviada' : log.status}
+                </Badge>
+                <span style={{ color: 'var(--color-text-secondary)', flexShrink: 0 }}>
+                  {marketplaceIcon(log.marketplace)}
+                </span>
+                <span style={{ color: 'var(--color-text-primary)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {log.sourceGroupName || '—'}
+                  <span style={{ color: 'var(--color-text-muted)', margin: '0 0.25rem' }}>→</span>
+                  {log.targetGroupName || '—'}
+                </span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {formatDate(log.reflectedAt)}
+                </span>
+              </div>
+            ))}
           </div>
         )}
-
-        {/* Test Conversion */}
-        <TestConversionSection token={token} />
-
-        {/* Mirror Config */}
-        <MirrorConfigSection token={token} onUpdate={loadProfile} />
-
-        {/* Message Template */}
-        <MessageTemplateSection
-          token={token}
-          initialTemplate={profile?.messageTemplate || ''}
-          onUpdate={loadProfile}
-        />
-
-        {/* Excluded Groups */}
-        <ExcludedGroupsSection
-          groups={profile?.excludedGroups || []}
-          token={token}
-          onUpdate={loadProfile}
-        />
-
-        {/* WhatsApp Connection */}
-        <WppConnection token={token} />
-      </div>
+      </Card>
     </PageLayout>
   );
 }
