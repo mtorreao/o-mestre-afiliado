@@ -162,7 +162,10 @@ export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutoc
               fontSize: '0.85rem',
             }}
           >
-            <span style={{ flex: 1, color: '#4ade80' }}>📨 {value.name}</span>
+            <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ color: '#4ade80' }}>📨 {value.name}</span>
+              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{value.jid}</span>
+            </span>
             <button
               onClick={handleClear}
               style={{
@@ -240,7 +243,10 @@ export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutoc
                   borderBottom: i < filtered.length - 1 ? '1px solid #1e293b' : 'none',
                 }}
               >
-                {g.name}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>{g.name}</span>
+                <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{g.jid}</span>
+              </span>
               </div>
             ))}
           </div>
