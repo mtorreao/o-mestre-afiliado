@@ -16,17 +16,13 @@
  *   - Testes 100% isolados, sem dependência de rede
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, mock, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
 
 // ══════════════════════════════════════════════════════════════════════
-// MOCKS DE DEPENDÊNCIAS EXTERNAS
+// MOCK FUNCTIONS — mock.module é chamado dentro de beforeAll para isolar
 // ══════════════════════════════════════════════════════════════════════
 
 const mockDetectMarketplace = mock<(url: string) => string>(() => 'unknown');
-
-mock.module('@omestre/shared', () => ({
-  detectMarketplace: mockDetectMarketplace,
-}));
 
 interface FakeMessage {
   text?: string;
@@ -42,10 +38,6 @@ interface FetchMessagesResult {
 const mockFetchGroupMessages = mock<
   (instanceName: string, groupJid: string, limit?: number) => Promise<FetchMessagesResult>
 >(() => Promise.resolve({ success: true, messages: [] }));
-
-mock.module('../evolution.ts', () => ({
-  fetchGroupMessages: mockFetchGroupMessages,
-}));
 
 // ══════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -67,6 +59,21 @@ const GENERIC_URL = 'https://example.com/page';
 // ══════════════════════════════════════════════════════════════════════
 
 describe('offerValidator', () => {
+  // ✅ beforeAll/afterAll isolam mocks entre test files (mock.module é global)
+  beforeAll(() => {
+    mock.restore();
+    mock.module('@omestre/shared', () => ({
+      detectMarketplace: mockDetectMarketplace,
+    }));
+    mock.module('../evolution.ts', () => ({
+      fetchGroupMessages: mockFetchGroupMessages,
+    }));
+  });
+
+  afterAll(() => {
+    mock.restore();
+  });
+
   beforeEach(() => {
     mockDetectMarketplace.mockReset();
     mockFetchGroupMessages.mockReset();

@@ -2,70 +2,92 @@
  * O Mestre Afiliado — Web App
  *
  * Com autenticação: Login → Dashboard do Afiliado
+ * Design system: Radix UI + Lucide + Tema light minimalista
  */
-
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useAuth } from './hooks/useAuth.ts';
-import { LoginPage } from './components/LoginPage.tsx';
-import { RegisterPage } from './components/RegisterPage.tsx';
-import { AffiliateDashboard } from './components/AffiliateDashboard.tsx';
-import { MirrorLogs } from './components/MirrorLogs.tsx';
-import { WorkerStatus } from './components/WorkerStatus.tsx';
+import { LoginPage } from './pages/LoginPage.tsx';
+import { RegisterPage } from './pages/RegisterPage.tsx';
+import { DashboardPage } from './pages/DashboardPage.tsx';
+import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
+import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
+import { AppShell, type NavItem } from './components/layout/AppShell.tsx';
+import { ToastProvider } from './components/ui/index.ts';
+import { Loader2 } from 'lucide-react';
 
-type Page = 'login' | 'register';
+type AuthPage = 'login' | 'register';
 
 function App() {
   const { user, token, loading, isAuthenticated, login, register, logout } = useAuth();
-  const [page, setPage] = useState<Page>('login');
-  const [subPage, setSubPage] = useState<'dashboard' | 'mirror-logs' | 'worker-status'>('dashboard');
+  const [authPage, setAuthPage] = useState<AuthPage>('login');
+  const [nav, setNav] = useState<NavItem>('dashboard');
 
-  // Se estiver carregando (verificando token), mostra loading
+  // Loading state
   if (loading) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        background: '#0f172a',
-        color: '#e2e8f0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-      }}>
-        Carregando...
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column',
+          gap: '1rem',
+          background: 'var(--color-bg)',
+        }}
+      >
+        <Loader2 size={32} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--color-primary)' }} />
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>Carregando...</span>
       </div>
     );
   }
 
-  // Se autenticado, mostra dashboard, logs ou worker status
+  // Authenticated — AppShell + Pages
   if (isAuthenticated && user && token) {
-    if (subPage === 'mirror-logs') {
-      return <MirrorLogs token={token} onBack={() => setSubPage('dashboard')} />;
-    }
-    if (subPage === 'worker-status') {
-      return <WorkerStatus onBack={() => setSubPage('dashboard')} />;
-    }
-    return <AffiliateDashboard user={user} token={token} onLogout={logout} onNavigateToLogs={() => setSubPage('mirror-logs')} onNavigateToWorkerStatus={() => setSubPage('worker-status')} />;
-  }
-
-  // Se não autenticado, mostra login ou registro
-  if (page === 'register') {
     return (
-      <RegisterPage
-        onRegister={async (name, email, password) => {
-          await register(name, email, password);
-        }}
-        onSwitchToLogin={() => setPage('login')}
-      />
+      <ToastProvider>
+        <AppShell
+          currentNav={nav}
+          onNavigate={setNav}
+          onLogout={() => {
+            logout();
+            setNav('dashboard');
+          }}
+          userName={user.name}
+        >
+          {nav === 'mirror-logs' && (
+            <MirrorLogsPage token={token} onBack={() => setNav('dashboard')} />
+          )}
+          {nav === 'worker-status' && (
+            <WorkerStatusPage onBack={() => setNav('dashboard')} />
+          )}
+          {nav === 'dashboard' && (
+            <DashboardPage user={user} token={token} />
+          )}
+        </AppShell>
+      </ToastProvider>
     );
   }
 
+  // Unauthenticated — Login or Register
   return (
-    <LoginPage
-      onLogin={async (email, password) => {
-        await login(email, password);
-      }}
-      onSwitchToRegister={() => setPage('register')}
-    />
+    <ToastProvider>
+      {authPage === 'register' ? (
+        <RegisterPage
+          onRegister={async (name, email, password) => {
+            await register(name, email, password);
+          }}
+          onSwitchToLogin={() => setAuthPage('login')}
+        />
+      ) : (
+        <LoginPage
+          onLogin={async (email, password) => {
+            await login(email, password);
+          }}
+          onSwitchToRegister={() => setAuthPage('register')}
+        />
+      )}
+    </ToastProvider>
   );
 }
 

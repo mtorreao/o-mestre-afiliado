@@ -16,105 +16,111 @@
 import { describe, it, expect, mock, beforeAll, afterAll, beforeEach } from 'bun:test';
 import type { MirrorMessageEvent } from '@omestre/shared';
 
-// ========================================================
-// Mocks globais — executados ANTES de qualquer import
-// ========================================================
+// ════════════════════════════════════════════════════════
+// Estado mutável compartilhado entre tests
+// ════════════════════════════════════════════════════════
 
-// ── Cache de conversão (Redis) — sempre miss ──
-mock.module('./conversion-cache.ts', () => ({
-  getCachedConversion: () => Promise.resolve(null),
-  setCachedConversion: () => Promise.resolve(),
-}));
-
-// ── Rate limiter (Redis) — sempre concede slot ──
-mock.module('./rate-limiter.ts', () => ({
-  tryAcquireSlot: () => Promise.resolve({ acquired: true, waitMs: 0 }),
-  waitForSlot: () => Promise.resolve(true),
-}));
-
-// ── Notifier (Redis) — silencioso ──
-mock.module('./notifier.ts', () => ({
-  processFailure: () => Promise.resolve(),
-  classifyConversionError: () => null,
-}));
-
-// ── Dead Letter Queue (Redis) — silenciosa ──
-mock.module('./dead-letter-queue.ts', () => ({
-  pushToDLQ: () => Promise.resolve(),
-}));
-
-// ── Métricas — sem contadores reais ──
-mock.module('./metrics.ts', () => ({
-  incrementCounter: () => {},
-  observeHistogram: () => {},
-}));
-
-// ── DB mock dinâmico — atualizado por cada teste ──
-// O getDb() diferencia consultas de afiliado (evolutionInstanceId)
-// das demais (dedup, filters, targetGroups) para retornar dados
-// apenas onde o teste precisa.
 let currentAffiliateRow: { evolutionInstanceId: string } = { evolutionInstanceId: 'user-42' };
 let currentMlAffiliate: any = null;
 let currentUserCredentials: any = null;
 
-mock.module('@omestre/db', () => ({
-  getDb: () => ({
-    select: (fields: any) => {
-      // Detecta se esta consulta busca evolutionInstanceId (affiliate query)
-      // vs outra coisa (dedup, filters, targetGroups)
-      const isAffiliateQuery = fields && 'evolutionInstanceId' in fields;
-      return {
-        from: () => ({
-          where: () => ({
-            limit: () => {
-              if (isAffiliateQuery) {
-                return Promise.resolve(
-                  currentAffiliateRow ? [currentAffiliateRow] : []
-                );
-              }
-              // Dedup, filters, targetGroups → vazio (safe defaults)
-              return Promise.resolve([]);
-            },
+// ════════════════════════════════════════════════════════
+// beforeAll/afterAll — isola mocks entre test files
+// ════════════════════════════════════════════════════════
+
+beforeAll(() => {
+  mock.restore();
+
+  // ── Cache de conversão (Redis) — sempre miss ──
+  mock.module('./conversion-cache.ts', () => ({
+    getCachedConversion: () => Promise.resolve(null),
+    setCachedConversion: () => Promise.resolve(),
+  }));
+
+  // ── Rate limiter (Redis) — sempre concede slot ──
+  mock.module('./rate-limiter.ts', () => ({
+    tryAcquireSlot: () => Promise.resolve({ acquired: true, waitMs: 0 }),
+    waitForSlot: () => Promise.resolve(true),
+  }));
+
+  // ── Notifier (Redis) — silencioso ──
+  mock.module('./notifier.ts', () => ({
+    processFailure: () => Promise.resolve(),
+    classifyConversionError: () => null,
+  }));
+
+  // ── Dead Letter Queue (Redis) — silenciosa ──
+  mock.module('./dead-letter-queue.ts', () => ({
+    pushToDLQ: () => Promise.resolve(),
+  }));
+
+  // ── Métricas — sem contadores reais ──
+  mock.module('./metrics.ts', () => ({
+    incrementCounter: () => {},
+    observeHistogram: () => {},
+  }));
+
+  // ── DB mock dinâmico — atualizado por cada teste ──
+  mock.module('@omestre/db', () => ({
+    getDb: () => ({
+      select: (fields: any) => {
+        const isAffiliateQuery = fields && 'evolutionInstanceId' in fields;
+        return {
+          from: () => ({
+            where: () => ({
+              limit: () => {
+                if (isAffiliateQuery) {
+                  return Promise.resolve(
+                    currentAffiliateRow ? [currentAffiliateRow] : []
+                  );
+                }
+                return Promise.resolve([]);
+              },
+            }),
           }),
-        }),
-      };
-    },
-    insert: () => ({
-      values: () => Promise.resolve(),
+        };
+      },
+      insert: () => ({
+        values: () => Promise.resolve(),
+      }),
     }),
-  }),
-  affiliates: {
-    id: 'id',
-    evolutionInstanceId: 'evolutionInstanceId',
-    targetGroups: 'targetGroups',
-    filters: 'filters',
-    messageTemplate: 'messageTemplate',
-  },
-  and: (...args: any[]) => args,
-  eq: (a: any, b: any) => ({ a, b }),
-  gte: (a: any, b: any) => ({ a, b }),
-  reflectedOffers: {
-    id: 'id',
-    affiliateId: 'affiliateId',
-    originalLink: 'originalLink',
-    reflectedAt: 'reflectedAt',
-  },
-  MlAffiliateRepository: class {
-    async findByPlatformUserId() {
-      return currentMlAffiliate;
-    }
-  },
-  UserCredentialsRepository: class {
-    async findByUserId() {
-      return currentUserCredentials;
-    }
-  },
-  AffiliatesRepository: class {
-    async findById() {
-      return currentAffiliateRow ? { id: 1, evolutionInstanceId: 'user-42' } : null;
-    }
-  },
-}));
+    affiliates: {
+      id: 'id',
+      evolutionInstanceId: 'evolutionInstanceId',
+      targetGroups: 'targetGroups',
+      filters: 'filters',
+      messageTemplate: 'messageTemplate',
+    },
+    and: (...args: any[]) => args,
+    eq: (a: any, b: any) => ({ a, b }),
+    gte: (a: any, b: any) => ({ a, b }),
+    reflectedOffers: {
+      id: 'id',
+      affiliateId: 'affiliateId',
+      originalLink: 'originalLink',
+      reflectedAt: 'reflectedAt',
+    },
+    MlAffiliateRepository: class {
+      async findByPlatformUserId() {
+        return currentMlAffiliate;
+      }
+    },
+    UserCredentialsRepository: class {
+      async findByUserId() {
+        return currentUserCredentials;
+      }
+    },
+    AffiliatesRepository: class {
+      async findById() {
+        return currentAffiliateRow ? { id: 1, evolutionInstanceId: 'user-42' } : null;
+      }
+    },
+  }));
+});
+
+afterAll(() => {
+  mock.restore();
+});
 
 // ════════════════════════════════════════════════════════
 // Testes — Bloqueio por afiliado link mismatch no pipeline

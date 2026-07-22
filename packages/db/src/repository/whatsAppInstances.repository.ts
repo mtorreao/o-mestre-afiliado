@@ -3,6 +3,17 @@ import { eq, and } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { userWhatsAppInstances } from '../schema/index.ts';
 
+/**
+ * Normaliza o retorno de `.returning()` do Drizzle.
+ * Em drizzle-orm ^0.38 com driver postgres, UPDATE/DELETE .returning()
+ * pode retornar um objeto vazio `{}` em vez de array `[{...}]`.
+ */
+function ensureArray<T>(result: T | T[]): T[] {
+  if (Array.isArray(result)) return result;
+  // Drizzle postgres driver retorna {} ou { ...row } diretamente
+  return Object.keys(result as object).length > 0 ? [result] : [];
+}
+
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
 export type WhatsAppInstance = InferSelectModel<typeof userWhatsAppInstances>;
@@ -85,7 +96,7 @@ export class WhatsAppInstanceRepository {
    */
   async create(data: NewWhatsAppInstance): Promise<WhatsAppInstance> {
     const db = getDb();
-    const [row] = await db.insert(userWhatsAppInstances).values(data).returning();
+    const [row] = ensureArray(await db.insert(userWhatsAppInstances).values(data).returning());
     return row!;
   }
 
@@ -94,11 +105,11 @@ export class WhatsAppInstanceRepository {
    */
   async updateStatus(id: number, status: string): Promise<WhatsAppInstance | null> {
     const db = getDb();
-    const [row] = await db
+    const [row] = ensureArray(await db
       .update(userWhatsAppInstances)
       .set({ status })
       .where(eq(userWhatsAppInstances.id, id))
-      .returning();
+      .returning());
 
     return row ?? null;
   }
@@ -108,10 +119,10 @@ export class WhatsAppInstanceRepository {
    */
   async deleteByInstanceId(instanceId: string): Promise<boolean> {
     const db = getDb();
-    const [row] = await db
+    const [row] = ensureArray(await db
       .delete(userWhatsAppInstances)
       .where(eq(userWhatsAppInstances.instanceId, instanceId))
-      .returning({ id: userWhatsAppInstances.id });
+      .returning({ id: userWhatsAppInstances.id }));
 
     return !!row;
   }
@@ -121,10 +132,10 @@ export class WhatsAppInstanceRepository {
    */
   async deleteByUserId(userId: number): Promise<boolean> {
     const db = getDb();
-    const [row] = await db
+    const [row] = ensureArray(await db
       .delete(userWhatsAppInstances)
       .where(eq(userWhatsAppInstances.userId, userId))
-      .returning({ id: userWhatsAppInstances.id });
+      .returning({ id: userWhatsAppInstances.id }));
 
     return !!row;
   }

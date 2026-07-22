@@ -1,7 +1,11 @@
 /**
- * Button — Botão reutilizável
+ * Button — Componente de botão reutilizável
+ *
+ * Variantes: primary (padrão), secondary, outline, ghost, danger
+ * Tamanhos: sm, md (padrão), lg
  */
 import React from 'react';
+import clsx from 'clsx';
 import { Loader2 } from 'lucide-react';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
@@ -14,51 +18,98 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: React.ReactNode;
 }
 
-const variants: Record<ButtonVariant, React.CSSProperties> = {
-  primary: { background: 'var(--color-primary)', color: '#fff', border: 'none' },
-  secondary: { background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)' },
-  outline: { background: 'transparent', color: 'var(--color-primary)', border: '1px solid var(--color-primary)' },
-  ghost: { background: 'transparent', color: 'var(--color-text-secondary)', border: '1px solid transparent' },
-  danger: { background: 'var(--color-error)', color: '#fff', border: 'none' },
+const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
+  primary: {
+    background: 'var(--color-primary)',
+    color: '#fff',
+    border: 'none',
+  },
+  secondary: {
+    background: 'var(--color-bg-secondary)',
+    color: 'var(--color-text-primary)',
+    border: '1px solid var(--color-border)',
+  },
+  outline: {
+    background: 'transparent',
+    color: 'var(--color-primary)',
+    border: '1px solid var(--color-primary)',
+  },
+  ghost: {
+    background: 'transparent',
+    color: 'var(--color-text-secondary)',
+    border: '1px solid transparent',
+  },
+  danger: {
+    background: 'var(--color-error)',
+    color: '#fff',
+    border: 'none',
+  },
 };
 
-const sizes: Record<ButtonSize, React.CSSProperties> = {
+const sizeStyles: Record<ButtonSize, React.CSSProperties> = {
   sm: { padding: '0.3rem 0.6rem', fontSize: 'var(--text-xs)', gap: '0.3rem' },
   md: { padding: '0.5rem 1rem', fontSize: 'var(--text-sm)', gap: '0.4rem' },
   lg: { padding: '0.625rem 1.25rem', fontSize: 'var(--text-base)', gap: '0.5rem' },
 };
 
-export function Button({ variant = 'primary', size = 'md', loading, icon, children, disabled, style, ...props }: ButtonProps) {
+export function Button({
+  variant = 'primary',
+  size = 'md',
+  loading = false,
+  icon,
+  children,
+  disabled,
+  style,
+  className,
+  ...props
+}: ButtonProps) {
   const isDisabled = disabled || loading;
+
+  const baseStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 500,
+    borderRadius: 'var(--radius-md)',
+    cursor: isDisabled ? 'not-allowed' : 'pointer',
+    transition: 'all var(--transition-fast)',
+    outline: 'none',
+    lineHeight: 1.4,
+    whiteSpace: 'nowrap',
+    opacity: isDisabled ? 0.6 : 1,
+    ...sizeStyles[size],
+    ...variantStyles[variant],
+    ...style,
+  };
+
   return (
     <button
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontWeight: 500, borderRadius: 'var(--radius-md)',
-        cursor: isDisabled ? 'not-allowed' : 'pointer',
-        transition: 'all var(--transition-fast)',
-        lineHeight: 1.4, whiteSpace: 'nowrap', outline: 'none',
-        opacity: isDisabled ? 0.6 : 1,
-        ...sizes[size], ...variants[variant], ...style,
-      }}
+      className={clsx('Button', className)}
+      style={baseStyle}
       disabled={isDisabled}
       onMouseEnter={(e) => {
-        if (isDisabled) return;
-        const el = e.currentTarget as HTMLButtonElement;
-        if (variant === 'primary') el.style.background = 'var(--color-primary-hover)';
-        if (variant === 'outline') el.style.background = 'var(--color-primary-subtle)';
-        if (variant === 'ghost') el.style.background = 'var(--color-surface-hover)';
+        if (!isDisabled && variant === 'primary')
+          (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-primary-hover)';
+        if (!isDisabled && variant === 'outline')
+          (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-primary-subtle)';
+        if (!isDisabled && variant === 'ghost')
+          (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-surface-hover)';
       }}
       onMouseLeave={(e) => {
-        if (isDisabled) return;
-        const el = e.currentTarget as HTMLButtonElement;
-        if (variant === 'primary') el.style.background = 'var(--color-primary)';
-        if (variant === 'outline') el.style.background = 'transparent';
-        if (variant === 'ghost') el.style.background = 'transparent';
+        if (variant === 'primary')
+          (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-primary)';
+        if (variant === 'outline')
+          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+        if (variant === 'ghost')
+          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
       }}
       {...props}
     >
-      {loading ? <Loader2 size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16} style={{ animation: 'spin 0.8s linear infinite' }} /> : icon}
+      {loading ? (
+        <Loader2 size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16} style={{ animation: 'spin 0.8s linear infinite' }} />
+      ) : icon ? (
+        icon
+      ) : null}
       {children}
     </button>
   );

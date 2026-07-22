@@ -138,65 +138,81 @@ class FakeRedis {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Mocks GLOBAIS — antes de qualquer import
+// Mocks — dentro de beforeAll para isolar entre test files
 // ══════════════════════════════════════════════════════════════════════
 
-mock.module('ioredis', () => ({ default: FakeRedis }));
+let mockModuleSetup = false;
+function ensureMockModule() {
+  if (mockModuleSetup) return;
+  mockModuleSetup = true;
 
-mock.module('@omestre/db', () => ({
-  getDb: () => ({}),
-  closeDb: () => Promise.resolve(),
-  getClient: () => ({}),
-  checkDbHealth: () => Promise.resolve({ ok: true, latencyMs: 0 }),
-  omestre: {},
-  affiliates: {},
-  mlAffiliates: {},
-  reflectedOffers: {},
-  marketplaceEnum: {},
-  offerStatusEnum: {},
-  users: {},
-  userCredentials: {},
-  userWhatsAppInstances: {},
-  MlAffiliateRepository: class {
-    async findByPlatformUserId() { return null; }
-  },
-  UserRepository: class {},
-  UserCredentialsRepository: class {
-    async findByUserId() { return null; }
-  },
-  WhatsAppInstanceRepository: class {},
-  AffiliatesRepository: class {
-    async findAllActiveWithSourceGroups(): Promise<MockAffiliate[]> {
-      if (mockDbError) throw mockDbError;
-      return mockAffiliatesData.filter((a) => {
-        if (!a.active) return false;
-        const groups = a.sourceGroups;
-        return groups != null && groups.length > 0;
-      });
-    }
-  },
-  MirrorLogRepository: class {},
-}));
+  mock.module('ioredis', () => ({ default: FakeRedis }));
 
-// Dependências que index.ts importa — mocks vazios pra evitar side effects
-mock.module('./mirror-pipeline.ts', () => ({
-  processMirrorMessage: () => Promise.resolve(true),
-}));
+  mock.module('@omestre/db', () => ({
+    getDb: () => ({}),
+    closeDb: () => Promise.resolve(),
+    getClient: () => ({}),
+    checkDbHealth: () => Promise.resolve({ ok: true, latencyMs: 0 }),
+    omestre: {},
+    affiliates: {},
+    mlAffiliates: {},
+    reflectedOffers: {},
+    marketplaceEnum: {},
+    offerStatusEnum: {},
+    users: {},
+    userCredentials: {},
+    userWhatsAppInstances: {},
+    MlAffiliateRepository: class {
+      async findByPlatformUserId() { return null; }
+    },
+    UserRepository: class {},
+    UserCredentialsRepository: class {
+      async findByUserId() { return null; }
+    },
+    WhatsAppInstanceRepository: class {},
+    AffiliatesRepository: class {
+      async findAllActiveWithSourceGroups(): Promise<MockAffiliate[]> {
+        if (mockDbError) throw mockDbError;
+        return mockAffiliatesData.filter((a) => {
+          if (!a.active) return false;
+          const groups = a.sourceGroups;
+          return groups != null && groups.length > 0;
+        });
+      }
+    },
+    MirrorLogRepository: class {},
+  }));
 
-mock.module('./revalidate.ts', () => ({
-  runRevalidation: () => Promise.resolve({ totalAffiliates: 0, validatedAffiliates: 0, failedAffiliates: 0, results: [] }),
-  runRevalidationDaemon: () => Promise.resolve(),
-}));
+  // Dependências que index.ts importa — mocks vazios pra evitar side effects
+  mock.module('./mirror-pipeline.ts', () => ({
+    processMirrorMessage: () => Promise.resolve(true),
+  }));
 
-mock.module('./metrics.ts', () => ({
-  startMetricsServer: () => {},
-  setStatusMeta: () => {},
-}));
+  mock.module('./revalidate.ts', () => ({
+    runRevalidation: () => Promise.resolve({ totalAffiliates: 0, validatedAffiliates: 0, failedAffiliates: 0, results: [] }),
+    runRevalidationDaemon: () => Promise.resolve(),
+  }));
 
-mock.module('./dead-letter-queue.ts', () => ({
-  pushToDLQ: () => Promise.resolve(),
-  purgeOldDLQItems: () => Promise.resolve(0),
-}));
+  mock.module('./metrics.ts', () => ({
+    startMetricsServer: () => {},
+    setStatusMeta: () => {},
+  }));
+
+  mock.module('./dead-letter-queue.ts', () => ({
+    pushToDLQ: () => Promise.resolve(),
+    purgeOldDLQItems: () => Promise.resolve(0),
+  }));
+}
+
+// ✅ beforeAll/afterAll isolam mocks entre test files (mock.module é global)
+beforeAll(() => {
+  mock.restore();
+  ensureMockModule();
+});
+
+afterAll(() => {
+  mock.restore();
+});
 
 // ══════════════════════════════════════════════════════════════════════
 // Testes
