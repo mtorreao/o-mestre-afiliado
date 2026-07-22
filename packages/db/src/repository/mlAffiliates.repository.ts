@@ -160,8 +160,8 @@ export class MlAffiliateRepository {
       .returning();
 
     // Descriptografa sessionCookies antes de retornar (transparente)
-    if (row.sessionCookies) {
-      row.sessionCookies = decrypt(row.sessionCookies);
+    if (row!.sessionCookies) {
+      row!.sessionCookies = decrypt(row!.sessionCookies);
     }
     return row!;
   }
