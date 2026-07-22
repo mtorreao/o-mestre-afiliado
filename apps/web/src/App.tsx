@@ -83,14 +83,7 @@ function AppContent() {
             <MirrorsPage token={token} />
           )}
           {nav === 'mirror-logs' && (
-            <MirrorLogsPage
-              token={token}
-              onBack={() => setNav('dashboard')}
-              onNavigate={(item: NavItem) => {
-                setEditingMirrorId(null);
-                setNav(item);
-              }}
-            />
+            <MirrorLogsPage token={token} />
           )}
           {nav === 'mirror-form' && (
             <MirrorFormPage

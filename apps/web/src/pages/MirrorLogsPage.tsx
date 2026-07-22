@@ -39,8 +39,6 @@ interface MirrorLogResponse {
 
 interface MirrorLogsPageProps {
   token: string;
-  onBack: () => void;
-  onNavigate?: (nav: NavItem) => void;
 }
 
 // ─── Helpers ────────────────────────────────────────
@@ -71,7 +69,7 @@ function formatDate(iso: string): string {
 
 // ─── Component ──────────────────────────────────────
 
-export function MirrorLogsPage({ token, onBack, onNavigate }: MirrorLogsPageProps) {
+export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
   const [data, setData] = useState<MirrorLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -135,11 +133,6 @@ export function MirrorLogsPage({ token, onBack, onNavigate }: MirrorLogsPageProp
         subtitle={data ? `${data.total} registro(s)` : 'Carregando...'}
         actions={
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            {onNavigate && (
-              <Button variant="outline" size="sm" onClick={() => onNavigate('mirror-form')} icon={<PlusCircle size={14} />}>
-                Novo
-              </Button>
-            )}
             <Button variant="ghost" size="sm" onClick={handleReset} icon={<X size={14} />}>
               Limpar
             </Button>
