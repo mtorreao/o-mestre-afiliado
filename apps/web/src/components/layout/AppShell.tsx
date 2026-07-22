@@ -6,14 +6,13 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard,
-  ScrollText,
+  Repeat2,
   Activity,
   LogOut,
   Menu,
   X,
   ChevronRight,
 } from 'lucide-react';
-import clsx from 'clsx';
 
 export type NavItem = 'dashboard' | 'mirror-logs' | 'worker-status';
 
@@ -30,7 +29,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
 
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    { id: 'mirror-logs', label: 'Espelhamento', icon: <ScrollText size={18} /> },
+    { id: 'mirror-logs', label: 'Espelhamento', icon: <Repeat2 size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
 
