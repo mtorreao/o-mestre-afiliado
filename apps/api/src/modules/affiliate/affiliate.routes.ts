@@ -8,6 +8,7 @@ import type { ConversionResult } from '@omestre/shared';
 import { generateViaUrlParams } from '@omestre/converters';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
 import { validateOfferGroups } from '../../services/offerValidator.ts';
+import { replaceSourceGroups, cacheSourceGroup, removeSourceGroup } from '../../services/group-cache.ts';
 
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
@@ -33,6 +34,10 @@ export const affiliateRoutes = new Elysia()
     const creds = await credentialsRepo.findByUserId(auth.userId);
     const mlAffiliate = await mlRepo.findByPlatformUserId(auth.userId);
 
+    // Busca configuração de grupos salva (espelhamento)
+    const evolutionInstanceId = instanceNameFromUserId(auth.userId);
+    const affiliate = await affiliatesRepo.findByEvolutionInstanceId(evolutionInstanceId);
+
     const mlInfo = mlAffiliate
       ? {
           connected: true,
@@ -54,6 +59,9 @@ export const affiliateRoutes = new Elysia()
         shopeeConfigured: !!(creds?.shopeeAppId),
         shopeeAppId: creds?.shopeeAppId || null,
         mercadoLivre: mlInfo,
+        // Grupos de espelhamento configurados
+        sourceGroups: affiliate?.sourceGroups || [],
+        targetGroups: affiliate?.targetGroups || [],
       },
     };
   })
@@ -152,6 +160,10 @@ export const affiliateRoutes = new Elysia()
 
     const evolutionInstanceId = `user-${auth.userId}`;
 
+    // Busca configuração atual ANTES de salvar (para diff dos sourceGroups)
+    const currentAffiliate = await affiliatesRepo.findByEvolutionInstanceId(evolutionInstanceId);
+    const oldSourceGroups = (currentAffiliate?.sourceGroups as { jid: string; name: string }[]) ?? [];
+
     // Validação das últimas 30 mensagens antes de salvar
     const validation = await validateOfferGroups(evolutionInstanceId, sourceGroups);
     if (!validation.overallPassed) {
@@ -178,6 +190,15 @@ export const affiliateRoutes = new Elysia()
       sourceGroups,
       targetGroups: [targetGroup],
     });
+
+    // Atualiza o cache Redis dos sourceGroups
+    // Remove grupos antigos que não estão mais na lista
+    // e adiciona os novos — sem consulta ao PostgreSQL no webhook
+    await replaceSourceGroups(
+      oldSourceGroups,
+      sourceGroups,
+      affiliate.id,
+    );
 
     return {
       success: true,

@@ -22,6 +22,8 @@ interface ProfileData {
   mercadoLivre:
     | { connected: false }
     | { connected: true; nickname: string; mlUserId: string; expired: boolean; hasSessionCookies: boolean; meliid: string | null; melitat: string | null };
+  sourceGroups?: { jid: string; name: string }[];
+  targetGroups?: { jid: string; name: string }[];
 }
 
 interface AffiliateDashboardProps {
@@ -198,6 +200,13 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
       if (data.success) {
         setProfile(data.profile);
         setShopeeAppId(data.profile.shopeeAppId || '');
+        // Restaura grupos de espelhamento salvos
+        if (data.profile.sourceGroups?.length) {
+          setOfferGroups(data.profile.sourceGroups);
+        }
+        if (data.profile.targetGroups?.length) {
+          setDestGroup(data.profile.targetGroups[0]!);
+        }
       }
     } catch { /* ignore */ }
     setLoading(false);
@@ -630,7 +639,7 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
         </div>
 
         {/* Card: Grupos de Ofertas (1-3) */}
-        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
           <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>📢 Grupos de Ofertas</span>
             <span style={{ fontSize: '0.8rem', color: offerGroups.length > 0 ? '#4ade80' : '#f87171' }}>
@@ -650,7 +659,7 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
         </div>
 
         {/* Card: Grupo de Destino (exatamente 1) */}
-        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
           <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>🎯 Grupo de Destino</span>
             <span style={{ fontSize: '0.8rem', color: destGroup ? '#4ade80' : '#f87171' }}>
