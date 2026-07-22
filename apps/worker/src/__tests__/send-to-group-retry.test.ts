@@ -37,10 +37,7 @@ let fetchCallCount = 0;
 // Helpers
 // ════════════════════════════════════════════════════════
 
-function makeResponse
-  // Bun requires status in range [200, 599] for ok=false; use 500+ for errors
-  return new Response(body, { status, statusText: ok ? 'OK' : 'Error' });
-}
+function makeResponse(ok: boolean, status: number, body = ''): Response {
 
 /**
  * Instala um mock de fetch que segue uma sequência de comportamentos.
