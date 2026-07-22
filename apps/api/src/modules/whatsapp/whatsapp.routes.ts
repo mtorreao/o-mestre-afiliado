@@ -362,4 +362,97 @@ export const whatsAppRoutes = new Elysia()
         },
       },
     },
+  )
+
+  // ─── POST /api/whatsapp/regenerate-qr ───────────────────────────
+  .post(
+    '/api/whatsapp/regenerate-qr',
+    async ({ jwt, request, set }) => {
+      const auth = await getAuthUser(jwt, request.headers);
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: 'Não autenticado' };
+      }
+
+      const instanceName = instanceNameFromUserId(auth.userId);
+
+      // Verifica se tem instância no banco
+      const existing = await instanceRepo.findByUserId(auth.userId);
+      if (!existing) {
+        set.status = 400;
+        return { success: false, error: 'Nenhuma instância WhatsApp encontrada. Conecte-se primeiro.' };
+      }
+
+      // Invalida cache de grupos
+      await cacheDel(`whatsapp:groups:${instanceName}`);
+
+      // Deleta a instância na Evolution API (ignora 404)
+      await logoutInstance(instanceName);
+      await deleteInstance(instanceName);
+
+      // Cria nova instância com o mesmo nome
+      const result = await createInstance(instanceName);
+
+      if (!result.success) {
+        // Se deu "already in use", tenta força bruta (delete + create)
+        if (result.error?.includes('already in use')) {
+          await logoutInstance(instanceName);
+          await deleteInstance(instanceName);
+          const retry = await createInstance(instanceName);
+          if (!retry.success) {
+            set.status = 500;
+            return { success: false, error: retry.error ?? 'Erro ao recriar instância WhatsApp' };
+          }
+          // Atualiza status no banco
+          await instanceRepo.updateStatus(existing.id, 'connecting');
+          return {
+            success: true,
+            message: 'QR Code regenerado. Escaneie o novo código.',
+            qrcode: retry.qrcode?.base64 ?? null,
+            instanceId: existing.instanceId,
+            status: 'connecting',
+          };
+        }
+        set.status = 500;
+        return { success: false, error: result.error ?? 'Erro ao recriar instância WhatsApp' };
+      }
+
+      // Atualiza status no banco para 'connecting'
+      await instanceRepo.updateStatus(existing.id, 'connecting');
+
+      return {
+        success: true,
+        message: 'QR Code regenerado. Escaneie o novo código.',
+        qrcode: result.qrcode?.base64 ?? null,
+        instanceId: existing.instanceId,
+        status: 'connecting',
+      };
+    },
+    {
+      detail: {
+        summary: 'Regenerar QR Code do WhatsApp',
+        description: 'Deleta e recria a instância WhatsApp na Evolution API, gerando um novo QR code para escaneamento',
+        responses: {
+          200: {
+            description: 'Novo QR code gerado',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' },
+                    qrcode: { type: 'string', nullable: true },
+                    instanceId: { type: 'string' },
+                    status: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: 'Nenhuma instância encontrada' },
+          401: { description: 'Não autenticado' },
+        },
+      },
+    },
   );
