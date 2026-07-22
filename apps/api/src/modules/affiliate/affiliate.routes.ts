@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia';
 import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository } from '@omestre/db';
+import type { ExcludedGroup } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { convertShopeeUrlWithCredentials } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
@@ -7,7 +8,7 @@ import { detectMarketplace } from '@omestre/shared';
 import type { ConversionResult } from '@omestre/shared';
 import { generateViaUrlParams } from '@omestre/converters';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
-import { validateOfferGroups } from '../../services/offerValidator.ts';
+import { validateOfferGroups, validateGroup } from '../../services/offerValidator.ts';
 import { replaceSourceGroups, cacheSourceGroup, removeSourceGroup } from '../../services/group-cache.ts';
 
 const userRepo = new UserRepository();
@@ -62,6 +63,10 @@ export const affiliateRoutes = new Elysia()
         // Grupos de espelhamento configurados
         sourceGroups: affiliate?.sourceGroups || [],
         targetGroups: affiliate?.targetGroups || [],
+        // Grupos excluídos por validação (persistentes)
+        excludedGroups: (affiliate?.excludedGroups as ExcludedGroup[]) || [],
+        // Template personalizado de mensagem
+        messageTemplate: affiliate?.messageTemplate || null,
       },
     };
   })
@@ -140,12 +145,12 @@ export const affiliateRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const { sourceGroups, targetGroup } = body as {
+    const { sourceGroups, targetGroups, messageTemplate } = body as {
       sourceGroups?: { jid: string; name: string }[];
-      targetGroup?: { jid: string; name: string };
+      targetGroups?: { jid: string; name: string }[];
+      messageTemplate?: string | null;
     };
 
-    // Validações
     if (!sourceGroups || sourceGroups.length === 0) {
       return { success: false, error: 'Selecione pelo menos 1 grupo de ofertas.' };
     }
@@ -154,8 +159,8 @@ export const affiliateRoutes = new Elysia()
       return { success: false, error: 'Máximo de 3 grupos de ofertas.' };
     }
 
-    if (!targetGroup || !targetGroup.jid) {
-      return { success: false, error: 'Selecione exatamente 1 grupo de destino.' };
+    if (!targetGroups || targetGroups.length === 0) {
+      return { success: false, error: 'Selecione pelo menos 1 grupo de destino.' };
     }
 
     const evolutionInstanceId = `user-${auth.userId}`;
@@ -164,17 +169,29 @@ export const affiliateRoutes = new Elysia()
     const currentAffiliate = await affiliatesRepo.findByEvolutionInstanceId(evolutionInstanceId);
     const oldSourceGroups = (currentAffiliate?.sourceGroups as { jid: string; name: string }[]) ?? [];
 
-    // Validação das últimas 30 mensagens antes de salvar
+    // Validação individual por grupo — grupos que falham são excluídos,
+    // mas não bloqueiam a configuração dos que passaram.
     const validation = await validateOfferGroups(evolutionInstanceId, sourceGroups);
-    if (!validation.overallPassed) {
+
+    // Filtra apenas grupos que passaram na validação (≥70% ofertas)
+    const passedGroups = sourceGroups.filter((sg) => {
+      const result = validation.groups.find((g) => g.groupJid === sg.jid);
+      return result?.passed ?? false;
+    });
+
+    const failedGroups = validation.groups.filter((g) => !g.passed);
+
+    // Se nenhum grupo passou, aí sim bloqueia o save
+    if (passedGroups.length === 0) {
       return {
         success: false,
-        error: `Validação de ofertas falhou: ${validation.totalValidOffers}/${validation.totalMessages} mensagens contêm links de marketplaces válidos (mínimo 70%). Verifique os grupos selecionados.`,
+        error: 'Nenhum dos grupos selecionados passou na validação. Todos precisam ter no mínimo 70% de mensagens com links de marketplaces.',
         report: {
           overallRatio: validation.overallRatio,
           totalMessages: validation.totalMessages,
           totalValidOffers: validation.totalValidOffers,
           groups: validation.groups.map((g) => ({
+            groupJid: g.groupJid,
             groupName: g.groupName,
             totalMessages: g.totalMessages,
             validOffers: g.validOffers,
@@ -186,26 +203,209 @@ export const affiliateRoutes = new Elysia()
       };
     }
 
+    // Constrói lista de grupos excluídos para persistência
+    const excludedGroups: ExcludedGroup[] = failedGroups.map((g) => ({
+      groupJid: g.groupJid,
+      groupName: g.groupName,
+      reason: `Apenas ${Math.round(g.ratio * 100)}% de ofertas válidas (mínimo 70%)`,
+      ratio: g.ratio,
+      totalMessages: g.totalMessages,
+      validOffers: g.validOffers,
+    }));
+
+    // Preserva excludedGroups de grupos que não estão sendo reconfigurados agora
+    const currentExcluded = (currentAffiliate?.excludedGroups ?? []) as ExcludedGroup[];
+    const configuredJids = new Set(sourceGroups.map((sg) => sg.jid));
+    const preservedExcluded = currentExcluded.filter((eg) => !configuredJids.has(eg.groupJid));
+    const mergedExcluded = [...preservedExcluded, ...excludedGroups];
+
+    // Salva apenas os grupos que passaram na validação + excludedGroups persistido + template
     const affiliate = await affiliatesRepo.upsertGroups(evolutionInstanceId, {
-      sourceGroups,
-      targetGroups: [targetGroup],
+      sourceGroups: passedGroups,
+      targetGroups: targetGroups,
+      excludedGroups: mergedExcluded,
+      messageTemplate: messageTemplate ?? undefined,
     });
 
-    // Atualiza o cache Redis dos sourceGroups
-    // Remove grupos antigos que não estão mais na lista
-    // e adiciona os novos — sem consulta ao PostgreSQL no webhook
+    // Atualiza o cache Redis apenas com os grupos válidos
     await replaceSourceGroups(
       oldSourceGroups,
-      sourceGroups,
+      passedGroups,
       affiliate.id,
     );
 
+    // Mensagem adaptativa informando exclusões
+    const message =
+      failedGroups.length > 0
+        ? `Espelhamento configurado com ${passedGroups.length} grupo(s). ${failedGroups.length} grupo(s) foram desativados por não atingirem 70% de ofertas.`
+        : 'Espelhamento configurado com sucesso';
+
     return {
       success: true,
-      message: 'Espelhamento configurado com sucesso',
+      message,
       affiliateId: affiliate.id,
-      sourceGroups,
-      targetGroup,
+      sourceGroups: passedGroups,
+      targetGroups,
+      // Lista de grupos excluídos para a UI mostrar feedback visual fixo
+      excludedGroups,
+    };
+  })
+
+  // ─── POST /api/affiliate/revalidate-group ──────────────────────────
+  .post('/api/affiliate/revalidate-group', async ({ jwt, request, set, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const { groupJid, groupName } = body as {
+      groupJid: string;
+      groupName: string;
+    };
+
+    if (!groupJid) {
+      set.status = 400;
+      return { success: false, error: 'groupJid é obrigatório' };
+    }
+
+    const evolutionInstanceId = `user-${auth.userId}`;
+
+    // Revalida este grupo específico
+    const result = await validateGroup(evolutionInstanceId, groupJid, groupName, 30);
+
+    if (result.passed) {
+      // Grupo passou na revalidação — adiciona aos sourceGroups, remove dos excludedGroups
+      const affiliate = await affiliatesRepo.findByEvolutionInstanceId(evolutionInstanceId);
+      if (!affiliate) {
+        return { success: false, error: 'Afiliado não encontrado' };
+      }
+
+      const currentSourceGroups = (affiliate.sourceGroups ?? []) as { jid: string; name: string }[];
+      const currentExcluded = (affiliate.excludedGroups ?? []) as ExcludedGroup[];
+
+      const newSourceGroups = [
+        ...currentSourceGroups,
+        { jid: groupJid, name: groupName },
+      ];
+      const newExcluded = currentExcluded.filter((eg) => eg.groupJid !== groupJid);
+
+      await affiliatesRepo.upsertGroups(evolutionInstanceId, {
+        sourceGroups: newSourceGroups,
+        targetGroups: affiliate.targetGroups as { jid: string; name: string }[],
+        excludedGroups: newExcluded,
+      });
+
+      // Atualiza cache Redis
+      await cacheSourceGroup(groupJid, affiliate.id, groupName);
+
+      return {
+        success: true,
+        passed: true,
+        message: 'Grupo revalidado com sucesso e adicionado ao espelhamento.',
+        report: {
+          groupJid: result.groupJid,
+          groupName: result.groupName,
+          totalMessages: result.totalMessages,
+          validOffers: result.validOffers,
+          ratio: result.ratio,
+          passed: true,
+          errors: result.errors,
+        },
+      };
+    }
+
+    // Ainda não passou — atualiza a entrada nos excludedGroups com novos dados
+    await affiliatesRepo.addExcludedGroup(evolutionInstanceId, {
+      groupJid: result.groupJid,
+      groupName: result.groupName,
+      reason: `Apenas ${Math.round(result.ratio * 100)}% de ofertas válidas (mínimo 70%)`,
+      ratio: result.ratio,
+      totalMessages: result.totalMessages,
+      validOffers: result.validOffers,
+    });
+
+    return {
+      success: true,
+      passed: false,
+      message: `Grupo ainda não atingiu o mínimo de 70%. ${Math.round(result.ratio * 100)}% de ofertas válidas.`,
+      report: {
+        groupJid: result.groupJid,
+        groupName: result.groupName,
+        totalMessages: result.totalMessages,
+        validOffers: result.validOffers,
+        ratio: result.ratio,
+        passed: false,
+        errors: result.errors,
+      },
+    };
+  })
+
+  // ─── POST /api/affiliate/force-group ───────────────────────────────
+  .post('/api/affiliate/force-group', async ({ jwt, request, set, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const { groupJid, groupName } = body as {
+      groupJid: string;
+      groupName: string;
+    };
+
+    if (!groupJid || !groupName) {
+      set.status = 400;
+      return { success: false, error: 'groupJid e groupName são obrigatórios' };
+    }
+
+    const evolutionInstanceId = `user-${auth.userId}`;
+    const affiliate = await affiliatesRepo.findByEvolutionInstanceId(evolutionInstanceId);
+    if (!affiliate) {
+      return { success: false, error: 'Afiliado não encontrado' };
+    }
+
+    const currentSourceGroups = (affiliate.sourceGroups ?? []) as { jid: string; name: string }[];
+    const currentExcluded = (affiliate.excludedGroups ?? []) as ExcludedGroup[];
+
+    // Verifica se já está nos sourceGroups
+    const alreadyAdded = currentSourceGroups.some((g) => g.jid === groupJid);
+    if (alreadyAdded) {
+      // Apenas remove dos excluded se ainda estiver lá
+      await affiliatesRepo.removeExcludedGroup(evolutionInstanceId, groupJid);
+      return {
+        success: true,
+        message: 'Grupo já está ativo no espelhamento.',
+      };
+    }
+
+    // Limita a 3 grupos
+    if (currentSourceGroups.length >= 3) {
+      return {
+        success: false,
+        error: 'Limite máximo de 3 grupos de ofertas atingido.',
+      };
+    }
+
+    // Adiciona aos sourceGroups e remove dos excludedGroups
+    const newSourceGroups = [
+      ...currentSourceGroups,
+      { jid: groupJid, name: groupName },
+    ];
+    const newExcluded = currentExcluded.filter((eg) => eg.groupJid !== groupJid);
+
+    await affiliatesRepo.upsertGroups(evolutionInstanceId, {
+      sourceGroups: newSourceGroups,
+      targetGroups: affiliate.targetGroups as { jid: string; name: string }[],
+      excludedGroups: newExcluded,
+    });
+
+    // Atualiza cache Redis
+    await cacheSourceGroup(groupJid, affiliate.id, groupName);
+
+    return {
+      success: true,
+      message: `Grupo "${groupName}" ativado mesmo sem validação. O espelhamento pode não funcionar como esperado.`,
     };
   })
 
@@ -238,6 +438,33 @@ export const affiliateRoutes = new Elysia()
       success: false,
       originalUrl: url,
       error: 'Marketplace não suportado. Aceito: Shopee, Mercado Livre',
+    };
+  })
+
+  // ─── PUT /api/affiliate/message-template ───────────────────────────
+  .put('/api/affiliate/message-template', async ({ jwt, request, set, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const { messageTemplate } = body as { messageTemplate?: string | null };
+
+    const evolutionInstanceId = `user-${auth.userId}`;
+    const result = await affiliatesRepo.updateMessageTemplate(
+      evolutionInstanceId,
+      messageTemplate ?? null,
+    );
+
+    if (!result) {
+      set.status = 404;
+      return { success: false, error: 'Afiliado não encontrado' };
+    }
+
+    return {
+      success: true,
+      message: 'Template de mensagem atualizado',
     };
   });
 

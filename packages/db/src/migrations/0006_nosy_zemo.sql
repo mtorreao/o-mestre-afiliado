@@ -1,0 +1,1 @@
+ALTER TABLE "omestre"."affiliates" ADD COLUMN "message_template" text;

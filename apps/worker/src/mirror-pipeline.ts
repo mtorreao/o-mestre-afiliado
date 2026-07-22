@@ -15,6 +15,10 @@ import { detectMarketplace } from '@omestre/shared';
 import { convertShopeeUrlWithCredentials, generateViaUrlParams, generateShortAffiliateLink } from '@omestre/converters';
 import { getDb, affiliates, reflectedOffers, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository } from '@omestre/db';
 import { eq, and, gte } from 'drizzle-orm';
+import {
+  incrementCounter,
+  observeHistogram,
+} from './metrics.ts';
 
 // ─── Config ──────────────────────────────────────────────────────────
 
@@ -185,6 +189,28 @@ async function getFilters(
 
     if (!rows[0]) return null;
     return (rows[0].filters as { blacklist: string[]; keywords: string[]; dedupHours: number }) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Busca o template de mensagem personalizado do afiliado.
+ * Retorna null se não configurado (usa o template padrão).
+ */
+async function getMessageTemplate(
+  affiliateId: number,
+): Promise<string | null> {
+  try {
+    const db = getDb();
+    const rows = await db
+      .select({ messageTemplate: affiliates.messageTemplate })
+      .from(affiliates)
+      .where(eq(affiliates.id, affiliateId))
+      .limit(1);
+
+    if (!rows[0]) return null;
+    return rows[0].messageTemplate ?? null;
   } catch {
     return null;
   }
@@ -426,22 +452,41 @@ async function logReflectedOffer(params: {
 /**
  * Monta o template da mensagem formatada para o grupo de destino.
  *
- * Estrutura:
- *   🛒 *Oferta Detectada*
- *   {texto original com link convertido}
- *   ──────────────────
- *   📌 Enviado por @omestre
+ * Suporta placeholders:
+ *   {texto_original}   — texto original com o link convertido
+ *   {link_convertido}  — apenas o link convertido (sem contexto)
+ *
+ * Se template for null/vazio, usa o comportamento padrão (texto com link trocado).
  */
 function buildTemplateMessage(
   originalText: string,
   originalUrl: string,
   convertedUrl: string | null,
+  template: string | null,
 ): string {
   // Substitui a URL original pela convertida no texto
-  let text = originalText;
+  let textWithConvertedLink = originalText;
   if (convertedUrl) {
-    text = text.replace(originalUrl, convertedUrl);
+    textWithConvertedLink = textWithConvertedLink.replace(originalUrl, convertedUrl);
   }
+
+  if (template) {
+    // Usa o template personalizado com placeholders
+    let result = template
+      .replace(/\{texto_original\}/g, textWithConvertedLink)
+      .replace(/\{link_convertido\}/g, convertedUrl ?? originalUrl);
+
+    // Se o resultado for muito longo, trunca
+    const maxLen = 4000;
+    if (result.length > maxLen) {
+      result = result.slice(0, maxLen - 50) + '...';
+    }
+
+    return result;
+  }
+
+  // Comportamento padrão: texto original com link trocado
+  let text = textWithConvertedLink;
 
   // Se o texto for muito longo, trunca
   const maxLen = 4000;
@@ -470,10 +515,13 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
     timestamp,
   });
 
+  incrementCounter('mirror_messages_received_total');
+
   // ── 1. Extrai URL de marketplace ──────────────────────────────────
   const originalUrl = extractMarketplaceUrl(text);
   if (!originalUrl) {
     log('info', 'Mensagem sem URL de marketplace — ignorada', { messageId });
+    incrementCounter('mirror_messages_blocked_total', { reason: 'no_url' });
     return false;
   }
 
@@ -486,8 +534,20 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
     for (const term of filters.blacklist) {
       if (text.toLowerCase().includes(term.toLowerCase())) {
         log('info', 'Mensagem filtrada por blacklist', { messageId, term });
+        incrementCounter('mirror_messages_blocked_total', { reason: 'blacklist' });
         return false;
       }
+    }
+  }
+
+  // ── 2b. Filtro por keywords (whitelist) ──────────────────────────
+  if (filters?.keywords?.length) {
+    const textLower = text.toLowerCase();
+    const hasKeyword = filters.keywords.some(kw => textLower.includes(kw.toLowerCase()));
+    if (!hasKeyword) {
+      log('info', 'Mensagem filtrada por keywords — nenhuma keyword encontrada', { messageId, keywords: filters.keywords });
+      incrementCounter('mirror_messages_blocked_total', { reason: 'keywords' });
+      return false;
     }
   }
 
@@ -496,29 +556,43 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
   const duplicate = await isDuplicate(affiliateId, originalUrl, dedupHours);
   if (duplicate) {
     log('info', 'Oferta duplicada — ignorada', { messageId, originalUrl, dedupHours });
+    incrementCounter('mirror_deduplicated_total');
     return false;
   }
 
   // ── 4. Converte link ──────────────────────────────────────────────
+  const conversionStart = performance.now();
   const { convertedUrl, success: conversionSuccess } = await convertOfferUrl(
     originalUrl,
     affiliateId,
     instanceName,
   );
+  const conversionDuration = (performance.now() - conversionStart) / 1000;
+
+  if (conversionSuccess) {
+    incrementCounter('mirror_messages_converted_total', { marketplace });
+  } else {
+    incrementCounter('mirror_failures_total', { type: 'conversion_failed', marketplace });
+  }
+  observeHistogram('mirror_conversion_duration_seconds', conversionDuration, { marketplace });
 
   // ── 5. Busca grupos de destino ────────────────────────────────────
   const targetGroups = await getTargetGroups(affiliateId);
   if (targetGroups.length === 0) {
     log('warn', 'Nenhum grupo de destino configurado', { affiliateId });
+    incrementCounter('mirror_messages_blocked_total', { reason: 'no_target_groups' });
     return false;
   }
 
   // ── 6. Monta template ─────────────────────────────────────────────
-  const template = buildTemplateMessage(text, originalUrl, convertedUrl);
+  const messageTemplate = await getMessageTemplate(affiliateId);
+  const hasCustomTemplate = !!messageTemplate;
+  const template = buildTemplateMessage(text, originalUrl, convertedUrl, messageTemplate);
   log('info', 'Template montado', {
     messageId,
     templateLength: template.length,
     hasConvertedUrl: !!convertedUrl,
+    hasCustomTemplate,
   });
 
   // ── 7. Envia para cada grupo de destino ──────────────────────────
@@ -529,12 +603,14 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
     const sent = await sendToGroup(instanceName, target.jid, template);
     if (sent) {
       anySent = true;
+      incrementCounter('mirror_messages_sent_total');
       log('info', 'Mensagem enviada para grupo de destino', {
         messageId,
         targetGroupJid: target.jid,
         targetGroupName: target.name,
       });
     } else {
+      incrementCounter('mirror_failures_total', { type: 'send_failed', marketplace });
       log('error', 'Falha ao enviar para grupo de destino', {
         messageId,
         targetGroupJid: target.jid,
