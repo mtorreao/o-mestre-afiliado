@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { Button, Input } from '../../components/ui/index.ts';
 import { Save, ExternalLink } from 'lucide-react';
+import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
 
 interface MlConfigSectionProps {
   mlUserId: string;
@@ -31,9 +32,12 @@ export function MlConfigSection({ mlUserId, meliid: initialMeliid, melitat: init
         body: JSON.stringify({ meliid: meliid || undefined, melitat: melitat || undefined }),
       });
       setSaved(true);
+      showSuccessToast('Mercado Livre', 'Configurações salvas com sucesso');
       onUpdate();
       setTimeout(() => setSaved(false), 4000);
-    } catch { /* ignore */ }
+    } catch {
+      showErrorToast('Mercado Livre', 'Erro de conexão ao salvar');
+    }
     setSaving(false);
   }
 

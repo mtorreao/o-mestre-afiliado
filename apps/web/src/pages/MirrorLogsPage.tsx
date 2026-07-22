@@ -4,9 +4,11 @@
  * Tabela com filtros por status, marketplace, período e busca textual.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Button, Select, Badge, Loading, LoadingSkeleton } from '../components/ui/index.ts';
+import { fetchApi } from '../lib/api-client.ts';
 import { Filter, RotateCw, Search, X, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────
@@ -38,7 +40,6 @@ interface MirrorLogResponse {
 
 interface MirrorLogsPageProps {
   token: string;
-  onBack: () => void;
 }
 
 // ─── Helpers ────────────────────────────────────────
@@ -69,7 +70,8 @@ function formatDate(iso: string): string {
 
 // ─── Component ──────────────────────────────────────
 
-export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
+export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
+  const navigate = useNavigate();
   const [data, setData] = useState<MirrorLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -100,7 +102,9 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
       });
       const json = await res.json() as MirrorLogResponse;
       if (json.success) setData(json);
-    } catch { /* ignore */ }
+    } catch {
+      // Silencioso — toast já disparado pelo fetchApi em outros lugares
+    }
     setLoading(false);
   }, [token, statusFilter, marketplaceFilter, searchText, dateFrom, dateTo]);
 
@@ -131,7 +135,7 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
       <PageHeader
         title="📋 Logs de Espelhamento"
         subtitle={data ? `${data.total} registro(s)` : 'Carregando...'}
-        onBack={onBack}
+        onBack={() => navigate('/')}
         actions={
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <Button variant="ghost" size="sm" onClick={handleReset} icon={<X size={14} />}>
@@ -147,7 +151,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
       {/* Filters */}
       <Card>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
-          {/* Status */}
           <div style={{ flex: '1 1 130px', minWidth: '120px' }}>
             <Select
               label="Status"
@@ -163,7 +166,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
             />
           </div>
 
-          {/* Marketplace */}
           <div style={{ flex: '1 1 130px', minWidth: '120px' }}>
             <Select
               label="Marketplace"
@@ -180,7 +182,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
             />
           </div>
 
-          {/* Date From */}
           <div style={{ flex: '1 1 130px', minWidth: '120px' }}>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               De
@@ -203,7 +204,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
             />
           </div>
 
-          {/* Date To */}
           <div style={{ flex: '1 1 130px', minWidth: '120px' }}>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               Até
@@ -226,7 +226,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
             />
           </div>
 
-          {/* Search */}
           <div style={{ flex: '2 1 180px', minWidth: '140px' }}>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               Buscar
@@ -301,7 +300,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
                   {/* Expanded details */}
                   {isExpanded && (
                     <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      {/* Original link */}
                       <div>
                         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Link original:</span>
                         <div
@@ -330,7 +328,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
                         </div>
                       </div>
 
-                      {/* Converted link */}
                       {row.convertedLink && row.convertedLink !== row.originalLink && (
                         <div>
                           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Link convertido:</span>
@@ -361,7 +358,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
                         </div>
                       )}
 
-                      {/* Failure reason */}
                       {row.failureReason && (
                         <div>
                           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-error)' }}>Motivo:</span>
@@ -371,7 +367,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
                         </div>
                       )}
 
-                      {/* Preview */}
                       {row.messagePreview && (
                         <div>
                           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Preview:</span>

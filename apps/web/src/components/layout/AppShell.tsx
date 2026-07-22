@@ -1,9 +1,12 @@
 /**
  * AppShell — Layout principal para usuários autenticados
  *
- * Estrutura: Sidebar esquerda + (Topbar + conteúdo principal)
+ * Estrutura: Sidebar esquerda + (Topbar + conteúdo principal via <Outlet />)
+ *
+ * Agora integrado com React Router: navegação via <NavLink /> e useNavigate.
  */
 import React, { useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Settings,
@@ -18,17 +21,33 @@ import {
 
 export type NavItem = 'dashboard' | 'settings' | 'groups' | 'mirror-logs' | 'worker-status';
 
-interface AppShellProps {
-  currentNav: NavItem;
-  onNavigate: (item: NavItem) => void;
-  onLogout: () => void;
+interface AppShellLayoutProps {
   userName: string;
-  pageTitle?: string;
-  children: React.ReactNode;
+  onLogout: () => void;
 }
 
-export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle = '', children }: AppShellProps) {
+/** Mapeia o pathname atual para um NavItem */
+function pathToNav(pathname: string): NavItem {
+  const path = pathname.replace(/^\//, '') || 'dashboard';
+  if (['dashboard', 'settings', 'groups', 'mirror-logs', 'worker-status'].includes(path)) {
+    return path as NavItem;
+  }
+  return 'dashboard';
+}
+
+const pageTitles: Record<NavItem, string> = {
+  dashboard: 'Dashboard',
+  settings: 'Configurações',
+  groups: 'Grupos de Espelhamento',
+  'mirror-logs': 'Logs de Espelhamento',
+  'worker-status': 'Status do Worker',
+};
+
+export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const currentNav = pathToNav(location.pathname);
 
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
@@ -37,6 +56,12 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
     { id: 'mirror-logs', label: 'Espelhamento', icon: <ScrollText size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
+
+  function handleNavigate(id: NavItem) {
+    const path = id === 'dashboard' ? '/' : `/${id}`;
+    navigate(path);
+    setSidebarOpen(false);
+  }
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-bg)' }}>
@@ -103,10 +128,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
             return (
               <button
                 key={item.id}
-                onClick={() => {
-                  onNavigate(item.id);
-                  setSidebarOpen(false);
-                }}
+                onClick={() => handleNavigate(item.id)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -166,7 +188,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
         </div>
       </aside>
 
-      {/* Main area: topbar + content */}
+      {/* Main area: topbar + Outlet */}
       <div
         style={{ flex: 1, display: 'flex', flexDirection: 'column', marginLeft: '260px' }}
         className="main-content"
@@ -203,17 +225,15 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
 
-          {pageTitle && (
-            <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-              {pageTitle}
-            </span>
-          )}
+          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            {pageTitles[currentNav]}
+          </span>
 
           <div style={{ width: '20px' }} />
         </div>
 
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {children}
+          <Outlet />
         </main>
       </div>
 

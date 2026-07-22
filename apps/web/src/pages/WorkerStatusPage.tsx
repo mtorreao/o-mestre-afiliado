@@ -4,9 +4,11 @@
  * Exibe healthcheck, uptime, modo, fila, DLQ e últimos erros.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Badge, Button, Loading, Switch } from '../components/ui/index.ts';
+import { fetchApi } from '../lib/api-client.ts';
 import { Activity, RefreshCw, AlertTriangle } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────
@@ -25,10 +27,6 @@ interface WorkerStatusResponse {
   counters?: Record<string, number | string>;
   error?: string;
   workerStatus?: string;
-}
-
-interface WorkerStatusPageProps {
-  onBack: () => void;
 }
 
 // ─── Helpers ────────────────────────────────────────
@@ -56,7 +54,8 @@ function formatDate(iso: string): string {
 
 // ─── Component ──────────────────────────────────────
 
-export function WorkerStatusPage({ onBack }: WorkerStatusPageProps) {
+export function WorkerStatusPage() {
+  const navigate = useNavigate();
   const [data, setData] = useState<WorkerStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +101,7 @@ export function WorkerStatusPage({ onBack }: WorkerStatusPageProps) {
       <PageHeader
         title="Status do Worker"
         subtitle="Métricas e saúde do worker de espelhamento"
-        onBack={onBack}
+        onBack={() => navigate('/')}
         actions={
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -143,7 +142,6 @@ export function WorkerStatusPage({ onBack }: WorkerStatusPageProps) {
       {/* Main content */}
       {data && data.success && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Health + Info */}
           <Card title="📊 Status Geral">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1.25rem' }}>
               <div>
@@ -173,10 +171,8 @@ export function WorkerStatusPage({ onBack }: WorkerStatusPageProps) {
             </div>
           </Card>
 
-          {/* Queue + DLQ */}
           <Card title="Filas">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '1rem' }}>
-              {/* Queue size */}
               <div
                 style={{
                   padding: '1rem',
@@ -194,7 +190,6 @@ export function WorkerStatusPage({ onBack }: WorkerStatusPageProps) {
                 </div>
               </div>
 
-              {/* DLQ count */}
               <div
                 style={{
                   padding: '1rem',
@@ -218,7 +213,6 @@ export function WorkerStatusPage({ onBack }: WorkerStatusPageProps) {
                 </div>
               </div>
 
-              {/* Total received */}
               {data.counters?.['mirror_messages_received_total'] !== undefined && (
                 <div
                   style={{
@@ -240,7 +234,6 @@ export function WorkerStatusPage({ onBack }: WorkerStatusPageProps) {
             </div>
           </Card>
 
-          {/* Recent Errors */}
           <Card title="Últimos Erros">
             {!data.errors || data.errors.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
@@ -286,7 +279,6 @@ export function WorkerStatusPage({ onBack }: WorkerStatusPageProps) {
             )}
           </Card>
 
-          {/* Counters */}
           {data.counters && Object.keys(data.counters).length > 0 && (
             <Card title="Métricas">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.75rem' }}>

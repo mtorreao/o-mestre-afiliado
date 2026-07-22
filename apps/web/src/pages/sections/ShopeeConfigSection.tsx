@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { Card, Input, Button } from '../../components/ui/index.ts';
 import { Store, Save } from 'lucide-react';
+import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
 
 interface ShopeeConfigSectionProps {
   token: string;
@@ -27,13 +28,18 @@ export function ShopeeConfigSection({ token, initialAppId, onUpdate }: ShopeeCon
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ shopeeAppId: appId, shopeeAppSecret: appSecret }),
       });
-      const data = await res.json() as { success: boolean };
+      const data = await res.json() as { success: boolean; error?: string };
       if (data.success) {
         setSaved(true);
+        showSuccessToast('Shopee', 'Credenciais salvas com sucesso');
         onUpdate();
         setTimeout(() => setSaved(false), 4000);
+      } else {
+        showErrorToast('Shopee', data.error || 'Erro ao salvar credenciais');
       }
-    } catch { /* ignore */ }
+    } catch {
+      showErrorToast('Shopee', 'Erro de conexão ao salvar credenciais');
+    }
     setSaving(false);
   }
 
