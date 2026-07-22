@@ -15,5 +15,6 @@ FROM oven/bun:1.3
 WORKDIR /app
 COPY --from=builder /app/apps/worker/dist ./dist
 
-EXPOSE 5443
+# Porta de métricas e healthcheck (configurável via METRICS_PORT)
+EXPOSE 9092
 CMD ["bun", "run", "dist/index.js"]

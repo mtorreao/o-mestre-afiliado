@@ -2,10 +2,13 @@
  * @omestre/worker — Background worker para processamento de mensagens
  *
  * Modos:
- *   mirror (default) — Escuta Redis PubSub e processa espelhamento de ofertas
+ *   mirror (default) — Lê do Redis Stream (com consumer group) e processa espelhamento de ofertas
  *   poll             — Polling de fila em memória (legado, conversão de URLs)
  *   batch            — Processa URLs passadas como argumentos e sai
  *   once             — Uma rodada de polling e sai
+ *
+ * Diferente do PubSub (que perdia mensagens), o Redis Stream persiste
+ * mensagens e garante entrega via consumer group + ACK explícito.
  *
  * Uso:
  *   bun apps/worker/src/index.ts                # modo mirror (default)
@@ -13,10 +16,20 @@
  *   bun apps/worker/src/index.ts --once          # modo once
  */
 
+import os from 'node:os';
 import Redis from 'ioredis';
-import { MIRROR_MESSAGE_CHANNEL } from '@omestre/shared';
+import { MIRROR_STREAM, MIRROR_CONSUMER_GROUP } from '@omestre/shared';
 import type { MirrorMessageEvent } from '@omestre/shared';
+import { getDb, AffiliatesRepository } from '@omestre/db';
 import { processMirrorMessage } from './mirror-pipeline.ts';
+import { runRevalidation, runRevalidationDaemon } from './revalidate.ts';
+import { startMetricsServer } from './metrics.ts';
+
+// ─── Constantes do cache de sourceGroups ────────────────────────────────
+// (mesma estrutura do group-cache.ts na API)
+
+const CACHE_PREFIX = 'mirror:source-group:';
+const CACHE_SET_KEY = 'mirror:source-groups:all';
 
 // ─── Configuração ──────────────────────────────────────────────────────────
 
@@ -44,26 +57,196 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MODO MIRROR — Pipeline de espelhamento via Redis PubSub
+// MODO MIRROR — Pipeline de espelhamento via Redis Stream
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** Nome único do consumer dentro do grupo (hostname:pid). */
+function consumerName(): string {
+  return `omestre:${os.hostname()}:${process.pid}`;
+}
+
 /**
- * Modo: Mirror (default) — Escuta Redis PubSub e processa mensagens de
- * grupos de espelhamento em tempo real.
+ * Cria o consumer group se não existir (idempotente).
+ * Usa MKSTREAM para criar o stream automaticamente.
+ */
+async function ensureConsumerGroup(redis: Redis): Promise<void> {
+  try {
+    await redis.xgroup('CREATE', MIRROR_STREAM, MIRROR_CONSUMER_GROUP, '$', 'MKSTREAM');
+    log('info', 'Consumer group criado', {
+      stream: MIRROR_STREAM,
+      group: MIRROR_CONSUMER_GROUP,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // BUSYGROUP significa que o grupo já existe — é esperado
+    if (msg.includes('BUSYGROUP')) {
+      log('info', 'Consumer group já existe', { stream: MIRROR_STREAM, group: MIRROR_CONSUMER_GROUP });
+    } else {
+      log('warn', 'Falha ao criar consumer group (pode não ser fatal)', {
+        stream: MIRROR_STREAM,
+        error: msg,
+      });
+    }
+  }
+}
+
+/**
+ * Processa mensagens pendentes na inicialização (recuperação de workers
+ * que morreram antes de fazer ACK).
+ */
+async function processPendingMessages(redis: Redis): Promise<void> {
+  try {
+    const pending = await redis.xpending(MIRROR_STREAM, MIRROR_CONSUMER_GROUP, '-', '+', 10);
+    if (!pending || pending.length === 0) return;
+
+    log('info', `Recuperando ${pending.length} mensagens pendentes`, {});
+
+    for (const item of pending) {
+      const [msgId, consumer, idleMs, deliveryCount] = item as unknown as [string, string, number, number];
+      log('info', 'Mensagem pendente encontrada', {
+        msgId,
+        consumer,
+        idleMs,
+        deliveryCount,
+      });
+
+      if (deliveryCount > 3) {
+        log('warn', 'Mensagem excedeu tentativas — movendo para DLQ', { msgId });
+        // Opcional: XADD para uma fila de dead-letter
+        await redis.xack(MIRROR_STREAM, MIRROR_CONSUMER_GROUP, msgId);
+        continue;
+      }
+    }
+  } catch (err) {
+    log('warn', 'Erro ao verificar mensagens pendentes', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Popula o cache Redis com os sourceGroups configurados no banco.
+ *
+ * Num deploy fresh o cache está vazio → o webhook ignora tudo.
+ * Esta função garante que os sourceGroups salvos no banco sejam
+ * carregados para o Redis na inicialização do worker.
+ *
+ * Usa pipeline para atomicidade e performance.
+ * Falha não é fatal — o cache é populado também via API no próximo save.
+ */
+async function populateSourceGroupCache(redis: Redis): Promise<void> {
+  try {
+    getDb(); // garante que a conexão com o banco está ativa
+    const repo = new AffiliatesRepository();
+    const affiliates = await repo.findAllActiveWithSourceGroups();
+
+    if (affiliates.length === 0) {
+      log('info', 'Nenhum sourceGroup configurado no banco — cache vazio', {});
+      return;
+    }
+
+    log('info', `Populando cache Redis com sourceGroups de ${affiliates.length} afiliados`, {});
+
+    const pipeline = redis.pipeline();
+    let totalGroups = 0;
+
+    for (const aff of affiliates) {
+      const groups = aff.sourceGroups as { jid: string; name: string }[] | null;
+      if (!groups) continue;
+
+      for (const group of groups) {
+        pipeline.set(
+          `${CACHE_PREFIX}${group.jid}`,
+          JSON.stringify({ affiliateId: aff.id, groupName: group.name || '' }),
+        );
+        pipeline.sadd(CACHE_SET_KEY, group.jid);
+        totalGroups++;
+      }
+    }
+
+    await pipeline.exec();
+    log('info', `Cache populado com ${totalGroups} sourceGroups de ${affiliates.length} afiliados`, {});
+  } catch (err) {
+    // Falha ao popular cache não é fatal — o webhook só vai ignorar
+    // mensagens até alguém salvar via API, que popula o cache na hora.
+    log('warn', 'Falha ao popular cache Redis de sourceGroups (não fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Processa um payload de stream (campo 'payload') JSON como MirrorMessageEvent.
+ */
+async function handleStreamMessage(rawPayload: string, msgId: string, redis: Redis): Promise<void> {
+  try {
+    const event = JSON.parse(rawPayload) as MirrorMessageEvent;
+
+    log('info', 'Mensagem recebida do stream', {
+      msgId,
+      messageId: event.messageId,
+      sourceGroupJid: event.sourceGroupJid,
+    });
+
+    await processMirrorMessage(event);
+
+    // Só faz ACK se processou com sucesso (ou falhou mas queremos descartar)
+    await redis.xack(MIRROR_STREAM, MIRROR_CONSUMER_GROUP, msgId);
+    log('info', 'Mensagem acknowledgeada', { msgId });
+  } catch (err) {
+    // Em caso de erro de parsing, acknowledge para não travar o stream
+    // Em caso de erro de processamento, acknowledge também (evita loop infinito)
+    const error = err instanceof Error ? err.message : String(err);
+    log('error', 'Erro ao processar mensagem do stream — dando ACK mesmo assim', {
+      msgId,
+      error,
+    });
+    try {
+      await redis.xack(MIRROR_STREAM, MIRROR_CONSUMER_GROUP, msgId);
+    } catch {
+      // silencia
+    }
+  }
+}
+
+/**
+ * Modo: Mirror (default) — Lê do Redis Stream e processa mensagens de
+ * grupos de espelhamento usando consumer group para resiliência.
  */
 async function runMirror(): Promise<void> {
-  log('info', 'Worker iniciado em modo mirror', {
-    redisUrl: REDIS_URL.replace(/\/\/.*@/, '//***@'),  // esconde senha
+  const CONSUMER = consumerName();
+  log('info', 'Worker iniciado em modo mirror (Redis Stream)', {
+    redisUrl: REDIS_URL.replace(/\/\/.*@/, '//***@'),
+    consumer: CONSUMER,
+    stream: MIRROR_STREAM,
+    group: MIRROR_CONSUMER_GROUP,
   });
 
-  let subscriber: Redis | null = null;
+  let redis: Redis | null = null;
+  let running = true;
+
+  const shutdown = async () => {
+    if (!running) return;
+    running = false;
+    log('info', 'Worker desligando...');
+    try {
+      if (redis) await redis.quit();
+    } catch {
+      // ignore errors during shutdown
+    }
+    // Dá tempo para logs serem emitidos
+    setTimeout(() => process.exit(0), 500);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 
   try {
-    subscriber = new Redis(REDIS_URL, {
+    redis = new Redis(REDIS_URL, {
       maxRetriesPerRequest: 3,
       retryStrategy(times) {
         if (times > 5) {
-          log('error', 'Redis subscriber falhou após 5 tentativas. Encerrando.');
+          log('error', 'Redis falhou após 5 tentativas. Encerrando.');
           process.exit(1);
         }
         return Math.min(times * 1000, 10000);
@@ -71,62 +254,74 @@ async function runMirror(): Promise<void> {
       lazyConnect: true,
     });
 
-    await subscriber.connect();
+    await redis.connect();
     log('info', 'Conectado ao Redis');
 
-    await subscriber.subscribe(MIRROR_MESSAGE_CHANNEL, (err) => {
-      if (err) {
-        log('error', 'Falha ao subscrever no canal', {
-          channel: MIRROR_MESSAGE_CHANNEL,
-          error: err.message,
-        });
-        return;
-      }
-      log('info', 'Inscrito no canal', { channel: MIRROR_MESSAGE_CHANNEL });
-    });
+    // ── Inicia servidor de métricas ──
+    startMetricsServer();
 
-    subscriber.on('message', async (channel, raw) => {
-      if (channel !== MIRROR_MESSAGE_CHANNEL) return;
+    // ── Popula cache de sourceGroups do banco ──
+    await populateSourceGroupCache(redis);
 
+    // ── Garante que o consumer group existe ──
+    await ensureConsumerGroup(redis);
+
+    // ── Recupera mensagens pendentes de execuções anteriores ──
+    await processPendingMessages(redis);
+
+    // ── Loop principal de consumo ──
+    while (running) {
       try {
-        const event = JSON.parse(raw) as MirrorMessageEvent;
-        log('info', 'Nova mensagem recebida do PubSub', {
-          messageId: event.messageId,
-          sourceGroupJid: event.sourceGroupJid,
-        });
+        // XREADGROUP: lê mensagens novas (>), bloqueia 5s se não houver nada
+        const result = await redis.xreadgroup(
+          'GROUP',
+          MIRROR_CONSUMER_GROUP,
+          CONSUMER,
+          'COUNT',
+          5,
+          'BLOCK',
+          5000,
+          'STREAMS',
+          MIRROR_STREAM,
+          '>',
+        );
 
-        await processMirrorMessage(event);
+        if (!result) {
+          // Timeout (BLOCK expirou sem novas mensagens) — volta ao loop
+          continue;
+        }
+
+        // result: [[streamName, [[msgId, [field, value, ...]], ...]], ...]
+        const entries = result as Array<
+          [string, Array<[string, string[]]>]
+        >;
+        for (const [, messages] of entries) {
+          for (const [msgId, fields] of messages) {
+            if (!running) break;
+
+            // fields é um array alternado [key1, val1, key2, val2, ...]
+            const payloadIndex = fields.indexOf('payload');
+            if (payloadIndex === -1 || payloadIndex + 1 >= fields.length) {
+              log('warn', 'Mensagem sem campo payload — ignorando', { msgId });
+              await redis.xack(MIRROR_STREAM, MIRROR_CONSUMER_GROUP, msgId);
+              continue;
+            }
+
+            const rawPayload = fields[payloadIndex + 1] as string;
+            await handleStreamMessage(rawPayload, msgId, redis);
+          }
+        }
       } catch (err) {
-        log('error', 'Erro ao processar mensagem do PubSub', {
-          raw: raw.slice(0, 500),
+        if (!running) break;
+        log('error', 'Erro no loop de consumo do stream', {
           error: err instanceof Error ? err.message : String(err),
         });
+        // Pequena pausa antes de tentar de novo para evitar loop violento
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
-    });
-
-    log('info', 'Aguardando mensagens...');
-
-    // Graceful shutdown
-    const shutdown = async () => {
-      log('info', 'Worker desligando...');
-      try {
-        if (subscriber) {
-          await subscriber.unsubscribe(MIRROR_MESSAGE_CHANNEL);
-          await subscriber.quit();
-        }
-      } catch {
-        // ignore errors during shutdown
-      }
-      process.exit(0);
-    };
-
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-
-    // Mantém o processo vivo
-    await new Promise(() => {});
+    }
   } catch (err) {
-    log('error', 'Falha ao iniciar subscriber Redis', {
+    log('error', 'Falha ao iniciar worker mirror', {
       error: err instanceof Error ? err.message : String(err),
     });
     process.exit(1);
@@ -273,15 +468,49 @@ async function runOnce(): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MODO REVALIDATION — Revalidação periódica de grupos
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function runRevalidateOnce(): Promise<void> {
+  log('info', 'Worker iniciado em modo revalidate (once)');
+  const result = await runRevalidation();
+  console.log('');
+  console.log('═══════════════════════════════════════════════');
+  console.log('RESUMO DA REVALIDAÇÃO:');
+  console.log(`  Afiliados totais: ${result.totalAffiliates}`);
+  console.log(`  Validados:        ${result.validatedAffiliates}`);
+  console.log(`  Com falha nova:   ${result.failedAffiliates}`);
+  console.log('═══════════════════════════════════════════════');
+  for (const r of result.results) {
+    const icon = r.overallPassed ? '✅' : '❌';
+    const changed = r.statusChanged ? ' (⚠️ mudou de status!)' : '';
+    console.log(`  ${icon} Afiliado #${r.affiliateId} (${r.evolutionInstanceId})${changed}`);
+    for (const g of r.groups) {
+      const gIcon = g.passed ? '✅' : '❌';
+      console.log(`     ${gIcon} ${g.groupName}: ${Math.round(g.ratio * 100)}% ofertas (${g.validOffers}/${g.totalMessages})`);
+    }
+  }
+}
+
+async function runRevalidateDaemon(): Promise<void> {
+  log('info', 'Worker iniciado em modo revalidate-daemon');
+  // Inicia servidor HTTP com /metrics e /health para healthcheck de orquestrador
+  startMetricsServer();
+  await runRevalidationDaemon();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════════════════
 
-type WorkerMode = 'mirror' | 'poll' | 'batch' | 'once';
+type WorkerMode = 'mirror' | 'poll' | 'batch' | 'once' | 'revalidate' | 'revalidate-daemon';
 
 function detectMode(): WorkerMode {
   if (process.argv.includes('--batch') || process.argv.includes('-b')) return 'batch';
   if (process.argv.includes('--once') || process.argv.includes('-o')) return 'once';
   if (process.argv.includes('--poll') || process.argv.includes('-p')) return 'poll';
+  if (process.argv.includes('--revalidate-daemon')) return 'revalidate-daemon';
+  if (process.argv.includes('--revalidate')) return 'revalidate';
   return 'mirror'; // default
 }
 
@@ -300,6 +529,13 @@ async function main() {
       break;
     case 'once':
       await runOnce();
+      break;
+    case 'revalidate':
+      await runRevalidateOnce();
+      process.exit(0);
+      break;
+    case 'revalidate-daemon':
+      await runRevalidateDaemon();
       break;
   }
 }
