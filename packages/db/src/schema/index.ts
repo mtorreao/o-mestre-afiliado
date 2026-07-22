@@ -59,6 +59,10 @@ export const affiliates = omestre.table('affiliates', {
   // Credenciais criptografadas (AES-256-GCM)
   credentialsEncrypted: text('credentials_encrypted'),
 
+  // Configuração de notificações proativas
+  notificationChannel: text('notification_channel').notNull().default('disabled'),
+  notificationJid: text('notification_jid'),
+
   // Revalidação periódica
   lastValidatedAt: timestamp('last_validated_at', { mode: 'date' }),
   lastValidationPassed: boolean('last_validation_passed'),

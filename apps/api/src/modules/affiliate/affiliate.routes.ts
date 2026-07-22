@@ -69,6 +69,9 @@ export const affiliateRoutes = new Elysia()
         excludedGroups: (affiliate?.excludedGroups as ExcludedGroup[]) || [],
         // Template personalizado de mensagem
         messageTemplate: affiliate?.messageTemplate || null,
+        // Configuração de notificações proativas
+        notificationChannel: affiliate?.notificationChannel || 'disabled',
+        notificationJid: affiliate?.notificationJid || null,
       },
     };
   })
@@ -92,6 +95,42 @@ export const affiliateRoutes = new Elysia()
     });
 
     return { success: true, message: 'Credenciais salvas' };
+  })
+
+  // ─── PUT /api/affiliate/notification-config ─────────────────────────
+  .put('/api/affiliate/notification-config', async ({ jwt, request, set, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const { channel, jid } = body as {
+      channel?: string;
+      jid?: string | null;
+    };
+
+    if (!channel || !['whatsapp', 'telegram', 'disabled'].includes(channel)) {
+      set.status = 400;
+      return { success: false, error: 'Canal inválido. Use: whatsapp, telegram ou disabled.' };
+    }
+
+    if (channel !== 'disabled' && !jid) {
+      set.status = 400;
+      return { success: false, error: 'JID/chat ID é obrigatório quando o canal não é disabled.' };
+    }
+
+    const evolutionInstanceId = `user-${auth.userId}`;
+    const ok = await affiliatesRepo.updateNotificationConfig(evolutionInstanceId, {
+      channel,
+      jid: jid ?? null,
+    });
+
+    if (!ok) {
+      return { success: false, error: 'Afiliado não encontrado. Configure os grupos de espelhamento primeiro.' };
+    }
+
+    return { success: true, message: 'Configuração de notificações salva.' };
   })
 
   // ─── POST /api/affiliate/validate-groups ──────────────────────────
