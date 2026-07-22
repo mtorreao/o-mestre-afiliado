@@ -45,12 +45,19 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
   ];
 
   return (
-    <div className="app-shell">
-      {/* Mobile drawer overlay — opacity animado via CSS */}
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-bg)' }}>
+      {/* Mobile overlay */}
       <div
-        className={`sidebar-overlay${sidebarOpen ? ' open' : ''}`}
         onClick={() => setSidebarOpen(false)}
-        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.3)',
+          zIndex: 40,
+          opacity: sidebarOpen ? 1 : 0,
+          pointerEvents: sidebarOpen ? ('auto' as const) : ('none' as const),
+          transition: 'opacity var(--transition-base)',
+        }}
       />
 
       {/* Sidebar / Mobile drawer — slide via CSS */}
@@ -105,9 +112,18 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
           {/* Hamburger — 44×44px touch target */}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="topbar-hamburger"
-            aria-label={sidebarOpen ? 'Fechar menu' : 'Abrir menu'}
             aria-expanded={sidebarOpen}
+            aria-label={sidebarOpen ? 'Fechar menu' : 'Abrir menu'}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-text-primary)',
+              cursor: 'pointer',
+              padding: '0.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -115,20 +131,17 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
           {/* Nome da página centralizado (mobile) / alinhado à esquerda (desktop) */}
           <span className="topbar-title">{pageTitle}</span>
 
-          {/* Logout icon — visível apenas em mobile, 44×44px */}
-          <button
-            onClick={onLogout}
-            className="topbar-logout"
-            aria-label="Sair"
-            title="Sair"
-          >
-            <LogOut size={18} />
-          </button>
-        </header>
-
-        {/* Conteúdo da página */}
-        <main className="app-content">{children}</main>
-      </div>
+      {/* Inline styles for responsive layout */}
+      <style>{`
+        @media (max-width: 768px) {
+          .main-content {
+            margin-left: 0 !important;
+          }
+          .mobile-topbar {
+            display: flex !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
