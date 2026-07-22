@@ -31,6 +31,7 @@ export const KNOWN_SHORTENER_DOMAINS = [
   /app\.mktplc\..*/i,
   /mercadoenvios\.com\.br/i,
   /go\.promozone\.ai/i,
+  /maga\.lu/i,
 ];
 
 // ─── Tipos ─────────────────────────────────────────────────────────────
