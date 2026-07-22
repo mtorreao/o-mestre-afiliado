@@ -1,21 +1,23 @@
 /**
- * SettingsPage — Página de configurações com 3 abas
+ * SettingsPage — Página de configurações com 4 abas
  *
- * Abas: WhatsApp, Shopee, Mercado Livre
+ * Abas: WhatsApp, Shopee, Mercado Livre, Amazon
  * Reutiliza seções existentes do dashboard.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Smartphone, Store, Package } from 'lucide-react';
+import { Smartphone, Store, Package, ShoppingBag } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Loading, Tabs } from '../components/ui/index.ts';
 import { WppConnection } from '../components/WppConnection.tsx';
 import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
 import { MlConfigSection } from './sections/MlConfigSection.tsx';
+import { AmazonConfigSection } from './sections/AmazonConfigSection.tsx';
 import { TestConversionSection } from './sections/TestConversionSection.tsx';
 
 interface ProfileData {
   shopeeAppId: string | null;
+  amazonTrackingId: string | null;
   mercadoLivre:
     | { connected: false }
     | { connected: true; nickname: string; mlUserId: string; expired: boolean; hasSessionCookies: boolean; meliid: string | null; melitat: string | null };
@@ -32,16 +34,17 @@ interface ProfileData {
   messageTemplate?: string | null;
 }
 
-interface SettingsPageProps {
-  user: { id: number; email: string; name: string };
-  token: string;
-}
-
 const tabs = [
   { value: 'whatsapp', label: 'WhatsApp', icon: <Smartphone size={16} /> },
   { value: 'shopee', label: 'Shopee', icon: <Store size={16} /> },
   { value: 'mercadolivre', label: 'Mercado Livre', icon: <Package size={16} /> },
+  { value: 'amazon', label: 'Amazon', icon: <ShoppingBag size={16} /> },
 ];
+
+interface SettingsPageProps {
+  user: { id: number; email: string; name: string };
+  token: string;
+}
 
 export function SettingsPage({ user, token }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState('whatsapp');
@@ -146,6 +149,13 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
           )}
           <TestConversionSection token={token} />
         </div>
+
+        {/* Aba 4: Amazon */}
+        <AmazonConfigSection
+          token={token}
+          initialTrackingId={profile?.amazonTrackingId || ''}
+          onUpdate={loadProfile}
+        />
       </Tabs>
     </PageLayout>
   );
