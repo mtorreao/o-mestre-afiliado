@@ -134,6 +134,7 @@ services:
       JWT_SECRET: e2e-jwt-secret-for-testing-only
       EVOLUTION_API_URL: http://evolution-api-e2e:8080
       EVOLUTION_API_KEY: e2e-evolution-api-key
+      WEBHOOK_URL: http://api-e2e:5442/webhook/message
       ML_CLIENT_ID: ""
       ML_CLIENT_SECRET: ""
       FRONTEND_URL: http://localhost:15441
@@ -168,9 +169,89 @@ services:
     networks:
       - e2e-net
     environment:
-      WORKER_POLL_INTERVAL: "60000"
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      REDIS_URL: redis://redis-e2e:6379
     depends_on:
       - api-e2e
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # WHATSAPP SIMULATOR — substituto da Evolution API para testes de mirror
+  # ═══════════════════════════════════════════════════════════════════════
+
+  whatsapp-simulator-e2e:
+    container_name: omestre_e2e_simulator
+    build:
+      context: ../
+      dockerfile: apps/whatsapp-simulator/Dockerfile
+    restart: no
+    ports:
+      - "127.0.0.1:15446:8080"
+    networks:
+      - e2e-net
+
+  # ─── API (Mirror — aponta para o simulador) ─────────────────────────
+  api-e2e-mirror:
+    container_name: omestre_e2e_api_mirror
+    build:
+      context: ../
+      dockerfile: apps/api/Dockerfile
+    restart: no
+    ports:
+      - "127.0.0.1:15447:5442"
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      API_PORT: "5442"
+      JWT_SECRET: e2e-jwt-secret-for-testing-only
+      EVOLUTION_API_URL: http://whatsapp-simulator-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      WEBHOOK_URL: http://api-e2e-mirror:5442/webhook/message
+      REDIS_URL: redis://redis-e2e:6379
+      ML_CLIENT_ID: ""
+      ML_CLIENT_SECRET: ""
+      FRONTEND_URL: http://localhost:15441
+      ML_REDIRECT_URI: http://localhost:15447/api/ml/callback
+    depends_on:
+      postgres-e2e:
+        condition: service_healthy
+      redis-e2e:
+        condition: service_healthy
+
+  # ─── Worker (Mirror) ────────────────────────────────────────────────
+  worker-e2e-mirror:
+    container_name: omestre_e2e_worker_mirror
+    build:
+      context: ../
+      dockerfile: apps/worker/Dockerfile
+    restart: no
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://whatsapp-simulator-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      REDIS_URL: redis://redis-e2e:6379
+    depends_on:
+      api-e2e-mirror:
+        condition: service_started
 
 networks:
   e2e-net:
