@@ -26,6 +26,11 @@ export interface InstanceConnectionState {
 
 // ─── Utilitários ─────────────────────────────────────────────────────
 
+/** Pausa assíncrona de ms milissegundos. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function headers(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
@@ -568,13 +573,15 @@ export async function refreshInstance(
   await logoutInstance(instanceName);
   await deleteInstance(instanceName);
 
-  // ─── 2. Cria com QR ────────────────────────────────────────────
+  // ─── 2. Aguarda liberação do nome + Cria com QR ─────────────────
+  await sleep(2000);
   const result = await createInstanceWithQR(instanceName);
 
   // ─── 3. Se "already in use", repete ciclo ─────────────────────
   if (!result.success && result.error?.includes('already in use')) {
     await logoutInstance(instanceName);
     await deleteInstance(instanceName);
+    await sleep(2000);
     return await createInstanceWithQR(instanceName);
   }
 
