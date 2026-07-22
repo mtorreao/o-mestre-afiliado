@@ -8,7 +8,8 @@ import { detectMarketplace } from '@omestre/shared';
 import type { ConversionResult } from '@omestre/shared';
 import { generateViaUrlParams } from '@omestre/converters';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
-import { validateOfferGroups, validateGroup } from '../../services/offerValidator.ts';
+import { fetchGroupMessages } from '../../services/evolution.ts';
+import { validateOfferGroups, validateGroup } from '@omestre/shared';
 import { replaceSourceGroups, cacheSourceGroup, removeSourceGroup } from '../../services/group-cache.ts';
 
 const userRepo = new UserRepository();
@@ -115,7 +116,7 @@ export const affiliateRoutes = new Elysia()
 
     const instanceName = instanceNameFromUserId(auth.userId);
 
-    const validation = await validateOfferGroups(instanceName, sourceGroups);
+    const validation = await validateOfferGroups(instanceName, sourceGroups, fetchGroupMessages);
 
     // Se a Evolution API está offline, retorna o erro real em vez do genérico
     if (validation.connectionError) {
@@ -195,7 +196,7 @@ export const affiliateRoutes = new Elysia()
 
     // Validação individual por grupo — grupos que falham são excluídos,
     // mas não bloqueiam a configuração dos que passaram.
-    const validation = await validateOfferGroups(evolutionInstanceId, sourceGroups);
+    const validation = await validateOfferGroups(evolutionInstanceId, sourceGroups, fetchGroupMessages);
 
     // Filtra apenas grupos que passaram na validação (≥70% ofertas)
     const passedGroups = sourceGroups.filter((sg) => {
@@ -318,7 +319,7 @@ export const affiliateRoutes = new Elysia()
     const evolutionInstanceId = `user-${auth.userId}`;
 
     // Revalida este grupo específico
-    const result = await validateGroup(evolutionInstanceId, groupJid, groupName, 30);
+    const result = await validateGroup(evolutionInstanceId, groupJid, groupName, fetchGroupMessages, 30);
 
     if (result.passed) {
       // Grupo passou na revalidação — adiciona aos sourceGroups, remove dos excludedGroups

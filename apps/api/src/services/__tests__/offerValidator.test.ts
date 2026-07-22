@@ -1,5 +1,5 @@
 /**
- * Testes unitários para offerValidator.ts
+ * Testes unitários para @omestre/shared/src/offer-validator.ts
  *
  * Funções testadas:
  *   ✅ extractUrls()          — Extrai URLs de texto
@@ -10,19 +10,16 @@
  *   ✅ validateOfferGroups()  — Relatório consolidado de múltiplos grupos
  *
  * Estratégia:
- *   - Mock @omestre/shared (detectMarketplace) via mock.module
- *   - Mock ../evolution.ts (fetchGroupMessages) via mock.module
  *   - Mock global fetch para testes de resolução de URL
+ *   - validateGroup/validateOfferGroups recebem fetchGroupMessages como parâmetro
  *   - Testes 100% isolados, sem dependência de rede
  */
 
 import { describe, it, expect, mock, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
 
 // ══════════════════════════════════════════════════════════════════════
-// MOCK FUNCTIONS — mock.module é chamado dentro de beforeAll para isolar
+// HELPERS
 // ══════════════════════════════════════════════════════════════════════
-
-const mockDetectMarketplace = mock<(url: string) => string>(() => 'unknown');
 
 interface FakeMessage {
   text?: string;
@@ -59,15 +56,8 @@ const GENERIC_URL = 'https://example.com/page';
 // ══════════════════════════════════════════════════════════════════════
 
 describe('offerValidator', () => {
-  // ✅ beforeAll/afterAll isolam mocks entre test files (mock.module é global)
   beforeAll(() => {
     mock.restore();
-    mock.module('@omestre/shared', () => ({
-      detectMarketplace: mockDetectMarketplace,
-    }));
-    mock.module('../evolution.ts', () => ({
-      fetchGroupMessages: mockFetchGroupMessages,
-    }));
   });
 
   afterAll(() => {
@@ -75,17 +65,7 @@ describe('offerValidator', () => {
   });
 
   beforeEach(() => {
-    mockDetectMarketplace.mockReset();
     mockFetchGroupMessages.mockReset();
-    mockDetectMarketplace.mockImplementation((url: string) => {
-      if (
-        url.includes('shopee.com.br') ||
-        url.includes('mercadolivre.com.br') ||
-        url.includes('amazon.com.br')
-      )
-        return 'shopee';
-      return 'unknown';
-    });
     mockFetchGroupMessages.mockImplementation(() =>
       Promise.resolve({ success: true, messages: [] }),
     );
@@ -97,31 +77,31 @@ describe('offerValidator', () => {
 
   describe('extractUrls()', () => {
     it('extrai URLs https de texto simples', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       expect(extractUrls('Confira https://shopee.com.br/product/123')).toEqual([
         'https://shopee.com.br/product/123',
       ]);
     });
 
     it('extrai URLs http de texto', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       expect(extractUrls('Link: http://meli.la/produto')).toEqual([
         'http://meli.la/produto',
       ]);
     });
 
     it('retorna array vazio para texto sem URLs', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       expect(extractUrls('Apenas texto sem links')).toEqual([]);
     });
 
     it('retorna array vazio para string vazia', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       expect(extractUrls('')).toEqual([]);
     });
 
     it('deduplica URLs mantendo ordem de aparição', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       const result = extractUrls(
         'A: https://shopee.com.br/a B: https://shopee.com.br/b A: https://shopee.com.br/a',
       );
@@ -132,7 +112,7 @@ describe('offerValidator', () => {
     });
 
     it('extrai URLs com query params e fragmentos', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       const result = extractUrls(
         'https://shopee.com.br/p?q=test&page=1#section',
       );
@@ -142,7 +122,7 @@ describe('offerValidator', () => {
     });
 
     it('extrai URLs com caracteres especiais no path', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       const result = extractUrls(
         'https://mercadolivre.com.br/MLB-1234567890-item-_JM',
       );
@@ -150,7 +130,7 @@ describe('offerValidator', () => {
     });
 
     it('retorna múltiplas URLs distintas', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       const result = extractUrls(
         'Shopee: https://shopee.com.br/a e Amazon: https://amazon.com.br/b',
       );
@@ -158,7 +138,7 @@ describe('offerValidator', () => {
     });
 
     it('ignora texto sem protocolo (apenas www)', async () => {
-      const { extractUrls } = await import('../offerValidator.ts');
+      const { extractUrls } = await import('@omestre/shared');
       expect(extractUrls('Visite www.exemplo.com')).toEqual([]);
     });
   });
@@ -169,96 +149,96 @@ describe('offerValidator', () => {
 
   describe('isKnownMarketplaceDomain()', () => {
     it('retorna true para Shopee', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://shopee.com.br/produto')).toBe(
         true,
       );
     });
 
     it('retorna true para Mercado Livre', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(
         isKnownMarketplaceDomain('https://mercadolivre.com.br/item'),
       ).toBe(true);
     });
 
     it('retorna true para Amazon', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://amazon.com.br/dp/123')).toBe(
         true,
       );
     });
 
     it('retorna true para meli.la', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://meli.la/123')).toBe(true);
     });
 
     it('retorna true para amzn.to', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://amzn.to/abc')).toBe(true);
     });
 
     it('retorna true para shp.ee', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://shp.ee/xyz')).toBe(true);
     });
 
     it('retorna true para go.promozone.ai', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://go.promozone.ai/shopee/abc')).toBe(
         true,
       );
     });
 
     it('retorna true para s.shopee.com.br', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://s.shopee.com.br/link')).toBe(
         true,
       );
     });
 
     it('retorna true para bit.ly', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://bit.ly/3abc')).toBe(true);
     });
 
     it('retorna true para tinyurl.com', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://tinyurl.com/abc')).toBe(true);
     });
 
     it('retorna true para vtao.com', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://vtao.com/link')).toBe(true);
     });
 
     it('retorna true para shortlink.*', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://shortlink.test/xyz')).toBe(true);
     });
 
     it('retorna true para app.mktplc.*', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://app.mktplc.test/link')).toBe(
         true,
       );
     });
 
     it('retorna true para mercadoenvios.com.br', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(
         isKnownMarketplaceDomain('https://mercadoenvios.com.br/envio'),
       ).toBe(true);
     });
 
     it('retorna false para URL genérica', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://example.com')).toBe(false);
     });
 
     it('retorna false para URL estranha', async () => {
-      const { isKnownMarketplaceDomain } = await import('../offerValidator.ts');
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://some-random-site.com.br')).toBe(
         false,
       );
@@ -284,7 +264,7 @@ describe('offerValidator', () => {
       globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse(MARKETPLACE_URL)),
       ) as unknown as typeof fetch;
-      const { resolveUrl } = await import('../offerValidator.ts');
+      const { resolveUrl } = await import('@omestre/shared');
       const result = await resolveUrl(SHORTENER_URL);
       expect(result).toBe(MARKETPLACE_URL);
     });
@@ -293,7 +273,7 @@ describe('offerValidator', () => {
       globalThis.fetch = mock(() =>
         Promise.reject(new Error('Network failure')),
       ) as unknown as typeof fetch;
-      const { resolveUrl } = await import('../offerValidator.ts');
+      const { resolveUrl } = await import('@omestre/shared');
       const result = await resolveUrl(SHORTENER_URL);
       expect(result).toBe(SHORTENER_URL);
     });
@@ -302,7 +282,7 @@ describe('offerValidator', () => {
       const resp = makeMockResponse('');
       (resp as any).url = '';
       globalThis.fetch = mock(() => Promise.resolve(resp)) as unknown as typeof fetch;
-      const { resolveUrl } = await import('../offerValidator.ts');
+      const { resolveUrl } = await import('@omestre/shared');
       const result = await resolveUrl(SHORTENER_URL);
       expect(result).toBe(SHORTENER_URL);
     });
@@ -313,7 +293,7 @@ describe('offerValidator', () => {
         capturedHeaders = opts.headers || {};
         return Promise.resolve(makeMockResponse(MARKETPLACE_URL));
       }) as unknown as typeof fetch;
-      const { resolveUrl } = await import('../offerValidator.ts');
+      const { resolveUrl } = await import('@omestre/shared');
       await resolveUrl(SHORTENER_URL);
       expect(capturedHeaders['User-Agent']).toContain('Mozilla');
     });
@@ -322,7 +302,7 @@ describe('offerValidator', () => {
       globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse(MARKETPLACE_URL)),
       ) as unknown as typeof fetch;
-      const { resolveUrl } = await import('../offerValidator.ts');
+      const { resolveUrl } = await import('@omestre/shared');
       const result = await resolveUrl(MARKETPLACE_URL);
       expect(result).toBe(MARKETPLACE_URL);
     });
@@ -347,76 +327,57 @@ describe('offerValidator', () => {
     });
 
     it('retorna false para texto vazio', async () => {
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('')).toBe(false);
     });
 
     it('retorna true para URL direta da Shopee', async () => {
-      mockDetectMarketplace.mockImplementation((url: string) =>
-        url.includes('shopee.com.br') ? 'shopee' : 'unknown',
-      );
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('Oferta https://shopee.com.br/produto')).toBe(true);
     });
 
     it('retorna true para URL direta do Mercado Livre', async () => {
-      mockDetectMarketplace.mockImplementation((url: string) =>
-        url.includes('mercadolivre.com.br') ? 'mercadolivre' : 'unknown',
-      );
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(
         await isMessageValidOffer('https://mercadolivre.com.br/item/123'),
       ).toBe(true);
     });
 
     it('retorna true para URL direta da Amazon', async () => {
-      mockDetectMarketplace.mockImplementation((url: string) =>
-        url.includes('amazon.com.br') ? 'amazon' : 'unknown',
-      );
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('https://amazon.com.br/dp/ABC')).toBe(true);
     });
 
     it('retorna false para texto sem URLs', async () => {
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('Bom dia pessoal!')).toBe(false);
     });
 
     it('segue redirect de encurtador e retorna true quando resolve para marketplace', async () => {
-      mockDetectMarketplace.mockImplementation((url: string) => {
-        if (url.includes('shopee.com.br')) return 'shopee';
-        return 'unknown';
-      });
       globalThis.fetch = mock(() =>
         Promise.resolve(
           makeMockResponse('https://shopee.com.br/product/redirect'),
         ),
       ) as unknown as typeof fetch;
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('Compre https://shp.ee/abc123')).toBe(true);
     });
 
     it('retorna false quando encurtador não resolve para marketplace', async () => {
-      mockDetectMarketplace.mockImplementation(() => 'unknown');
       globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse('https://example.com/other')),
       ) as unknown as typeof fetch;
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('Link: https://bit.ly/abc')).toBe(false);
     });
 
     it('retorna false quando resolveUrl falha no encurtador', async () => {
-      mockDetectMarketplace.mockImplementation(() => 'unknown');
       globalThis.fetch = mock(() => Promise.reject(new Error('Timeout'))) as unknown as typeof fetch;
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('Link https://bit.ly/abc')).toBe(false);
     });
 
     it('passo 3: tenta resolver URL desconhecida que redireciona para marketplace', async () => {
-      mockDetectMarketplace.mockImplementation((url: string) => {
-        if (url.includes('shopee.com.br')) return 'shopee';
-        return 'unknown';
-      });
       globalThis.fetch = mock((fetchedUrl: string) => {
         if (fetchedUrl.includes('example.com')) {
           return Promise.resolve(
@@ -425,39 +386,33 @@ describe('offerValidator', () => {
         }
         return Promise.resolve(makeMockResponse(fetchedUrl));
       }) as unknown as typeof fetch;
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('Veja https://example.com/produto')).toBe(true);
     });
 
     it('passo 3: retorna false quando URL desconhecida não redireciona para marketplace', async () => {
-      mockDetectMarketplace.mockImplementation(() => 'unknown');
       globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse(GENERIC_URL)),
       ) as unknown as typeof fetch;
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('Veja https://example.com/page')).toBe(false);
     });
 
     it('passo 3: não tenta resolver URL sem http (continue)', async () => {
-      mockDetectMarketplace.mockImplementation(() => 'unknown');
       const fetchSpy = mock(() =>
         Promise.resolve(makeMockResponse('https://shopee.com.br/redirect')),
       ) as unknown as typeof fetch;
       globalThis.fetch = fetchSpy;
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('www.shopee.com.br')).toBe(false);
     });
 
     it('prioriza detectMarketplace sem precisar de redirect', async () => {
-      mockDetectMarketplace.mockImplementation((url: string) => {
-        if (url.includes('shopee.com.br')) return 'shopee';
-        return 'unknown';
-      });
       const fetchSpy = mock(() =>
         Promise.resolve(makeMockResponse('')),
       ) as unknown as typeof fetch;
       globalThis.fetch = fetchSpy;
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(
         await isMessageValidOffer('Compre https://shopee.com.br/link'),
       ).toBe(true);
@@ -465,11 +420,7 @@ describe('offerValidator', () => {
     });
 
     it('processa múltiplas URLs na mensagem (primeira marketplace = true)', async () => {
-      mockDetectMarketplace.mockImplementation((url: string) => {
-        if (url.includes('shopee.com.br')) return 'shopee';
-        return 'unknown';
-      });
-      const { isMessageValidOffer } = await import('../offerValidator.ts');
+      const { isMessageValidOffer } = await import('@omestre/shared');
       expect(
         await isMessageValidOffer(
           'https://shopee.com.br/a e https://example.com/b',
@@ -487,12 +438,6 @@ describe('offerValidator', () => {
     const JID = '120363000000000001@g.us';
     const NAME = 'Grupo Promoções';
 
-    beforeEach(() => {
-      mockDetectMarketplace.mockImplementation((url: string) =>
-        url.includes('shopee.com.br') ? 'shopee' : 'unknown',
-      );
-    });
-
     it('passed=true quando 100% das mensagens são ofertas', async () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({
@@ -503,8 +448,8 @@ describe('offerValidator', () => {
           ],
         }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.passed).toBe(true);
       expect(result.ratio).toBe(1);
       expect(result.validOffers).toBe(2);
@@ -524,8 +469,8 @@ describe('offerValidator', () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({ success: true, messages }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.passed).toBe(true);
       expect(result.ratio).toBe(0.7);
       expect(result.validOffers).toBe(7);
@@ -544,8 +489,8 @@ describe('offerValidator', () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({ success: true, messages }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.passed).toBe(false);
       expect(result.ratio).toBe(0.3);
     });
@@ -554,8 +499,8 @@ describe('offerValidator', () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({ success: false, error: 'Erro de rede simulado' }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.passed).toBe(false);
       expect(result.errors).toContain('Erro de rede simulado');
       expect(result.totalMessages).toBe(0);
@@ -566,8 +511,8 @@ describe('offerValidator', () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({ success: true, messages: [] }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.passed).toBe(false);
       expect(result.errors).toContain('Nenhuma mensagem encontrada nos últimos registros do grupo');
       expect(result.totalMessages).toBe(0);
@@ -577,8 +522,8 @@ describe('offerValidator', () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({ success: false }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.passed).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
     });
@@ -587,8 +532,8 @@ describe('offerValidator', () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({ success: true, messages: [] }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(mockFetchGroupMessages).toHaveBeenCalledWith(INSTANCE, JID, 30);
     });
 
@@ -596,8 +541,8 @@ describe('offerValidator', () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({ success: true, messages: [] }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      await validateGroup(INSTANCE, JID, NAME, 50);
+      const { validateGroup } = await import('@omestre/shared');
+      await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages, 50);
       expect(mockFetchGroupMessages).toHaveBeenCalledWith(INSTANCE, JID, 50);
     });
 
@@ -608,14 +553,13 @@ describe('offerValidator', () => {
           messages: [{ text: 'https://shopee.com.br/a' }],
         }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.groupJid).toBe(JID);
       expect(result.groupName).toBe(NAME);
     });
 
     it('trata mensagens com text undefined como texto vazio', async () => {
-      mockDetectMarketplace.mockImplementation(() => 'unknown');
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({
           success: true,
@@ -625,17 +569,13 @@ describe('offerValidator', () => {
           ],
         }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.passed).toBe(false);
       expect(result.ratio).toBe(0);
     });
 
     it('lida com erro em uma das mensagens sem quebrar o batch', async () => {
-      mockDetectMarketplace.mockImplementation((url: string) => {
-        if (url.includes('shopee.com.br')) return 'shopee';
-        return 'unknown';
-      });
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({
           success: true,
@@ -645,8 +585,8 @@ describe('offerValidator', () => {
           ],
         }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages);
       expect(result.validOffers).toBe(1);
       expect(result.totalMessages).toBe(2);
     });
@@ -663,8 +603,8 @@ describe('offerValidator', () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({ success: true, messages }),
       );
-      const { validateGroup } = await import('../offerValidator.ts');
-      const result = await validateGroup(INSTANCE, JID, NAME, 28);
+      const { validateGroup } = await import('@omestre/shared');
+      const result = await validateGroup(INSTANCE, JID, NAME, mockFetchGroupMessages, 28);
       expect(result.ratio).toBe(0.21);
       expect(result.passed).toBe(false);
     });
@@ -679,12 +619,6 @@ describe('offerValidator', () => {
     const GROUP_A = { jid: 'a@g.us', name: 'Grupo A' };
     const GROUP_B = { jid: 'b@g.us', name: 'Grupo B' };
 
-    beforeEach(() => {
-      mockDetectMarketplace.mockImplementation((url: string) =>
-        url.includes('shopee.com.br') ? 'shopee' : 'unknown',
-      );
-    });
-
     it('overallPassed=true quando todos os grupos passam', async () => {
       mockFetchGroupMessages.mockImplementation(() =>
         Promise.resolve({
@@ -692,8 +626,8 @@ describe('offerValidator', () => {
           messages: [{ text: 'https://shopee.com.br/a' }],
         }),
       );
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
+      const { validateOfferGroups } = await import('@omestre/shared');
+      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B], mockFetchGroupMessages);
       expect(result.overallPassed).toBe(true);
       expect(result.groups).toHaveLength(2);
       expect(result.groups[0]!.passed).toBe(true);
@@ -715,16 +649,16 @@ describe('offerValidator', () => {
           messages: [{ text: 'Bom dia' }, { text: 'Tudo bem?' }],
         });
       });
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
+      const { validateOfferGroups } = await import('@omestre/shared');
+      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B], mockFetchGroupMessages);
       expect(result.overallPassed).toBe(false);
       expect(result.groups[0]!.passed).toBe(true);
       expect(result.groups[1]!.passed).toBe(false);
     });
 
     it('overallPassed=false quando não há grupos', async () => {
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, []);
+      const { validateOfferGroups } = await import('@omestre/shared');
+      const result = await validateOfferGroups(INSTANCE, [], mockFetchGroupMessages);
       expect(result.overallPassed).toBe(false);
       expect(result.groups).toHaveLength(0);
       expect(result.totalMessages).toBe(0);
@@ -740,8 +674,8 @@ describe('offerValidator', () => {
           ],
         }),
       );
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
+      const { validateOfferGroups } = await import('@omestre/shared');
+      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B], mockFetchGroupMessages);
       expect(result.totalMessages).toBe(4);
       expect(result.totalValidOffers).toBe(4);
       expect(result.overallRatio).toBe(1);
@@ -768,8 +702,8 @@ describe('offerValidator', () => {
           ],
         });
       });
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
+      const { validateOfferGroups } = await import('@omestre/shared');
+      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B], mockFetchGroupMessages);
       expect(result.totalMessages).toBe(4);
       expect(result.totalValidOffers).toBe(3);
       expect(result.overallRatio).toBe(0.75);
@@ -786,8 +720,8 @@ describe('offerValidator', () => {
           ],
         }),
       );
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
+      const { validateOfferGroups } = await import('@omestre/shared');
+      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B], mockFetchGroupMessages);
       expect(result.overallRatio).toBe(0.33);
     });
 
@@ -807,8 +741,8 @@ describe('offerValidator', () => {
           messages: [{ text: 'Bom dia' }],
         });
       });
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
+      const { validateOfferGroups } = await import('@omestre/shared');
+      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B], mockFetchGroupMessages);
       expect(result.groups[0]!.groupJid).toBe('a@g.us');
       expect(result.groups[0]!.validOffers).toBe(2);
       expect(result.groups[1]!.groupJid).toBe('b@g.us');
