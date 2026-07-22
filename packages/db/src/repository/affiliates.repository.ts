@@ -17,6 +17,12 @@ export interface ExcludedGroup {
   validOffers: number;
 }
 
+export interface Filters {
+  blacklist: string[];
+  keywords: string[];
+  dedupHours: number;
+}
+
 export interface AffiliateGroupConfig {
   sourceGroups: { jid: string; name: string }[];
   targetGroups: { jid: string; name: string }[];
@@ -157,6 +163,25 @@ export class AffiliatesRepository {
     const [row] = await db
       .update(affiliates)
       .set({ messageTemplate: messageTemplate ?? null })
+      .where(eq(affiliates.id, existing.id))
+      .returning();
+    return row ?? null;
+  }
+
+  /**
+   * Atualiza os filtros (blacklist, keywords, dedupHours) de um afiliado.
+   */
+  async updateFilters(
+    evolutionInstanceId: string,
+    filters: Filters,
+  ): Promise<Affiliate | null> {
+    const db = getDb();
+    const existing = await this.findByEvolutionInstanceId(evolutionInstanceId);
+    if (!existing) return null;
+
+    const [row] = await db
+      .update(affiliates)
+      .set({ filters })
       .where(eq(affiliates.id, existing.id))
       .returning();
     return row ?? null;

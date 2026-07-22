@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia';
 import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository, MirrorLogRepository } from '@omestre/db';
-import type { ExcludedGroup } from '@omestre/db';
+import type { ExcludedGroup, Filters } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { convertShopeeUrlWithCredentials } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
@@ -69,6 +69,8 @@ export const affiliateRoutes = new Elysia()
         excludedGroups: (affiliate?.excludedGroups as ExcludedGroup[]) || [],
         // Template personalizado de mensagem
         messageTemplate: affiliate?.messageTemplate || null,
+        // Filtros de conteúdo (blacklist, keywords, dedup)
+        filters: affiliate?.filters || { blacklist: [], keywords: [], dedupHours: 24 },
       },
     };
   })
@@ -81,9 +83,10 @@ export const affiliateRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const { shopeeAppId, shopeeAppSecret } = body as {
+    const { shopeeAppId, shopeeAppSecret, filters } = body as {
       shopeeAppId?: string;
       shopeeAppSecret?: string;
+      filters?: Filters;
     };
 
     await credentialsRepo.upsert(auth.userId, {
@@ -91,7 +94,17 @@ export const affiliateRoutes = new Elysia()
       shopeeAppSecret: shopeeAppSecret ?? undefined,
     });
 
-    return { success: true, message: 'Credenciais salvas' };
+    // Se filters foi enviado, salva no affiliate
+    if (filters) {
+      const evolutionInstanceId = `user-${auth.userId}`;
+      await affiliatesRepo.updateFilters(evolutionInstanceId, {
+        blacklist: filters.blacklist ?? [],
+        keywords: filters.keywords ?? [],
+        dedupHours: typeof filters.dedupHours === 'number' ? filters.dedupHours : 24,
+      });
+    }
+
+    return { success: true, message: 'Perfil atualizado' };
   })
 
   // ─── POST /api/affiliate/validate-groups ──────────────────────────
