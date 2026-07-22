@@ -10,6 +10,7 @@ import {
   instanceNameFromUserId,
   fetchGroups,
 } from '../../services/evolution.ts';
+import { cacheGet, cacheSet, cacheDel } from '../../services/redis.ts';
 
 const instanceRepo = new WhatsAppInstanceRepository();
 
@@ -38,38 +39,87 @@ export const whatsAppRoutes = new Elysia()
         return { success: false, error: 'Não autenticado' };
       }
 
-      // Verifica se já existe uma instância para o usuário
+      const instanceName = instanceNameFromUserId(auth.userId);
+
+      // ─── 1. Verifica se já tem instância no banco local ──────────
       const existing = await instanceRepo.findByUserId(auth.userId);
-      if (existing) {
-        // Se já estiver conectada, retorna erro
-        if (existing.status === 'connected') {
-          return { success: false, error: 'WhatsApp já está conectado' };
-        }
 
-        // Se estiver em connecting, retorna QR code novamente
-        if (existing.status === 'connecting') {
-          const instanceName = instanceNameFromUserId(auth.userId);
-          const qrResult = await getQrCode(instanceName);
-
-          if (!qrResult.success) {
-            // Pode ser que a instância expirou — tenta recriar
-            await instanceRepo.deleteByUserId(auth.userId);
-            await deleteInstance(instanceName);
-          } else {
-            return {
-              success: true,
-              message: 'WhatsApp aguardando escaneamento do QR code',
-              qrcode: qrResult.qrcode?.base64 ?? null,
-              instanceId: existing.instanceId,
-              status: 'connecting',
-            };
-          }
-        }
+      // Se já conectado, retorna erro
+      if (existing?.status === 'connected') {
+        return { success: false, error: 'WhatsApp já está conectado' };
       }
 
-      // Cria instância na Evolution API
-      const instanceName = instanceNameFromUserId(auth.userId);
+      // ─── 2. Tenta obter QR da instância na Evolution API ────────
+      // Cobrindo 3 cenários:
+      //   a) Tem registro no banco como 'connecting' → QR renovado
+      //   b) Tem registro no banco como 'disconnected' → reconectar
+      //   c) Nenhum registro no banco → Evolution ainda pode ter instância
+      const qrResult = await getQrCode(instanceName);
+
+      if (qrResult.success && qrResult.qrcode?.base64) {
+        // Se já existe no banco, só atualiza o status
+        if (existing) {
+          await instanceRepo.updateStatus(existing.id, 'connecting');
+          return {
+            success: true,
+            message: 'WhatsApp aguardando escaneamento do QR code',
+            qrcode: qrResult.qrcode.base64,
+            instanceId: existing.instanceId,
+            status: 'connecting',
+          };
+        }
+
+        // Se não existe no banco, cria registro
+        const instance = await instanceRepo.create({
+          userId: auth.userId,
+          instanceId: instanceName,
+          apiKey: process.env.EVOLUTION_API_KEY || '',
+          status: 'connecting',
+        });
+        return {
+          success: true,
+          message: 'WhatsApp aguardando escaneamento do QR code',
+          qrcode: qrResult.qrcode.base64,
+          instanceId: instance.instanceId,
+          status: instance.status,
+        };
+      }
+
+      // ─── 3. Sem QR disponível — limpa e cria nova instância ─────
+      // Remove registro órfão do banco (se existir)
+      if (existing) {
+        await instanceRepo.deleteByUserId(auth.userId);
+      }
+
+      // Tenta logout + delete na Evolution (ignora erros)
+      await logoutInstance(instanceName);
+      await deleteInstance(instanceName);
+
       const result = await createInstance(instanceName);
+
+      // Se ainda deu "already in use", tenta força bruta
+      if (!result.success && result.error?.includes('already in use')) {
+        await logoutInstance(instanceName);
+        await deleteInstance(instanceName);
+        const retry = await createInstance(instanceName);
+        if (!retry.success) {
+          set.status = 500;
+          return { success: false, error: retry.error ?? 'Erro ao criar instância WhatsApp (após retry)' };
+        }
+        const instance = await instanceRepo.create({
+          userId: auth.userId,
+          instanceId: instanceName,
+          apiKey: process.env.EVOLUTION_API_KEY || '',
+          status: retry.instance?.status === 'open' ? 'connected' : 'connecting',
+        });
+        return {
+          success: true,
+          message: 'Instância WhatsApp criada. Escaneie o QR code.',
+          qrcode: retry.qrcode?.base64 ?? null,
+          instanceId: instance.instanceId,
+          status: instance.status,
+        };
+      }
 
       if (!result.success) {
         set.status = 500;
@@ -155,7 +205,17 @@ export const whatsAppRoutes = new Elysia()
         };
       }
 
-      const mappedStatus = mapStatus(stateResult.state!.state);
+      const rawState = stateResult.state!.state;
+      let mappedStatus = mapStatus(rawState);
+
+      // Se Evolution reportou "close", verifica se ainda há QR disponível
+      // (entre regenerações de QR, o estado pode ficar "close" transitoriamente)
+      if (rawState === 'close') {
+        const qrCheck = await getQrCode(instanceName);
+        if (qrCheck.success && qrCheck.qrcode?.base64) {
+          mappedStatus = 'connecting';
+        }
+      }
 
       // Atualiza banco se o status mudou
       if (mappedStatus !== instance.status) {
@@ -215,8 +275,16 @@ export const whatsAppRoutes = new Elysia()
         };
       }
 
-      // Busca grupos na Evolution API
       const instanceName = instanceNameFromUserId(auth.userId);
+      const cacheKey = `whatsapp:groups:${instanceName}`;
+
+      // Tenta cache primeiro
+      const cached = await cacheGet<{ jid: string; name: string }[]>(cacheKey);
+      if (cached) {
+        return { success: true, groups: cached, fromCache: true };
+      }
+
+      // Busca grupos na Evolution API
       const result = await fetchGroups(instanceName);
 
       if (!result.success) {
@@ -226,9 +294,14 @@ export const whatsAppRoutes = new Elysia()
         };
       }
 
+      const groups = result.groups || [];
+
+      // Cache por 5 minutos
+      await cacheSet(cacheKey, groups, 300);
+
       return {
         success: true,
-        groups: result.groups || [],
+        groups,
       };
     },
   )
@@ -253,6 +326,10 @@ export const whatsAppRoutes = new Elysia()
 
       // Tenta logout primeiro (limpa sessão sem deletar)
       const instanceName = instanceNameFromUserId(auth.userId);
+
+      // Invalida cache de grupos
+      await cacheDel(`whatsapp:groups:${instanceName}`);
+
       await logoutInstance(instanceName);
 
       // Depois deleta da Evolution API

@@ -303,7 +303,7 @@ export function WppConnection({ token }: WppConnectionProps) {
               justifyContent: 'center',
             }}>
               <img
-                src={`data:image/png;base64,${state.qrcode}`}
+                src={state.qrcode.startsWith('data:') ? state.qrcode : `data:image/png;base64,${state.qrcode}`}
                 alt="QR Code WhatsApp"
                 style={{ width: '220px', height: '220px', imageRendering: 'pixelated' }}
               />
