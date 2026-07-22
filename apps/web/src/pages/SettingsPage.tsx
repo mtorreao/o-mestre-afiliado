@@ -14,6 +14,10 @@ import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
 import { MlConfigSection } from './sections/MlConfigSection.tsx';
 import { AmazonConfigSection } from './sections/AmazonConfigSection.tsx';
 import { TestConversionSection } from './sections/TestConversionSection.tsx';
+import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
+import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
+import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
+import { FiltersSection } from './sections/FiltersSection.tsx';
 
 interface ProfileData {
   shopeeAppId: string | null;
@@ -32,6 +36,11 @@ interface ProfileData {
     validOffers: number;
   }[];
   messageTemplate?: string | null;
+  filters?: {
+    blacklist: string[];
+    keywords: string[];
+    dedupHours: number;
+  };
 }
 
 const tabs = [
@@ -88,7 +97,14 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
 
       <Tabs tabs={tabs} value={activeTab} onValueChange={setActiveTab}>
         {/* Aba 1: WhatsApp */}
-        <WppConnection token={token} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
+          <WppConnection token={token} />
+          <FiltersSection
+            token={token}
+            initialFilters={profile?.filters || { blacklist: [], keywords: [], dedupHours: 24 }}
+            onUpdate={loadProfile}
+          />
+        </div>
 
         {/* Aba 2: Shopee */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
