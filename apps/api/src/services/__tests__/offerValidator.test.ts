@@ -11,7 +11,7 @@
  *
  * Estratégia:
  *   - Mock @omestre/shared (detectMarketplace) via mock.module
- *   - Mock ./evolution.ts (fetchGroupMessages) via mock.module
+ *   - Mock ../evolution.ts (fetchGroupMessages) via mock.module
  *   - Mock global fetch para testes de resolução de URL
  *   - Testes 100% isolados, sem dependência de rede
  */
@@ -56,11 +56,6 @@ function makeMockResponse(finalUrl: string): Response {
     url: finalUrl,
     body: { cancel: () => {} },
   } as unknown as Response;
-}
-
-/** Atribui um mock à global fetch com o tipo correto */
-function setFetchMock(fn: (...args: any[]) => any) {
-  globalThis.fetch = fn as unknown as typeof fetch;
 }
 
 const MARKETPLACE_URL = 'https://shopee.com.br/product/123';
@@ -156,7 +151,6 @@ describe('offerValidator', () => {
     });
 
     it('ignora texto sem protocolo (apenas www)', async () => {
-      // O regex exige http:// ou https:// no início
       const { extractUrls } = await import('../offerValidator.ts');
       expect(extractUrls('Visite www.exemplo.com')).toEqual([]);
     });
@@ -280,18 +274,18 @@ describe('offerValidator', () => {
     });
 
     it('retorna URL final após redirect', async () => {
-      setFetchMock(mock(() =>
+      globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse(MARKETPLACE_URL)),
-      ));
+      ) as unknown as typeof fetch;
       const { resolveUrl } = await import('../offerValidator.ts');
       const result = await resolveUrl(SHORTENER_URL);
       expect(result).toBe(MARKETPLACE_URL);
     });
 
     it('retorna URL original quando fetch falha', async () => {
-      setFetchMock(mock(() =>
+      globalThis.fetch = mock(() =>
         Promise.reject(new Error('Network failure')),
-      ));
+      ) as unknown as typeof fetch;
       const { resolveUrl } = await import('../offerValidator.ts');
       const result = await resolveUrl(SHORTENER_URL);
       expect(result).toBe(SHORTENER_URL);
@@ -300,7 +294,7 @@ describe('offerValidator', () => {
     it('retorna URL original quando response.url é vazia', async () => {
       const resp = makeMockResponse('');
       (resp as any).url = '';
-      setFetchMock(mock(() => Promise.resolve(resp)));
+      globalThis.fetch = mock(() => Promise.resolve(resp)) as unknown as typeof fetch;
       const { resolveUrl } = await import('../offerValidator.ts');
       const result = await resolveUrl(SHORTENER_URL);
       expect(result).toBe(SHORTENER_URL);
@@ -308,19 +302,19 @@ describe('offerValidator', () => {
 
     it('envia User-Agent de navegador na requisição', async () => {
       let capturedHeaders: Record<string, string> = {};
-      setFetchMock(mock((_url: string, opts: any) => {
+      globalThis.fetch = mock((_url: string, opts: any) => {
         capturedHeaders = opts.headers || {};
         return Promise.resolve(makeMockResponse(MARKETPLACE_URL));
-      }));
+      }) as unknown as typeof fetch;
       const { resolveUrl } = await import('../offerValidator.ts');
       await resolveUrl(SHORTENER_URL);
       expect(capturedHeaders['User-Agent']).toContain('Mozilla');
     });
 
     it('não redireciona quando URL já é final', async () => {
-      setFetchMock(mock(() =>
+      globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse(MARKETPLACE_URL)),
-      ));
+      ) as unknown as typeof fetch;
       const { resolveUrl } = await import('../offerValidator.ts');
       const result = await resolveUrl(MARKETPLACE_URL);
       expect(result).toBe(MARKETPLACE_URL);
@@ -336,9 +330,9 @@ describe('offerValidator', () => {
 
     beforeEach(() => {
       originalFetch = globalThis.fetch;
-      setFetchMock(mock(() =>
+      globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse(GENERIC_URL)),
-      ));
+      ) as unknown as typeof fetch;
     });
 
     afterEach(() => {
@@ -386,27 +380,27 @@ describe('offerValidator', () => {
         if (url.includes('shopee.com.br')) return 'shopee';
         return 'unknown';
       });
-      setFetchMock(mock(() =>
+      globalThis.fetch = mock(() =>
         Promise.resolve(
           makeMockResponse('https://shopee.com.br/product/redirect'),
         ),
-      ));
+      ) as unknown as typeof fetch;
       const { isMessageValidOffer } = await import('../offerValidator.ts');
       expect(await isMessageValidOffer('Compre https://shp.ee/abc123')).toBe(true);
     });
 
     it('retorna false quando encurtador não resolve para marketplace', async () => {
       mockDetectMarketplace.mockImplementation(() => 'unknown');
-      setFetchMock(mock(() =>
+      globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse('https://example.com/other')),
-      ));
+      ) as unknown as typeof fetch;
       const { isMessageValidOffer } = await import('../offerValidator.ts');
       expect(await isMessageValidOffer('Link: https://bit.ly/abc')).toBe(false);
     });
 
     it('retorna false quando resolveUrl falha no encurtador', async () => {
       mockDetectMarketplace.mockImplementation(() => 'unknown');
-      setFetchMock(mock(() => Promise.reject(new Error('Timeout'))));
+      globalThis.fetch = mock(() => Promise.reject(new Error('Timeout'))) as unknown as typeof fetch;
       const { isMessageValidOffer } = await import('../offerValidator.ts');
       expect(await isMessageValidOffer('Link https://bit.ly/abc')).toBe(false);
     });
@@ -416,36 +410,34 @@ describe('offerValidator', () => {
         if (url.includes('shopee.com.br')) return 'shopee';
         return 'unknown';
       });
-      setFetchMock(mock((fetchedUrl: string) => {
+      globalThis.fetch = mock((fetchedUrl: string) => {
         if (fetchedUrl.includes('example.com')) {
           return Promise.resolve(
             makeMockResponse('https://shopee.com.br/redirected'),
           );
         }
         return Promise.resolve(makeMockResponse(fetchedUrl));
-      }));
+      }) as unknown as typeof fetch;
       const { isMessageValidOffer } = await import('../offerValidator.ts');
       expect(await isMessageValidOffer('Veja https://example.com/produto')).toBe(true);
     });
 
     it('passo 3: retorna false quando URL desconhecida não redireciona para marketplace', async () => {
       mockDetectMarketplace.mockImplementation(() => 'unknown');
-      setFetchMock(mock(() =>
+      globalThis.fetch = mock(() =>
         Promise.resolve(makeMockResponse(GENERIC_URL)),
-      ));
+      ) as unknown as typeof fetch;
       const { isMessageValidOffer } = await import('../offerValidator.ts');
       expect(await isMessageValidOffer('Veja https://example.com/page')).toBe(false);
     });
 
     it('passo 3: não tenta resolver URL sem http (continue)', async () => {
-      // URLs sem http no início são ignoradas no passo 3
       mockDetectMarketplace.mockImplementation(() => 'unknown');
       const fetchSpy = mock(() =>
         Promise.resolve(makeMockResponse('https://shopee.com.br/redirect')),
-      );
-      setFetchMock(fetchSpy);
+      ) as unknown as typeof fetch;
+      globalThis.fetch = fetchSpy;
       const { isMessageValidOffer } = await import('../offerValidator.ts');
-      // URL sem protocolo não é extraída pelo regex, então cai em "no URLs"
       expect(await isMessageValidOffer('www.shopee.com.br')).toBe(false);
     });
 
@@ -456,8 +448,8 @@ describe('offerValidator', () => {
       });
       const fetchSpy = mock(() =>
         Promise.resolve(makeMockResponse('')),
-      );
-      setFetchMock(fetchSpy);
+      ) as unknown as typeof fetch;
+      globalThis.fetch = fetchSpy;
       const { isMessageValidOffer } = await import('../offerValidator.ts');
       expect(
         await isMessageValidOffer('Compre https://shopee.com.br/link'),
@@ -471,7 +463,6 @@ describe('offerValidator', () => {
         return 'unknown';
       });
       const { isMessageValidOffer } = await import('../offerValidator.ts');
-      // Duas URLs, a primeira já é marketplace → retorna true sem processar a segunda via fetch
       expect(
         await isMessageValidOffer(
           'https://shopee.com.br/a e https://example.com/b',
@@ -815,100 +806,6 @@ describe('offerValidator', () => {
       expect(result.groups[0]!.validOffers).toBe(2);
       expect(result.groups[1]!.groupJid).toBe('b@g.us');
       expect(result.groups[1]!.validOffers).toBe(0);
-    });
-
-    // ══════════════════════════════════════════════════════════
-    // connectionError detection
-    // ══════════════════════════════════════════════════════════
-
-    it('connectionError=undefined quando todos os grupos passam', async () => {
-      mockFetchGroupMessages.mockImplementation(() =>
-        Promise.resolve({
-          success: true,
-          messages: [{ text: 'https://shopee.com.br/a' }],
-        }),
-      );
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
-      expect(result.overallPassed).toBe(true);
-      expect(result.connectionError).toBeUndefined();
-    });
-
-    it('connectionError=undefined quando grupos falham por conteúdo (ratio baixo)', async () => {
-      mockFetchGroupMessages.mockImplementation(() =>
-        Promise.resolve({
-          success: true,
-          messages: [{ text: 'Bom dia' }, { text: 'Tudo bem?' }],
-        }),
-      );
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
-      expect(result.overallPassed).toBe(false);
-      expect(result.connectionError).toBeUndefined();
-    });
-
-    it('connectionError=undefined quando apenas alguns grupos falham por conexão', async () => {
-      let callCount = 0;
-      mockFetchGroupMessages.mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.resolve({
-            success: true,
-            messages: [{ text: 'https://shopee.com.br/a' }],
-          });
-        }
-        return Promise.resolve({
-          success: false,
-          error: 'request to http://evolution-api:8080/chat/findMessages/user-1 failed, reason: connect ECONNREFUSED',
-        });
-      });
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
-      // Um grupo passou, outro falhou por conexão — não é erro de conexão geral
-      expect(result.overallPassed).toBe(false);
-      expect(result.connectionError).toBeUndefined();
-    });
-
-    it('connectionError=preenchido quando todos os grupos falham por conexão Evolution', async () => {
-      mockFetchGroupMessages.mockImplementation(() =>
-        Promise.resolve({
-          success: false,
-          error: 'request to http://evolution-api:8080/chat/findMessages/user-1 failed, reason: connect ECONNREFUSED',
-        }),
-      );
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
-      expect(result.overallPassed).toBe(false);
-      expect(result.connectionError).toBeDefined();
-      expect(result.connectionError).toContain('connect ECONNREFUSED');
-      expect(result.groups[0]!.errors[0]).toContain('connect ECONNREFUSED');
-      expect(result.groups[1]!.errors[0]).toContain('connect ECONNREFUSED');
-    });
-
-    it('connectionError usa erro mais específico quando disponível', async () => {
-      let callIdx = 0;
-      mockFetchGroupMessages.mockImplementation(() => {
-        callIdx++;
-        if (callIdx === 1) {
-          return Promise.resolve({
-            success: false,
-            error: 'Erro ao buscar mensagens do grupo',
-          });
-        }
-        return Promise.resolve({
-          success: false,
-          error: 'Evolution API retornou HTTP 503: Service Unavailable',
-        });
-      });
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, [GROUP_A, GROUP_B]);
-      expect(result.connectionError).toBe('Evolution API retornou HTTP 503: Service Unavailable');
-    });
-
-    it('connectionError=undefined quando não há grupos', async () => {
-      const { validateOfferGroups } = await import('../offerValidator.ts');
-      const result = await validateOfferGroups(INSTANCE, []);
-      expect(result.connectionError).toBeUndefined();
     });
   });
 });

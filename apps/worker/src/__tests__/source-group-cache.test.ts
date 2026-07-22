@@ -138,257 +138,253 @@ class FakeRedis {
 }
 
 // ══════════════════════════════════════════════════════════════════════
+// Mocks GLOBAIS — antes de qualquer import
+// ══════════════════════════════════════════════════════════════════════
+
+mock.module('ioredis', () => ({ default: FakeRedis }));
+
+mock.module('@omestre/db', () => ({
+  getDb: () => ({}),
+  closeDb: () => Promise.resolve(),
+  getClient: () => ({}),
+  checkDbHealth: () => Promise.resolve({ ok: true, latencyMs: 0 }),
+  omestre: {},
+  affiliates: {},
+  mlAffiliates: {},
+  reflectedOffers: {},
+  marketplaceEnum: {},
+  offerStatusEnum: {},
+  users: {},
+  userCredentials: {},
+  userWhatsAppInstances: {},
+  MlAffiliateRepository: class {
+    async findByPlatformUserId() { return null; }
+  },
+  UserRepository: class {},
+  UserCredentialsRepository: class {
+    async findByUserId() { return null; }
+  },
+  WhatsAppInstanceRepository: class {},
+  AffiliatesRepository: class {
+    async findAllActiveWithSourceGroups(): Promise<MockAffiliate[]> {
+      if (mockDbError) throw mockDbError;
+      return mockAffiliatesData.filter((a) => {
+        if (!a.active) return false;
+        const groups = a.sourceGroups;
+        return groups != null && groups.length > 0;
+      });
+    }
+  },
+  MirrorLogRepository: class {},
+}));
+
+// Dependências que index.ts importa — mocks vazios pra evitar side effects
+mock.module('./mirror-pipeline.ts', () => ({
+  processMirrorMessage: () => Promise.resolve(true),
+}));
+
+mock.module('./revalidate.ts', () => ({
+  runRevalidation: () => Promise.resolve({ totalAffiliates: 0, validatedAffiliates: 0, failedAffiliates: 0, results: [] }),
+  runRevalidationDaemon: () => Promise.resolve(),
+}));
+
+mock.module('./metrics.ts', () => ({
+  startMetricsServer: () => {},
+  setStatusMeta: () => {},
+}));
+
+mock.module('./dead-letter-queue.ts', () => ({
+  pushToDLQ: () => Promise.resolve(),
+  purgeOldDLQItems: () => Promise.resolve(0),
+}));
+
+// ══════════════════════════════════════════════════════════════════════
 // Testes
 // ══════════════════════════════════════════════════════════════════════
 
-describe('source-group-cache', () => {
-  beforeAll(() => {
-    mock.module('ioredis', () => ({ default: FakeRedis }));
+describe('populateSourceGroupCache', () => {
+  let populateSourceGroupCache: (
+    redis: InstanceType<typeof FakeRedis>,
+  ) => Promise<void>;
 
-    mock.module('@omestre/db', () => ({
-      getDb: () => ({}),
-      closeDb: () => Promise.resolve(),
-      getClient: () => ({}),
-      checkDbHealth: () => Promise.resolve({ ok: true, latencyMs: 0 }),
-      omestre: {},
-      affiliates: {},
-      mlAffiliates: {},
-      reflectedOffers: {},
-      marketplaceEnum: {},
-      offerStatusEnum: {},
-      users: {},
-      userCredentials: {},
-      userWhatsAppInstances: {},
-      MlAffiliateRepository: class {
-        async findByPlatformUserId() { return null; }
-      },
-      UserRepository: class {},
-      UserCredentialsRepository: class {
-        async findByUserId() { return null; }
-      },
-      WhatsAppInstanceRepository: class {},
-      AffiliatesRepository: class {
-        async findAllActiveWithSourceGroups(): Promise<MockAffiliate[]> {
-          if (mockDbError) throw mockDbError;
-          return mockAffiliatesData.filter((a) => {
-            if (!a.active) return false;
-            const groups = a.sourceGroups;
-            return groups != null && groups.length > 0;
-          });
-        }
-      },
-      MirrorLogRepository: class {},
-    }));
+  beforeEach(async () => {
+    // Reset state
+    mockAffiliatesData = [];
+    mockDbError = null;
+    capturedOps = [];
 
-    // Dependências que index.ts importa — mocks vazios pra evitar side effects
-    mock.module('./mirror-pipeline.ts', () => ({
-      processMirrorMessage: () => Promise.resolve(true),
-    }));
-
-    mock.module('./revalidate.ts', () => ({
-      runRevalidation: () => Promise.resolve({ totalAffiliates: 0, validatedAffiliates: 0, failedAffiliates: 0, results: [] }),
-      runRevalidationDaemon: () => Promise.resolve(),
-    }));
-
-    mock.module('./metrics.ts', () => ({
-      startMetricsServer: () => {},
-      setStatusMeta: () => {},
-    }));
-
-    mock.module('./dead-letter-queue.ts', () => ({
-      pushToDLQ: () => Promise.resolve(),
-      purgeOldDLQItems: () => Promise.resolve(0),
-    }));
-  });
-
-  afterAll(() => {
-    mock.restore();
-  });
-
-  describe('populateSourceGroupCache', () => {
-    let populateSourceGroupCache: (
+    // Import fresh — Bun cache desduplica pelo path, mas como os mocks
+    // já estão definidos (mock.module é global), o import pega os mocks.
+    const mod = await import('../index.ts');
+    populateSourceGroupCache = mod.populateSourceGroupCache as (
       redis: InstanceType<typeof FakeRedis>,
     ) => Promise<void>;
-
-    beforeEach(async () => {
-      // Reset state
-      mockAffiliatesData = [];
-      mockDbError = null;
-      capturedOps = [];
-
-      // Import fresh — Bun cache desduplica pelo path, mas como os mocks
-      // já estão definidos (mock.module é global), o import pega os mocks.
-      const mod = await import('../index.ts');
-      populateSourceGroupCache = mod.populateSourceGroupCache as (
-        redis: InstanceType<typeof FakeRedis>,
-      ) => Promise<void>;
-    });
-
-    // ── CENÁRIO 1: Cache populado com grupos ──────────────────────────
-
-    it('popula cache Redis com sourceGroups de afiliados ativos', async () => {
-      mockAffiliatesData = [AFF_WITH_GROUPS_1];
-
-      const redis = new FakeRedis();
-      await populateSourceGroupCache(redis);
-
-      // Verifica operações SET
-      const sets = capturedOps.filter((op) => op.cmd === 'set');
-      expect(sets.length).toBe(2);
-
-      const key1 = sets[0].args[0] as string;
-      const val1 = JSON.parse(sets[0].args[1] as string);
-      expect(key1).toBe('mirror:source-group:120363000000000001@g.us');
-      expect(val1).toEqual({ affiliateId: 1, groupName: 'Grupo Promoções' });
-
-      const key2 = sets[1].args[0] as string;
-      const val2 = JSON.parse(sets[1].args[1] as string);
-      expect(key2).toBe('mirror:source-group:120363000000000002@g.us');
-      expect(val2).toEqual({ affiliateId: 1, groupName: 'Grupo Ofertas' });
-
-      // Verifica operações SADD
-      const sadds = capturedOps.filter((op) => op.cmd === 'sadd');
-      expect(sadds.length).toBe(2);
-      expect(sadds[0].args).toEqual(['mirror:source-groups:all', '120363000000000001@g.us']);
-      expect(sadds[1].args).toEqual(['mirror:source-groups:all', '120363000000000002@g.us']);
-    });
-
-    // ── CENÁRIO 2: Múltiplos afiliados ────────────────────────────────
-
-    it('popula cache com múltiplos afiliados em uma única pipeline', async () => {
-      mockAffiliatesData = [AFF_WITH_GROUPS_1, AFF_WITH_GROUPS_2];
-
-      const redis = new FakeRedis();
-      await populateSourceGroupCache(redis);
-
-      const sets = capturedOps.filter((op) => op.cmd === 'set');
-      expect(sets.length).toBe(3); // 2 + 1 = 3 groups total
-
-      // Afiliado 1
-      expect(sets[0].args[0]).toBe('mirror:source-group:120363000000000001@g.us');
-      expect(sets[1].args[0]).toBe('mirror:source-group:120363000000000002@g.us');
-      // Afiliado 2
-      expect(sets[2].args[0]).toBe('mirror:source-group:120363000000000003@g.us');
-
-      const sadds = capturedOps.filter((op) => op.cmd === 'sadd');
-      expect(sadds.length).toBe(3);
-
-      // Verifica a ordem: SADD para cada group jid
-      const allMembers = sadds.map((op) => op.args[1]);
-      expect(allMembers).toContain('120363000000000001@g.us');
-      expect(allMembers).toContain('120363000000000002@g.us');
-      expect(allMembers).toContain('120363000000000003@g.us');
-    });
-
-    // ── CENÁRIO 3: DB vazio ───────────────────────────────────────────
-
-    it('NÃO faz SET/SADD quando não há afiliados no banco', async () => {
-      mockAffiliatesData = [];
-
-      const redis = new FakeRedis();
-      await populateSourceGroupCache(redis);
-
-      expect(capturedOps.length).toBe(0);
-    });
-
-    // ── CENÁRIO 4: Afiliados sem sourceGroups ─────────────────────────
-
-    it('ignora afiliados sem sourceGroups configurados', async () => {
-      mockAffiliatesData = [AFF_NO_GROUPS, AFF_NULL_GROUPS];
-
-      const redis = new FakeRedis();
-      await populateSourceGroupCache(redis);
-
-      // Nenhum SET/SADD porque nenhum tem sourceGroups com dados
-      expect(capturedOps.length).toBe(0);
-    });
-
-    // ── CENÁRIO 5: DB com erro → falha não é fatal ───────────────────
-
-    it('falha no DB NÃO é fatal — apenas loga warning', async () => {
-      mockDbError = new Error('Conexão recusada');
-
-      const redis = new FakeRedis();
-      // Não deve lançar
-      await expect(populateSourceGroupCache(redis)).resolves.toBeUndefined();
-
-      // Nenhuma operação Redis foi executada
-      expect(capturedOps.length).toBe(0);
-    });
-
-    // ── CENÁRIO 6: Afiliado com groupName vazio ──────────────────────
-
-    it('usa string vazia quando groupName não está presente', async () => {
-      mockAffiliatesData = [
-        makeAffiliate({
-          id: 5,
-          evolutionInstanceId: 'user-5',
-          sourceGroups: [{ jid: '120363000000000005@g.us', name: '' }],
-        }),
-      ];
-
-      const redis = new FakeRedis();
-      await populateSourceGroupCache(redis);
-
-      const sets = capturedOps.filter((op) => op.cmd === 'set');
-      expect(sets.length).toBe(1);
-
-      const val = JSON.parse(sets[0].args[1] as string);
-      expect(val).toEqual({ affiliateId: 5, groupName: '' });
-    });
   });
 
-  // ══════════════════════════════════════════════════════════════════════
-  // Testes de integração: chamada de runMirror() (simulada)
-  // ══════════════════════════════════════════════════════════════════════
+  // ── CENÁRIO 1: Cache populado com grupos ──────────────────────────
 
-  describe('populateSourceGroupCache — caminho runMirror', () => {
-    let populateSourceGroupCache: (
+  it('popula cache Redis com sourceGroups de afiliados ativos', async () => {
+    mockAffiliatesData = [AFF_WITH_GROUPS_1];
+
+    const redis = new FakeRedis();
+    await populateSourceGroupCache(redis);
+
+    // Verifica operações SET
+    const sets = capturedOps.filter((op) => op.cmd === 'set');
+    expect(sets.length).toBe(2);
+
+    const key1 = sets[0].args[0] as string;
+    const val1 = JSON.parse(sets[0].args[1] as string);
+    expect(key1).toBe('mirror:source-group:120363000000000001@g.us');
+    expect(val1).toEqual({ affiliateId: 1, groupName: 'Grupo Promoções' });
+
+    const key2 = sets[1].args[0] as string;
+    const val2 = JSON.parse(sets[1].args[1] as string);
+    expect(key2).toBe('mirror:source-group:120363000000000002@g.us');
+    expect(val2).toEqual({ affiliateId: 1, groupName: 'Grupo Ofertas' });
+
+    // Verifica operações SADD
+    const sadds = capturedOps.filter((op) => op.cmd === 'sadd');
+    expect(sadds.length).toBe(2);
+    expect(sadds[0].args).toEqual(['mirror:source-groups:all', '120363000000000001@g.us']);
+    expect(sadds[1].args).toEqual(['mirror:source-groups:all', '120363000000000002@g.us']);
+  });
+
+  // ── CENÁRIO 2: Múltiplos afiliados ────────────────────────────────
+
+  it('popula cache com múltiplos afiliados em uma única pipeline', async () => {
+    mockAffiliatesData = [AFF_WITH_GROUPS_1, AFF_WITH_GROUPS_2];
+
+    const redis = new FakeRedis();
+    await populateSourceGroupCache(redis);
+
+    const sets = capturedOps.filter((op) => op.cmd === 'set');
+    expect(sets.length).toBe(3); // 2 + 1 = 3 groups total
+
+    // Afiliado 1
+    expect(sets[0].args[0]).toBe('mirror:source-group:120363000000000001@g.us');
+    expect(sets[1].args[0]).toBe('mirror:source-group:120363000000000002@g.us');
+    // Afiliado 2
+    expect(sets[2].args[0]).toBe('mirror:source-group:120363000000000003@g.us');
+
+    const sadds = capturedOps.filter((op) => op.cmd === 'sadd');
+    expect(sadds.length).toBe(3);
+
+    // Verifica a ordem: SADD para cada group jid
+    const allMembers = sadds.map((op) => op.args[1]);
+    expect(allMembers).toContain('120363000000000001@g.us');
+    expect(allMembers).toContain('120363000000000002@g.us');
+    expect(allMembers).toContain('120363000000000003@g.us');
+  });
+
+  // ── CENÁRIO 3: DB vazio ───────────────────────────────────────────
+
+  it('NÃO faz SET/SADD quando não há afiliados no banco', async () => {
+    mockAffiliatesData = [];
+
+    const redis = new FakeRedis();
+    await populateSourceGroupCache(redis);
+
+    expect(capturedOps.length).toBe(0);
+  });
+
+  // ── CENÁRIO 4: Afiliados sem sourceGroups ─────────────────────────
+
+  it('ignora afiliados sem sourceGroups configurados', async () => {
+    mockAffiliatesData = [AFF_NO_GROUPS, AFF_NULL_GROUPS];
+
+    const redis = new FakeRedis();
+    await populateSourceGroupCache(redis);
+
+    // Nenhum SET/SADD porque nenhum tem sourceGroups com dados
+    expect(capturedOps.length).toBe(0);
+  });
+
+  // ── CENÁRIO 5: DB com erro → falha não é fatal ───────────────────
+
+  it('falha no DB NÃO é fatal — apenas loga warning', async () => {
+    mockDbError = new Error('Conexão recusada');
+
+    const redis = new FakeRedis();
+    // Não deve lançar
+    await expect(populateSourceGroupCache(redis)).resolves.toBeUndefined();
+
+    // Nenhuma operação Redis foi executada
+    expect(capturedOps.length).toBe(0);
+  });
+
+  // ── CENÁRIO 6: Afiliado com groupName vazio ──────────────────────
+
+  it('usa string vazia quando groupName não está presente', async () => {
+    mockAffiliatesData = [
+      makeAffiliate({
+        id: 5,
+        evolutionInstanceId: 'user-5',
+        sourceGroups: [{ jid: '120363000000000005@g.us', name: '' }],
+      }),
+    ];
+
+    const redis = new FakeRedis();
+    await populateSourceGroupCache(redis);
+
+    const sets = capturedOps.filter((op) => op.cmd === 'set');
+    expect(sets.length).toBe(1);
+
+    const val = JSON.parse(sets[0].args[1] as string);
+    expect(val).toEqual({ affiliateId: 5, groupName: '' });
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Testes de integração: chamada de runMirror() (simulada)
+// ══════════════════════════════════════════════════════════════════════
+
+describe('populateSourceGroupCache — caminho runMirror', () => {
+  let populateSourceGroupCache: (
+    redis: InstanceType<typeof FakeRedis>,
+  ) => Promise<void>;
+
+  beforeEach(async () => {
+    capturedOps = [];
+    mockAffiliatesData = [];
+    mockDbError = null;
+    const mod = await import('../index.ts');
+    populateSourceGroupCache = mod.populateSourceGroupCache as (
       redis: InstanceType<typeof FakeRedis>,
     ) => Promise<void>;
+  });
 
-    beforeEach(async () => {
-      capturedOps = [];
-      mockAffiliatesData = [];
-      mockDbError = null;
-      const mod = await import('../index.ts');
-      populateSourceGroupCache = mod.populateSourceGroupCache as (
-        redis: InstanceType<typeof FakeRedis>,
-      ) => Promise<void>;
+  it('é chamada ANTES de criar consumer group (runMirror flow)', async () => {
+    // Verificamos que a função é independente — não depende de
+    // POST /api/affiliate/groups-config, apenas do banco de dados.
+    // Esta validação é estrutural: a chamada em runMirror() está
+    // em index.ts linha 304: await populateSourceGroupCache(redis);
+    // ANTES de ensureConsumerGroup (linha 307).
+    mockAffiliatesData = [
+      makeAffiliate({
+        id: 10,
+        evolutionInstanceId: 'user-10',
+        sourceGroups: [{ jid: '120363000000000010@g.us', name: 'Grupo Integração' }],
+      }),
+    ];
+
+    const redis = new FakeRedis();
+    await populateSourceGroupCache(redis);
+
+    const sets = capturedOps.filter((op) => op.cmd === 'set');
+    expect(sets.length).toBe(1);
+    expect(sets[0].args[0]).toBe('mirror:source-group:120363000000000010@g.us');
+    expect(JSON.parse(sets[0].args[1] as string)).toEqual({
+      affiliateId: 10,
+      groupName: 'Grupo Integração',
     });
 
-    it('é chamada ANTES de criar consumer group (runMirror flow)', async () => {
-      // Verificamos que a função é independente — não depende de
-      // POST /api/affiliate/groups-config, apenas do banco de dados.
-      // Esta validação é estrutural: a chamada em runMirror() está
-      // em index.ts linha 304: await populateSourceGroupCache(redis);
-      // ANTES de ensureConsumerGroup (linha 307).
-      mockAffiliatesData = [
-        makeAffiliate({
-          id: 10,
-          evolutionInstanceId: 'user-10',
-          sourceGroups: [{ jid: '120363000000000010@g.us', name: 'Grupo Integração' }],
-        }),
-      ];
-
-      const redis = new FakeRedis();
-      await populateSourceGroupCache(redis);
-
-      const sets = capturedOps.filter((op) => op.cmd === 'set');
-      expect(sets.length).toBe(1);
-      expect(sets[0].args[0]).toBe('mirror:source-group:120363000000000010@g.us');
-      expect(JSON.parse(sets[0].args[1] as string)).toEqual({
-        affiliateId: 10,
-        groupName: 'Grupo Integração',
-      });
-
-      // Confirma que a população usou dados do DB, NÃO de uma chamada API
-      const sadds = capturedOps.filter((op) => op.cmd === 'sadd');
-      expect(sadds.length).toBe(1);
-      expect(sadds[0].args).toEqual([
-        'mirror:source-groups:all',
-        '120363000000000010@g.us',
-      ]);
-    });
+    // Confirma que a população usou dados do DB, NÃO de uma chamada API
+    const sadds = capturedOps.filter((op) => op.cmd === 'sadd');
+    expect(sadds.length).toBe(1);
+    expect(sadds[0].args).toEqual([
+      'mirror:source-groups:all',
+      '120363000000000010@g.us',
+    ]);
   });
 });
