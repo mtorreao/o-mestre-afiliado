@@ -37,17 +37,18 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-bg)' }}>
       {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.3)',
-            zIndex: 40,
-          }}
-        />
-      )}
+      <div
+        onClick={() => setSidebarOpen(false)}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.3)',
+          zIndex: 40,
+          opacity: sidebarOpen ? 1 : 0,
+          pointerEvents: sidebarOpen ? ('auto' as const) : ('none' as const),
+          transition: 'opacity var(--transition-base)',
+        }}
+      />
 
       {/* Sidebar */}
       <aside
@@ -187,6 +188,8 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
         >
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-expanded={sidebarOpen}
+            aria-label={sidebarOpen ? 'Fechar menu' : 'Abrir menu'}
             style={{
               background: 'transparent',
               border: 'none',
@@ -207,15 +210,9 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
         {children}
       </main>
 
-      {/* Inline styles for responsive sidebar */}
+      {/* Inline styles for responsive layout */}
       <style>{`
         @media (max-width: 768px) {
-          .sidebar-desktop {
-            transform: translateX(-100%);
-          }
-          .sidebar-desktop.open {
-            transform: translateX(0);
-          }
           .main-content {
             margin-left: 0 !important;
           }

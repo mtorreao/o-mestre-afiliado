@@ -65,6 +65,7 @@ export function RegisterPage({ onRegister, onSwitchToLogin }: RegisterPageProps)
           border: '1px solid var(--color-border)',
           padding: '2.5rem 2rem',
           boxShadow: 'var(--shadow-lg)',
+          animation: 'fadeInUp var(--transition-slow)',
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>

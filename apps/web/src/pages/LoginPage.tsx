@@ -50,6 +50,7 @@ export function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
           border: '1px solid var(--color-border)',
           padding: '2.5rem 2rem',
           boxShadow: 'var(--shadow-lg)',
+          animation: 'fadeInUp var(--transition-slow)',
         }}
       >
         {/* Logo */}
