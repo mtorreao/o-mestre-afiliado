@@ -12,6 +12,7 @@ import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
+import { MirrorFormPage } from './pages/MirrorFormPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { GroupsPage } from './pages/GroupsPage.tsx';
 import { AppShell, type NavItem } from './components/layout/AppShell.tsx';
@@ -26,6 +27,7 @@ const pageTitles: Record<NavItem, string> = {
   settings: 'Configurações',
   groups: 'Grupos de Espelhamento',
   'mirror-logs': 'Logs de Espelhamento',
+  'mirror-form': 'Novo Espelhamento',
   'worker-status': 'Status do Worker',
 };
 
@@ -33,6 +35,7 @@ function AppContent() {
   const { user, token, loading, isAuthenticated, login, register, logout } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>('login');
   const [nav, setNav] = useState<NavItem>('dashboard');
+  const [editingMirrorId, setEditingMirrorId] = useState<number | null>(null);
 
   // Loading state
   if (loading) {
@@ -75,7 +78,24 @@ function AppContent() {
             <GroupsPage token={token} />
           )}
           {nav === 'mirror-logs' && (
-            <MirrorLogsPage token={token} onBack={() => setNav('dashboard')} />
+            <MirrorLogsPage
+              token={token}
+              onBack={() => setNav('dashboard')}
+              onNavigate={(item: NavItem) => {
+                setEditingMirrorId(null);
+                setNav(item);
+              }}
+            />
+          )}
+          {nav === 'mirror-form' && (
+            <MirrorFormPage
+              token={token}
+              mirrorId={editingMirrorId}
+              onBack={() => {
+                setEditingMirrorId(null);
+                setNav('dashboard');
+              }}
+            />
           )}
           {nav === 'settings' && (
             <SettingsPage user={user} token={token} />
@@ -84,7 +104,14 @@ function AppContent() {
             <WorkerStatusPage onBack={() => setNav('dashboard')} />
           )}
           {nav === 'dashboard' && (
-            <DashboardPage user={user} token={token} onNavigate={setNav} />
+            <DashboardPage
+              user={user}
+              token={token}
+              onNavigate={(item: NavItem) => {
+                setEditingMirrorId(null);
+                setNav(item);
+              }}
+            />
           )}
         </AppShell>
       </ToastProvider>
