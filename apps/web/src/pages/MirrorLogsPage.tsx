@@ -38,7 +38,6 @@ interface MirrorLogResponse {
 
 interface MirrorLogsPageProps {
   token: string;
-  onBack: () => void;
 }
 
 // ─── Helpers ────────────────────────────────────────
@@ -69,7 +68,7 @@ function formatDate(iso: string): string {
 
 // ─── Component ──────────────────────────────────────
 
-export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
+export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
   const [data, setData] = useState<MirrorLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -131,7 +130,6 @@ export function MirrorLogsPage({ token, onBack }: MirrorLogsPageProps) {
       <PageHeader
         title="📋 Logs de Espelhamento"
         subtitle={data ? `${data.total} registro(s)` : 'Carregando...'}
-        onBack={onBack}
         actions={
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <Button variant="ghost" size="sm" onClick={handleReset} icon={<X size={14} />}>
