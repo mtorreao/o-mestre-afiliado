@@ -37,7 +37,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
 
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    { id: 'mirror-logs', label: 'Espelhamento', icon: <Repeat2 size={18} /> },
+    { id: 'mirror-logs', label: 'Logs de espelhamento', icon: <Repeat2 size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
 
