@@ -231,7 +231,7 @@ test.describe('Mirror Flow — Groups Config', () => {
       },
     );
     expect(body.success).toBe(false);
-    expect(body.error).toContain('Selecione exatamente 1');
+    expect(body.error).toMatch(/pelo menos 1|Selecione pelo menos|Selecione exatamente 1/);
   });
 
   test('POST /api/affiliate/groups-config — valida ofertas com sucesso (simulador retorna 70%+ links)', async () => {

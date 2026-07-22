@@ -22,6 +22,9 @@ export const userCredentials = omestre.table('user_credentials', {
   shopeeAppId: text('shopee_app_id'),
   shopeeAppSecret: text('shopee_app_secret'),
 
+  // Amazon
+  amazonTrackingId: text('amazon_tracking_id'),
+
   // Metadados
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at')

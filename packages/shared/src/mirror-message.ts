@@ -26,3 +26,35 @@ export interface MirrorMessageEvent {
   /** Marketplace detectado (opcional, será detectado no worker) */
   marketplace?: string;
 }
+
+/**
+ * Item persistido na Dead Letter Queue para mensagens com falha permanente.
+ */
+export interface MirrorDLQEntry {
+  /** ID único do item na DLQ */
+  id: string;
+  /** Dados originais do evento */
+  event: MirrorMessageEvent;
+  /** Razão da falha */
+  failureReason: string;
+  /** Número de tentativas realizadas */
+  attempts: number;
+  /** Mensagem do último erro */
+  lastError: string;
+  /** Quando a falha ocorreu (ISO) */
+  failedAt: string;
+  /** Marketplace detectado (se aplicável) */
+  marketplace?: string;
+  /** URL original extraída (se aplicável) */
+  originalUrl?: string;
+  /** Status da conversão */
+  conversionSuccess?: boolean;
+  /** JIDs dos grupos de destino (se conhecidos) */
+  targetGroupJids?: string[];
+  /** Se já foi re-processado */
+  reprocessed: boolean;
+  /** Quando foi re-processado (ISO) */
+  reprocessedAt?: string;
+  /** Resultado do re-processamento */
+  reprocessResult?: string;
+}

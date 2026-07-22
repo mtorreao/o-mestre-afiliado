@@ -12,7 +12,11 @@
  * Histograma:
  *   mirror_conversion_duration_seconds       (marketplace)
  *
- * Exposição via HTTP em /metrics na porta METRICS_PORT (default 9092).
+ * Exposição HTTP em METRICS_PORT (default 9092):
+ *   /metrics    — Prometheus text format
+ *   /health     — OK (orquestrador)
+ *   /status     — JSON com health, uptime, erros acumulados, DLQ count
+ *   /dlq/*      — Dead Letter Queue management
  */
 
 // ─── Tipos internos ──────────────────────────────────────────────────
@@ -240,23 +244,160 @@ export function registerDefaultMetrics(): void {
   );
 }
 
+// ─── Erros acumulados para o /status ──────────────────────────────────
+
+/** Timestamp de inicialização do servidor de métricas. */
+let startTime = Date.now();
+
+/** Interface de erro rastreado. */
+export interface TrackedError {
+  time: string;
+  message: string;
+  count: number;
+}
+
+/** Últimos erros (agrupados por mensagem, até 20). */
+const recentErrors = new Map<string, TrackedError>();
+
+/** Limite de erros rastreados. */
+const MAX_TRACKED_ERRORS = 20;
+
+/**
+ * Registra um erro no tracker interno do /status.
+ * Erros com a mesma mensagem são agrupados (incrementa count).
+ */
+export function trackError(message: string): void {
+  const existing = recentErrors.get(message);
+  if (existing) {
+    existing.count++;
+    existing.time = new Date().toISOString();
+  } else {
+    recentErrors.set(message, {
+      time: new Date().toISOString(),
+      message,
+      count: 1,
+    });
+    // Se estourou o limite, remove o mais velho
+    if (recentErrors.size > MAX_TRACKED_ERRORS) {
+      let oldestKey: string | null = null;
+      let oldestTime = Infinity;
+      for (const [k, v] of recentErrors) {
+        const t = new Date(v.time).getTime();
+        if (t < oldestTime) {
+          oldestTime = t;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) recentErrors.delete(oldestKey);
+    }
+  }
+}
+
+/**
+ * Dados extras que o index.ts pode registrar para enriquecer o /status.
+ * Ex: modo, tamanho da fila, etc.
+ */
+let statusOverrides: Record<string, unknown> = {};
+
+/**
+ * Permite que index.ts registre dados adicionais para o /status.
+ */
+export function setStatusMeta(meta: Record<string, unknown>): void {
+  statusOverrides = { ...statusOverrides, ...meta };
+}
+
+/**
+ * Retorna o objeto de status completo para o endpoint /status.
+ */
+export async function getStatusResponse(): Promise<Record<string, unknown>> {
+  const uptimeMs = Date.now() - startTime;
+  const uptimeSeconds = Math.floor(uptimeMs / 1000);
+  const days = Math.floor(uptimeSeconds / 86400);
+  const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const seconds = uptimeSeconds % 60;
+  const uptimeFormatted =
+    days > 0
+      ? `${days}d ${hours}h ${minutes}m ${seconds}s`
+      : hours > 0
+        ? `${hours}h ${minutes}m ${seconds}s`
+        : `${minutes}m ${seconds}s`;
+
+  // Tenta ler DLQ count
+  let dlqCount = 0;
+  try {
+    const { countDLQ } = await import('./dead-letter-queue.ts');
+    dlqCount = await countDLQ();
+  } catch {
+    // DLQ pode estar indisponível — não falha
+  }
+
+  // Counter values resumidas
+  const countersSnapshot: Record<string, number | string> = {};
+  for (const [name, metric] of metrics) {
+    if (metric.type === 'counter') {
+      const counter = metric as CounterMetric;
+      if (counter.labelNames.length > 0) {
+        for (const [key, value] of counter.counts) {
+          const labelValues = key.split(',');
+          const labelStr = counter.labelNames
+            .map((ln, i) => `${ln}=${labelValues[i] || ''}`)
+            .join(',');
+          countersSnapshot[`${name}{${labelStr}}`] = value;
+        }
+      } else {
+        countersSnapshot[name] = counter.value;
+      }
+    }
+  }
+
+  return {
+    service: 'mirror-worker-metrics',
+    status: 'healthy',
+    uptimeSeconds,
+    uptime: uptimeFormatted,
+    startTime: new Date(startTime).toISOString(),
+    mode: statusOverrides.mode || 'unknown',
+    queueSize: statusOverrides.queueSize ?? null,
+    dlqCount,
+    errors: Array.from(recentErrors.values()).sort(
+      (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime(),
+    ),
+    counters: countersSnapshot,
+    ...statusOverrides,
+  };
+}
+
 // ─── HTTP Server ─────────────────────────────────────────────────────
 
 const METRICS_PORT = parseInt(process.env.METRICS_PORT || '9092', 10);
 
 let metricsServer: { stop(): void } | null = null;
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 /**
- * Inicia um servidor HTTP que expõe as métricas em /metrics.
+ * Inicia um servidor HTTP que expõe as métricas em /metrics e endpoints
+ * da Dead Letter Queue em /dlq/*.
  * Pode ser chamado uma única vez — chamadas subsequentes são ignoradas.
+ *
+ * @param portOverride — Porta opcional para override (usado em testes).
+ *   Se omitido, usa METRICS_PORT do ambiente (default 9092).
  */
-export function startMetricsServer(): void {
+export function startMetricsServer(portOverride?: number): void {
   if (metricsServer) return;
 
   registerDefaultMetrics();
 
+  const effectivePort = portOverride ?? METRICS_PORT;
+
   metricsServer = Bun.serve({
-    port: METRICS_PORT,
+    port: effectivePort,
     async fetch(req) {
       const url = new URL(req.url);
 
@@ -275,17 +416,66 @@ export function startMetricsServer(): void {
         return new Response('OK', { status: 200 });
       }
 
+      // ── Status endpoint ───────────────────────────────────────────
+      if (url.pathname === '/status') {
+        const status = await getStatusResponse();
+        return jsonResponse(status);
+      }
+
+      // ── Dead Letter Queue endpoints ─────────────────────────────
+      if (url.pathname === '/dlq/count') {
+        const { countDLQ } = await import('./dead-letter-queue.ts');
+        const count = await countDLQ();
+        return jsonResponse({ count });
+      }
+
+      if (url.pathname === '/dlq') {
+        const { listDLQ } = await import('./dead-letter-queue.ts');
+        const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+        const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+        const result = await listDLQ({ offset, limit });
+        return jsonResponse(result);
+      }
+
+      if (url.pathname === '/dlq/requeue' && req.method === 'POST') {
+        const id = url.searchParams.get('id');
+        if (!id) {
+          return jsonResponse({ error: 'Parâmetro "id" é obrigatório' }, 400);
+        }
+        const { requeueFromDLQ } = await import('./dead-letter-queue.ts');
+        const ok = await requeueFromDLQ(id);
+        return jsonResponse({ success: ok, dlqId: id });
+      }
+
+      if (url.pathname === '/dlq/remove' && req.method === 'POST') {
+        const id = url.searchParams.get('id');
+        if (!id) {
+          return jsonResponse({ error: 'Parâmetro "id" é obrigatório' }, 400);
+        }
+        const { removeFromDLQ } = await import('./dead-letter-queue.ts');
+        const ok = await removeFromDLQ(id);
+        return jsonResponse({ success: ok, dlqId: id });
+      }
+
+      if (url.pathname === '/dlq/purge' && req.method === 'POST') {
+        const { purgeOldDLQItems } = await import('./dead-letter-queue.ts');
+        const removed = await purgeOldDLQItems();
+        return jsonResponse({ removed });
+      }
+
       if (url.pathname === '/') {
-        return new Response(
-          JSON.stringify({
-            service: 'mirror-worker-metrics',
-            endpoints: ['/metrics', '/health'],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        );
+        return jsonResponse({
+          service: 'mirror-worker-metrics',
+          endpoints: [
+            '/metrics',
+            '/health',
+            '/dlq',
+            '/dlq/count',
+            '/dlq/requeue?id=...',
+            '/dlq/remove?id=...',
+            '/dlq/purge',
+          ],
+        });
       }
 
       return new Response('Not Found', { status: 404 });
@@ -308,4 +498,15 @@ export function stopMetricsServer(): void {
     metricsServer.stop();
     metricsServer = null;
   }
+}
+
+/**
+ * Reseta o estado interno do módulo de métricas.
+ * Usado em testes para garantir estado limpo entre execuções.
+ */
+export function resetMetrics(): void {
+  metrics.clear();
+  recentErrors.clear();
+  statusOverrides = {};
+  startTime = Date.now();
 }

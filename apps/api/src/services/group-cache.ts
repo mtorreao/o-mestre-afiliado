@@ -1,11 +1,11 @@
 /**
- * Cache Redis para mapeamento sourceGroupJid → affiliateId.
+ * Cache Redis para mapeamento sourceGroupJid → { affiliateId, groupName }.
  *
  * Evita consultar o PostgreSQL no hot path do webhook,
  * que recebe milhares de mensagens por dia.
  *
  * Estrutura no Redis:
- *   mirror:source-group:{jid} → { affiliateId: number }
+ *   mirror:source-group:{jid} → { affiliateId: number, groupName: string }
  *
  * O webhook consulta este cache (O(1)), sem fallback ao DB.
  * A população acontece via API quando o usuário configura grupos.
@@ -16,8 +16,17 @@ import { getRedis, cacheDel } from './redis.ts';
 const CACHE_PREFIX = 'mirror:source-group:';
 const CACHE_SET_KEY = 'mirror:source-groups:all';
 
+/** TTL padrão de 1 hora (3600s) para cada entrada no cache. */
+const CACHE_TTL = 3600;
+
+/** Informação de cache para um sourceGroup. */
+export interface SourceGroupCacheEntry {
+  affiliateId: number;
+  groupName: string;
+}
+
 /**
- * Extrai o affiliateId do cache para um JID de grupo de origem.
+ * Extrai o affiliateId e nome do grupo do cache para um JID de grupo de origem.
  * Retorna null se o JID não for um sourceGroup conhecido.
  *
  * NÃO consulta o banco — apenas Redis. Se não estiver no cache,
@@ -32,8 +41,31 @@ export async function getAffiliateIdBySourceGroup(
   try {
     const raw = await r.get(`${CACHE_PREFIX}${groupJid}`);
     if (!raw) return null;
-    const data = JSON.parse(raw) as { affiliateId: number };
+    const data = JSON.parse(raw) as SourceGroupCacheEntry;
+    // Renova o TTL no acesso para manter entradas quentes vivas
+    await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
     return data.affiliateId;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Versão completa: retorna affiliateId + groupName do cache.
+ * Útil quando o caller precisa do nome do grupo para logging ou enriquecimento.
+ */
+export async function getSourceGroupInfo(
+  groupJid: string,
+): Promise<SourceGroupCacheEntry | null> {
+  const r = getRedis();
+  if (!r) return null;
+
+  try {
+    const raw = await r.get(`${CACHE_PREFIX}${groupJid}`);
+    if (!raw) return null;
+    // Renova o TTL no acesso
+    await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
+    return JSON.parse(raw) as SourceGroupCacheEntry;
   } catch {
     return null;
   }
@@ -46,14 +78,16 @@ export async function getAffiliateIdBySourceGroup(
 export async function cacheSourceGroup(
   groupJid: string,
   affiliateId: number,
+  groupName?: string,
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
 
   try {
-    await r.set(
+    await r.setex(
       `${CACHE_PREFIX}${groupJid}`,
-      JSON.stringify({ affiliateId }),
+      CACHE_TTL,
+      JSON.stringify({ affiliateId, groupName: groupName ?? '' } as SourceGroupCacheEntry),
     );
     // Mantém um set com todas as chaves para refresh bulk
     await r.sadd(CACHE_SET_KEY, groupJid);
@@ -110,8 +144,8 @@ export async function removeSourceGroups(jids: string[]): Promise<void> {
  * poluindo o cache.
  */
 export async function replaceSourceGroups(
-  oldGroups: { jid: string }[],
-  newGroups: { jid: string }[],
+  oldGroups: { jid: string; name?: string }[],
+  newGroups: { jid: string; name?: string }[],
   affiliateId: number,
 ): Promise<void> {
   const r = getRedis();
@@ -130,9 +164,11 @@ export async function replaceSourceGroups(
       pipeline.srem(CACHE_SET_KEY, jid);
     }
     for (const jid of newJids) {
-      pipeline.set(
+      const newGroup = newGroups.find((g) => g.jid === jid);
+      pipeline.setex(
         `${CACHE_PREFIX}${jid}`,
-        JSON.stringify({ affiliateId }),
+        CACHE_TTL,
+        JSON.stringify({ affiliateId, groupName: newGroup?.name ?? '' } as SourceGroupCacheEntry),
       );
       pipeline.sadd(CACHE_SET_KEY, jid);
     }

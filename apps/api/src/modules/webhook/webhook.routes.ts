@@ -15,10 +15,11 @@
 
 import { Elysia } from 'elysia';
 import { WhatsAppInstanceRepository } from '@omestre/db';
-import { MIRROR_MESSAGE_CHANNEL } from '@omestre/shared';
+import { MIRROR_STREAM } from '@omestre/shared';
 import type { MirrorMessageEvent } from '@omestre/shared';
-import { publish } from '../../services/redis.ts';
-import { getAffiliateIdBySourceGroup } from '../../services/group-cache.ts';
+import { streamAdd } from '../../services/redis.ts';
+import { getSourceGroupInfo, cacheSourceGroup } from '../../services/group-cache.ts';
+import { fetchGroupInfo } from '../../services/evolution.ts';
 
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
@@ -152,10 +153,26 @@ async function handleMessagesUpsert(
 
     // Busca no cache Redis se este grupo é um sourceGroup configurado
     // (sem consulta ao PostgreSQL — apenas O(1) no Redis)
-    const affiliateId = await getAffiliateIdBySourceGroup(remoteJid);
-    if (!affiliateId) {
+    const info = await getSourceGroupInfo(remoteJid);
+    if (!info) {
       ignored++;
       continue;
+    }
+    const { affiliateId, groupName } = info;
+
+    // Se o nome do grupo não está no cache, tenta buscar via Evolution API
+    let resolvedGroupName = groupName;
+    if (!resolvedGroupName) {
+      try {
+        const groupInfo = await fetchGroupInfo(instanceName, remoteJid);
+        if (groupInfo?.name) {
+          resolvedGroupName = groupInfo.name;
+          // Atualiza o cache com o nome encontrado
+          await cacheSourceGroup(remoteJid, affiliateId, resolvedGroupName);
+        }
+      } catch {
+        // Falha silenciosa — usa nome vazio
+      }
     }
 
     // Publica no Redis para o worker processar
@@ -163,18 +180,25 @@ async function handleMessagesUpsert(
       messageId: msg.key.id,
       instanceName,
       sourceGroupJid: remoteJid,
-      sourceGroupName: '',  // O worker pode enriquecer depois
+      sourceGroupName: resolvedGroupName,
       affiliateId,
       text,
       timestamp: msg.messageTimestamp ?? Math.floor(Date.now() / 1000),
     };
 
-    const ok = await publish(MIRROR_MESSAGE_CHANNEL, event);
-    if (ok) {
+    const id = await streamAdd(MIRROR_STREAM, event);
+    if (id) {
       published++;
+      console.log(
+        `[webhook] Mensagem ${msg.key.id} adicionada ao stream ` +
+        `(affiliateId=${affiliateId}, grupo="${resolvedGroupName}", instância=${instanceName}, streamId=${id})`,
+      );
     } else {
       // Se Redis não está disponível, loga como ignorado
-      console.warn(`[webhook] Redis indisponível — mensagem ${msg.key.id} não publicada`);
+      console.warn(
+        `[webhook] Redis indisponível — mensagem ${msg.key.id} não publicada ` +
+        `(affiliateId=${affiliateId}, grupo="${resolvedGroupName}", instância=${instanceName})`,
+      );
       ignored++;
     }
   }
@@ -209,10 +233,10 @@ export const webhookRoutes = new Elysia()
         case 'messages.upsert': {
           const result = await handleMessagesUpsert(
             instanceName ?? '',
-            (data as unknown[]) ?? [],
+            Array.isArray(data) ? (data as unknown[]) : [],
           );
           console.log(
-            `📨 ${result.published} mensagem(ns) publicada(s) para worker, ${result.ignored} ignorada(s) em ${instanceName}`,
+            `📨 ${result.published} mensagem(ns) adicionada(s) ao stream, ${result.ignored} ignorada(s) em ${instanceName}`,
           );
           break;
         }

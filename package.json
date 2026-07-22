@@ -10,6 +10,8 @@
     "dev": "bun run scripts/dev.ts",
     "dev:api": "bun run --cwd apps/api dev",
     "dev:worker": "bun run --cwd apps/worker dev",
+    "dev:revalidate": "bun run --cwd apps/worker dev --revalidate",
+    "revalidate": "bun run --cwd apps/worker revalidate",
     "dev:web": "bun run --cwd apps/web dev",
     "build:api": "bun run --cwd apps/api build",
     "build:worker": "bun run --cwd apps/worker build",

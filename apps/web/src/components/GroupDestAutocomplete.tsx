@@ -1,8 +1,8 @@
 /**
- * GroupDestAutocomplete — Single-select para grupo de destino.
+ * GroupDestAutocomplete — Multi-select para grupos de destino.
  *
  * Busca grupos do WhatsApp conectado via API e permite selecionar
- * exatamente 1 grupo como destino do espelhamento de ofertas.
+ * 1 ou mais grupos como destino do espelhamento de ofertas.
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useWhatsAppGroups } from '../hooks/useWhatsAppGroups.ts';
@@ -14,8 +14,8 @@ interface Group {
 
 interface GroupDestAutocompleteProps {
   token: string;
-  value: Group | null;
-  onChange: (group: Group | null) => void;
+  value: Group[];
+  onChange: (groups: Group[]) => void;
 }
 
 export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutocompleteProps) {
@@ -26,14 +26,15 @@ export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutoc
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Filtra grupos (exclui o já selecionado)
+  // Filtra grupos não selecionados
+  const selectedJids = new Set(value.map((g) => g.jid));
   const filtered = query.trim()
     ? groups.filter(
         (g) =>
-          g.jid !== value?.jid &&
+          !selectedJids.has(g.jid) &&
           g.name.toLowerCase().includes(query.toLowerCase()),
       )
-    : groups.filter((g) => g.jid !== value?.jid);
+    : groups.filter((g) => !selectedJids.has(g.jid));
 
   // Fecha dropdown ao clicar fora
   useEffect(() => {
@@ -53,19 +54,20 @@ export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutoc
 
   const handleSelect = useCallback(
     (group: Group) => {
-      onChange(group);
-      setQuery(group.name);
-      setIsOpen(false);
+      onChange([...value, group]);
+      setQuery('');
       setHighlightIndex(-1);
+      inputRef.current?.focus();
     },
-    [onChange],
+    [value, onChange],
   );
 
-  const handleClear = useCallback(() => {
-    onChange(null);
-    setQuery('');
-    inputRef.current?.focus();
-  }, [onChange]);
+  const handleRemove = useCallback(
+    (jid: string) => {
+      onChange(value.filter((g) => g.jid !== jid));
+    },
+    [value, onChange],
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -73,8 +75,6 @@ export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutoc
         if (e.key === 'ArrowDown' || e.key === 'Enter') {
           setIsOpen(true);
           setHighlightIndex(0);
-        } else if (e.key === 'Backspace' && !query && value) {
-          handleClear();
         }
         return;
       }
@@ -98,9 +98,17 @@ export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutoc
           setIsOpen(false);
           setHighlightIndex(-1);
           break;
+        case 'Backspace':
+          if (!query && value.length > 0) {
+            handleRemove(value[value.length - 1]!.jid);
+          }
+          break;
+        case 'Tab':
+          setIsOpen(false);
+          break;
       }
     },
-    [isOpen, filtered, highlightIndex, handleSelect, handleClear, query, value],
+    [isOpen, filtered, highlightIndex, handleSelect, query, value],
   );
 
   // Estados
@@ -146,70 +154,76 @@ export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutoc
 
   return (
     <div>
-      {/* Grupo selecionado ou input de busca */}
-      <div style={{ position: 'relative' }}>
-        {value ? (
-          <div
+      {/* Tags selecionadas */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
+        {value.map((g) => (
+          <span
+            key={g.jid}
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.5rem 0.625rem',
-              borderRadius: '6px',
+              gap: '0.3rem',
+              padding: '0.25rem 0.5rem',
+              borderRadius: '4px',
+              background: '#22c55e20',
               border: '1px solid #22c55e40',
-              background: '#22c55e10',
-              color: '#e2e8f0',
-              fontSize: '0.85rem',
+              color: '#4ade80',
+              fontSize: '0.8rem',
             }}
           >
-            <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ color: '#4ade80' }}>📨 {value.name}</span>
-              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{value.jid}</span>
-            </span>
+            📨 {g.name}
             <button
-              onClick={handleClear}
+              onClick={() => handleRemove(g.jid)}
               style={{
                 background: 'none',
                 border: 'none',
                 color: '#94a3b8',
                 cursor: 'pointer',
-                padding: '0.2rem',
+                padding: 0,
                 fontSize: '0.9rem',
                 lineHeight: 1,
               }}
-              title="Remover seleção"
+              title="Remover"
             >
               ×
             </button>
-          </div>
-        ) : (
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => {
-              setQuery((e.target as HTMLInputElement).value);
-              setIsOpen(true);
-              setHighlightIndex(0);
-            }}
-            onFocus={() => {
-              setIsOpen(true);
-              setHighlightIndex(0);
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="Buscar grupo de destino..."
-            style={{
-              width: '100%',
-              padding: '0.5rem 0.625rem',
-              borderRadius: '6px',
-              border: '1px solid #334155',
-              background: '#0f172a',
-              color: '#e2e8f0',
-              fontSize: '0.85rem',
-              outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
+          </span>
+        ))}
+        {value.length > 0 && (
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8', alignSelf: 'center' }}>
+            {value.length} selecionado(s)
+          </span>
         )}
+      </div>
+
+      {/* Input de busca */}
+      <div style={{ position: 'relative' }}>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(e) => {
+            setQuery((e.target as HTMLInputElement).value);
+            setIsOpen(true);
+            setHighlightIndex(0);
+          }}
+          onFocus={() => {
+            setIsOpen(true);
+            setHighlightIndex(0);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder="Buscar grupo de destino..."
+          style={{
+            width: '100%',
+            padding: '0.5rem 0.625rem',
+            borderRadius: '6px',
+            border: '1px solid #334155',
+            background: '#0f172a',
+            color: '#e2e8f0',
+            fontSize: '0.85rem',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
 
         {/* Dropdown */}
         {isOpen && filtered.length > 0 && (
@@ -243,10 +257,7 @@ export function GroupDestAutocomplete({ token, value, onChange }: GroupDestAutoc
                   borderBottom: i < filtered.length - 1 ? '1px solid #1e293b' : 'none',
                 }}
               >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span>{g.name}</span>
-                <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{g.jid}</span>
-              </span>
+                {g.name}
               </div>
             ))}
           </div>

@@ -49,6 +49,9 @@ export interface ValidationReport {
   totalMessages: number;
   totalValidOffers: number;
   groups: GroupValidationResult[];
+  /** Quando presente, indica que a validação falhou por erro de conexão
+   * com a Evolution API (não por baixa taxa de ofertas). */
+  connectionError?: string;
 }
 
 // ─── URL extraction ────────────────────────────────────────────────────
@@ -226,6 +229,49 @@ export async function validateGroup(
  * Valida múltiplos grupos de ofertas.
  * Retorna um relatório consolidado.
  */
+/**
+ * Detecta se todos os grupos falharam por erro de conexão com a Evolution API.
+ * Quando offline, todos os grupos recebem erros como "fetch failed",
+ * "connect ECONNREFUSED", "Evolution API retornou HTTP ...", etc.
+ * Retorna o erro mais específico encontrado, ou undefined se ao menos um
+ * grupo falhou por motivo de conteúdo (ratio baixo).
+ */
+function detectConnectionError(results: GroupValidationResult[]): string | undefined {
+  if (results.length === 0) return undefined;
+
+  // Se algum grupo passou, não é erro de conexão
+  if (results.some((r) => r.passed)) return undefined;
+
+  // Palavras-chave que indicam erro de conexão com Evolution API
+  const CONNECTION_KEYWORDS = [
+    'evolution api',
+    'connect',
+    'econnrefused',
+    'fetch failed',
+    'unable to connect',
+    'enotfound',
+    'etimedout',
+    'econnreset',
+    'erro ao buscar mensagens',
+  ];
+
+  const allConnectionErrors = results.every((r) => {
+    if (r.errors.length === 0) return false;
+    const firstError = r.errors[0]!.toLowerCase();
+    return CONNECTION_KEYWORDS.some((kw) => firstError.includes(kw));
+  });
+
+  if (!allConnectionErrors) return undefined;
+
+  // Pega o erro mais específico (evita os genéricos se houver um mais descritivo)
+  const genericPhrases = ['erro ao buscar mensagens do grupo', 'erro ao buscar mensagens'];
+  const specific = results
+    .map((r) => r.errors[0]!)
+    .find((e) => !genericPhrases.some((g) => e.toLowerCase().includes(g)));
+
+  return specific || results[0]!.errors[0]!;
+}
+
 export async function validateOfferGroups(
   instanceName: string,
   sourceGroups: { jid: string; name: string }[],
@@ -241,11 +287,15 @@ export async function validateOfferGroups(
   // Overall passed: TODOS os grupos individuais passaram
   const overallPassed = results.every((r) => r.passed) && results.length > 0;
 
+  // Detecta se a Evolution API está offline
+  const connectionError = detectConnectionError(results);
+
   return {
     overallPassed,
     overallRatio: Math.round(overallRatio * 100) / 100,
     totalMessages,
     totalValidOffers,
     groups: results,
+    connectionError,
   };
 }

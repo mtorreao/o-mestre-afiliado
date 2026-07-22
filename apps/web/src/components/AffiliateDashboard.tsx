@@ -41,6 +41,8 @@ interface AffiliateDashboardProps {
   user: { id: number; email: string; name: string };
   token: string;
   onLogout: () => void;
+  onNavigateToLogs?: () => void;
+  onNavigateToWorkerStatus?: () => void;
 }
 
 /**
@@ -76,7 +78,7 @@ function MlConfigSection({
       });
       setSaved(true);
       onUpdate();
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), 4000);
     } catch { /* ignore */ }
     setSaving(false);
   }
@@ -160,7 +162,7 @@ function MlConfigSection({
   );
 }
 
-export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboardProps) {
+export function AffiliateDashboard({ user, token, onLogout, onNavigateToLogs, onNavigateToWorkerStatus }: AffiliateDashboardProps) {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -200,6 +202,7 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
       totalMessages: number;
       totalValidOffers: number;
       groups: {
+        groupJid?: string;
         groupName: string;
         totalMessages: number;
         validOffers: number;
@@ -258,7 +261,7 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
       if (data.success) {
         setShopeeSaved(true);
         loadProfile();
-        setTimeout(() => setShopeeSaved(false), 2000);
+        setTimeout(() => setShopeeSaved(false), 4000);
       }
     } catch { /* ignore */ }
     setSavingShopee(false);
@@ -333,15 +336,80 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
         if (data.excludedGroups && data.excludedGroups.length > 0) {
           setExcludedGroups(data.excludedGroups);
         }
-        setTimeout(() => setGroupSaveMessage(null), 4000);
+        setTimeout(() => setGroupSaveMessage(null), 8000);
       } else {
         setGroupSaveError(data.error || 'Erro ao salvar configuração');
+        // Se a API retornou report no erro, exibe as stats de validação
+        if ((data as any).report) {
+          setValidationResult({
+            validated: false,
+            report: (data as any).report,
+          });
+        }
       }
     } catch {
       setGroupSaveError('Erro de conexão ao salvar configuração');
     }
     setValidating(false);
     setSavingGroups(false);
+  }
+
+  /**
+   * Valida os grupos de ofertas sem salvar (preview).
+   * Chama /api/affiliate/validate-groups e exibe stats por grupo.
+   */
+  async function handleValidatePreview() {
+    setGroupSaveError(null);
+    setGroupSaveMessage(null);
+    setValidationResult(null);
+
+    if (offerGroups.length === 0) {
+      setGroupSaveError('Selecione pelo menos 1 grupo de ofertas.');
+      return;
+    }
+
+    setValidating(true);
+    try {
+      const res = await fetch('/api/affiliate/validate-groups', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ sourceGroups: offerGroups }),
+      });
+      const data = await res.json() as {
+        success: boolean;
+        validated?: boolean;
+        report?: {
+          overallRatio: number;
+          totalMessages: number;
+          totalValidOffers: number;
+          groups: {
+            groupJid?: string;
+            groupName: string;
+            totalMessages: number;
+            validOffers: number;
+            ratio: number;
+            passed: boolean;
+            errors: string[];
+          }[];
+        };
+        error?: string;
+      };
+
+      if (data.success && data.report) {
+        setValidationResult({
+          validated: data.validated ?? false,
+          report: data.report,
+        });
+      } else {
+        setGroupSaveError(data.error || 'Erro ao validar grupos');
+      }
+    } catch {
+      setGroupSaveError('Erro de conexão ao validar grupos');
+    }
+    setValidating(false);
   }
 
   /**
@@ -379,7 +447,7 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
         // Grupo revalidado e adicionado — recarrega o profile
         await loadProfile();
         setGroupSaveMessage(data.message);
-        setTimeout(() => setGroupSaveMessage(null), 4000);
+        setTimeout(() => setGroupSaveMessage(null), 8000);
       } else {
         // Ainda não passou — atualiza a info do excluded group
         if (data.report) {
@@ -423,7 +491,7 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
       const data = await res.json() as { success: boolean; message?: string };
       if (data.success) {
         setTemplateSaved(true);
-        setTimeout(() => setTemplateSaved(false), 2000);
+        setTimeout(() => setTemplateSaved(false), 4000);
       }
     } catch { /* ignore */ }
     setSavingTemplate(false);
@@ -451,7 +519,7 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
         // Remove dos excluded e recarrega
         await loadProfile();
         setGroupSaveMessage(data.message);
-        setTimeout(() => setGroupSaveMessage(null), 4000);
+        setTimeout(() => setGroupSaveMessage(null), 8000);
       } else {
         setGroupSaveError(data.error || 'Erro ao ativar grupo');
       }
@@ -497,20 +565,50 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
               <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>Olá, {user.name}</p>
             </div>
           </div>
-          <button
-            onClick={onLogout}
-            style={{
-              padding: '0.4rem 0.75rem',
-              borderRadius: '8px',
-              border: '1px solid #475569',
-              background: 'transparent',
-              color: '#94a3b8',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-            }}
-          >
-            Sair
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              onClick={onNavigateToLogs || (() => {})}
+              style={{
+                padding: '0.4rem 0.75rem',
+                borderRadius: '8px',
+                border: '1px solid #6366f1',
+                background: 'transparent',
+                color: '#a5b4fc',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+              }}
+            >
+              📋 Logs
+            </button>
+            <button
+              onClick={onNavigateToWorkerStatus || (() => {})}
+              style={{
+                padding: '0.4rem 0.75rem',
+                borderRadius: '8px',
+                border: '1px solid #10b981',
+                background: 'transparent',
+                color: '#6ee7b7',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+              }}
+            >
+              Status
+            </button>
+            <button
+              onClick={onLogout}
+              style={{
+                padding: '0.4rem 0.75rem',
+                borderRadius: '8px',
+                border: '1px solid #475569',
+                background: 'transparent',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+              }}
+            >
+              Sair
+            </button>
+          </div>
         </div>
       </div>
 
@@ -790,24 +888,42 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
               )}
             </div>
 
-            <button
-              onClick={handleSaveGroups}
-              disabled={savingGroups || offerGroups.length === 0 || destGroups.length === 0}
-              style={{
-                padding: '0.6rem 1.25rem',
-                borderRadius: '8px',
-                border: 'none',
-                background: savingGroups || offerGroups.length === 0 || destGroups.length === 0
-                  ? '#6366f180' : '#6366f1',
-                color: 'white',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                cursor: savingGroups || offerGroups.length === 0 || destGroups.length === 0
-                  ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {savingGroups ? 'Configurando...' : 'Confirmar'}
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <button
+                onClick={handleValidatePreview}
+                disabled={validating || offerGroups.length === 0}
+                style={{
+                  padding: '0.6rem 1.25rem',
+                  borderRadius: '8px',
+                  border: '1px solid #f59e0b',
+                  background: validating || offerGroups.length === 0 ? '#78350f80' : 'transparent',
+                  color: '#fbbf24',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: validating || offerGroups.length === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {validating ? 'Validando...' : '🔍 Validar'}
+              </button>
+              <button
+                onClick={handleSaveGroups}
+                disabled={savingGroups || offerGroups.length === 0 || destGroups.length === 0}
+                style={{
+                  padding: '0.6rem 1.25rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: savingGroups || offerGroups.length === 0 || destGroups.length === 0
+                    ? '#6366f180' : '#6366f1',
+                  color: 'white',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: savingGroups || offerGroups.length === 0 || destGroups.length === 0
+                    ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {savingGroups ? 'Configurando...' : 'Confirmar'}
+              </button>
+            </div>
 
             {/* Erro */}
             {groupSaveError && (
@@ -836,6 +952,83 @@ export function AffiliateDashboard({ user, token, onLogout }: AffiliateDashboard
                 fontSize: '0.85rem',
               }}>
                 ✅ {groupSaveMessage}
+              </div>
+            )}
+
+            {/* Validação: per-group stats */}
+            {validationResult && (
+              <div style={{ marginTop: '1rem' }}>
+                <div style={{
+                  padding: '0.75rem 1rem',
+                  borderRadius: '8px',
+                  background: validationResult.validated ? '#0f172a' : '#1a1a2e',
+                  border: `1px solid ${validationResult.validated ? '#22c55e40' : '#f59e0b40'}`,
+                  marginBottom: '0.75rem',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                      📊 Resultado da Validação
+                    </span>
+                    <span style={{
+                      fontSize: '0.8rem',
+                      padding: '0.2rem 0.5rem',
+                      borderRadius: '4px',
+                      background: validationResult.validated ? '#14532d' : '#78350f',
+                      color: validationResult.validated ? '#4ade80' : '#fbbf24',
+                    }}>
+                      {validationResult.validated ? '✅ OK' : '⚠️ Atenção'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.85rem', color: '#94a3b8', flexWrap: 'wrap' }}>
+                    <span>📨 {validationResult.report.totalMessages} mensagens</span>
+                    <span>✅ {validationResult.report.totalValidOffers} ofertas válidas</span>
+                    <span>📊 {Math.round(validationResult.report.overallRatio * 100)}% taxa geral</span>
+                  </div>
+                </div>
+
+                {/* Per-group cards */}
+                {validationResult.report.groups.map((group, idx) => (
+                  <div
+                    key={group.groupJid || idx}
+                    style={{
+                      padding: '0.75rem 1rem',
+                      marginBottom: '0.5rem',
+                      borderRadius: '8px',
+                      background: group.passed ? '#0f172a' : '#451a1a',
+                      border: `1px solid ${group.passed ? '#22c55e40' : '#991b1b'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.85rem', color: group.passed ? '#4ade80' : '#fca5a5' }}>
+                        {group.passed ? '✅' : '❌'} {group.groupName}
+                      </span>
+                      <span style={{
+                        fontSize: '0.8rem',
+                        padding: '0.15rem 0.4rem',
+                        borderRadius: '4px',
+                        background: group.passed ? '#14532d' : '#7f1d1d',
+                        color: group.passed ? '#4ade80' : '#fca5a5',
+                      }}>
+                        {Math.round(group.ratio * 100)}%
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', color: '#94a3b8', flexWrap: 'wrap' }}>
+                      <span>📨 {group.totalMessages} msgs</span>
+                      <span>✅ {group.validOffers} ofertas</span>
+                      <span>
+                        {group.passed
+                          ? '✔️ Acima de 70%'
+                          : `⚠️ Apenas ${Math.round(group.ratio * 100)}% (mín. 70%)`
+                        }
+                      </span>
+                    </div>
+                    {group.errors.length > 0 && (
+                      <div style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: '#f87171' }}>
+                        {group.errors.map((e, i) => <div key={i}>⚠️ {e}</div>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
