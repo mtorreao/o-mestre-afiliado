@@ -75,7 +75,7 @@ function AppContent() {
             <GroupsPage token={token} />
           )}
           {nav === 'mirror-logs' && (
-            <MirrorLogsPage token={token} onBack={() => setNav('dashboard')} />
+            <MirrorLogsPage token={token} />
           )}
           {nav === 'settings' && (
             <SettingsPage user={user} token={token} />
