@@ -177,9 +177,9 @@ describe('Filtro por keywords (whitelist)', () => {
   });
 
   const blockedByKeywords = () =>
-    metricCalls.some(
-      (c) => c.name === 'mirror_messages_blocked_total' && c.labels?.reason === 'keywords',
-    );
+      metricCalls.some(
+        (c) => c.name === 'mirror_messages_blocked_total' && c.labels?.reason === 'no_keyword_match',
+      );
 
   const blockedByNoUrl = () =>
     metricCalls.some(
@@ -296,7 +296,7 @@ describe('Filtro por keywords (whitelist)', () => {
   // ══════════════════════════════════════════════════════
 
   describe('keywords preenchida e mensagem NÃO CONTÉM keyword — bloqueia', () => {
-    it('bloqueia com reason=keywords', async () => {
+    it('bloqueia com reason=no_keyword_match', async () => {
       setKeywords(['promoção', 'oferta', 'desconto']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Olha que legal! https://shopee.com.br/p/block1'));
@@ -308,16 +308,16 @@ describe('Filtro por keywords (whitelist)', () => {
       expect(blockedReason('blacklist')).toBe(false);
     });
 
-    it('bloqueia corretamente — métrica incrementada com reason="keywords"', async () => {
+    it('bloqueia corretamente — métrica incrementada com reason="no_keyword_match"', async () => {
       setKeywords(['frete grátis']);
       const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Produto sem frete gratis https://shopee.com.br/p/block2'));
 
       const kwBlock = metricCalls.find(
-        (c) => c.name === 'mirror_messages_blocked_total' && c.labels?.reason === 'keywords',
+        (c) => c.name === 'mirror_messages_blocked_total' && c.labels?.reason === 'no_keyword_match',
       );
       expect(kwBlock).toBeDefined();
-      expect(kwBlock!.labels).toEqual({ reason: 'keywords' });
+      expect(kwBlock!.labels).toEqual({ reason: 'no_keyword_match' });
     });
 
     it('keyword multi-palavra — não corresponde se apenas parte aparece', async () => {
