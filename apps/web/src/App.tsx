@@ -24,8 +24,8 @@ type AuthPage = 'login' | 'register';
 const pageTitles: Record<NavItem, string> = {
   dashboard: 'Dashboard',
   settings: 'Configurações',
-  groups: 'Grupos de Espelhamento',
-  'mirror-logs': 'Logs de Espelhamento',
+  groups: 'Grupos',
+  'mirror-logs': 'Espelhamento',
   'worker-status': 'Status do Worker',
 };
 

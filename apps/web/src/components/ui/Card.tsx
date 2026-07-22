@@ -28,6 +28,8 @@ export function Card({ children, title, subtitle, action, className, style }: Ca
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '0.5rem',
   };
 
   const bodyStyle: React.CSSProperties = {

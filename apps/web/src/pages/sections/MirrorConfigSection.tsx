@@ -203,7 +203,7 @@ export function MirrorConfigSection({ token, onUpdate }: MirrorConfigSectionProp
 
       {/* Summary & Actions */}
       <div style={{ padding: '0.75rem', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border-light)', marginBottom: '1rem' }}>
-        <p style={{ fontSize: 'var(--text-sm)', margin: 0, color: 'var(--color-text-secondary)' }}>
+        <p style={{ fontSize: 'var(--text-sm)', margin: 0, color: 'var(--color-text-secondary)', wordBreak: 'break-word' }}>
           {offerGroups.length > 0 && destGroups.length > 0 ? (
             <>Monitorando <strong>{offerGroups.length}</strong> grupo(s) de ofertas → enviando para <strong>{destGroups.map((g) => g.name).join(', ')}</strong></>
           ) : (
@@ -212,7 +212,7 @@ export function MirrorConfigSection({ token, onUpdate }: MirrorConfigSectionProp
         </p>
       </div>
 
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <Button
           variant="outline"
           onClick={handleValidate}
@@ -279,7 +279,7 @@ export function MirrorConfigSection({ token, onUpdate }: MirrorConfigSectionProp
               marginBottom: '0.75rem',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>
                 📊 Resultado da Validação
               </span>
@@ -305,7 +305,7 @@ export function MirrorConfigSection({ token, onUpdate }: MirrorConfigSectionProp
                 border: `1px solid ${group.passed ? 'var(--color-success-light)' : 'var(--color-error-light)'}`,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.35rem' }}>
                 <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: group.passed ? 'var(--color-success)' : 'var(--color-error)' }}>
                   {group.passed ? '✅' : '❌'} {group.groupName}
                 </span>

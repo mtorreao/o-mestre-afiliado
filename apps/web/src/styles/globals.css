@@ -343,6 +343,12 @@ a:hover {
   padding: var(--spacing-1);
   background: var(--color-bg-secondary);
   border-radius: var(--radius-lg);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.TabsList::-webkit-scrollbar {
+  display: none;
 }
 
 .TabsTrigger {

@@ -34,6 +34,13 @@ export function PageLayout({ children, maxWidth = '960px', className, style }: P
   return (
     <div className={clsx('PageLayout', className)} style={layoutStyle}>
       <div style={innerStyle}>{children}</div>
+      <style>{`
+        @media (max-width: 768px) {
+          .PageLayout {
+            padding: 1rem !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -83,7 +83,7 @@ export function ExcludedGroupsSection({ groups, token, onUpdate }: ExcludedGroup
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
               <Button
                 variant="outline"
                 size="sm"
