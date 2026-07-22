@@ -1,29 +1,20 @@
 /**
- * SettingsPage — Página de configurações com 4 abas
+ * SettingsPage — Página de configurações com 3 abas
  *
- * Reúne todas as seções de configuração (WhatsApp, Grupos, Shopee, ML)
- * em abas organizadas com Radix Tabs.
+ * Abas: WhatsApp, Shopee, Mercado Livre
+ * Reutiliza seções existentes do dashboard.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Smartphone, Store, Package } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Tabs } from '../components/ui/Tabs.tsx';
-import { Card } from '../components/ui/Card.tsx';
-import { Loading } from '../components/ui/Loading.tsx';
+import { Card, Loading, Tabs } from '../components/ui/index.ts';
+import { WppConnection } from '../components/WppConnection.tsx';
 import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
 import { MlConfigSection } from './sections/MlConfigSection.tsx';
 import { TestConversionSection } from './sections/TestConversionSection.tsx';
-import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
-import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
-import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
-import { WppConnection } from '../components/WppConnection.tsx';
-import { Store, Package, Smartphone, Users } from 'lucide-react';
 
 interface ProfileData {
-  id: number;
-  email: string;
-  name: string;
-  shopeeConfigured: boolean;
   shopeeAppId: string | null;
   mercadoLivre:
     | { connected: false }
@@ -46,17 +37,16 @@ interface SettingsPageProps {
   token: string;
 }
 
-const TABS = [
+const tabs = [
   { value: 'whatsapp', label: 'WhatsApp', icon: <Smartphone size={16} /> },
-  { value: 'grupos', label: 'Grupos', icon: <Users size={16} /> },
   { value: 'shopee', label: 'Shopee', icon: <Store size={16} /> },
   { value: 'mercadolivre', label: 'Mercado Livre', icon: <Package size={16} /> },
 ];
 
 export function SettingsPage({ user, token }: SettingsPageProps) {
+  const [activeTab, setActiveTab] = useState('whatsapp');
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('whatsapp');
 
   const loadProfile = useCallback(async () => {
     try {
@@ -77,41 +67,27 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
 
   if (loading) {
     return (
-      <PageLayout>
-        <Loading text="Carregando configurações..." />
+      <PageLayout maxWidth="960px">
+        <PageHeader title="Configurações" subtitle="Gerencie suas integrações" />
+        <Loading text="Carregando perfil..." />
       </PageLayout>
     );
   }
 
   const mlConnected = profile?.mercadoLivre.connected === true;
-  const ml = mlConnected ? (profile!.mercadoLivre as Exclude<ProfileData['mercadoLivre'], { connected: false }>) : null;
+  const ml = mlConnected
+    ? (profile!.mercadoLivre as Exclude<ProfileData['mercadoLivre'], { connected: false }>)
+    : null;
 
   return (
     <PageLayout maxWidth="960px">
       <PageHeader title="Configurações" subtitle="Gerencie suas integrações" />
 
-      <Tabs tabs={TABS} value={activeTab} onValueChange={setActiveTab}>
+      <Tabs tabs={tabs} value={activeTab} onValueChange={setActiveTab}>
         {/* Aba 1: WhatsApp */}
-        <div>
-          <WppConnection token={token} />
-        </div>
+        <WppConnection token={token} />
 
-        {/* Aba 2: Grupos */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <MirrorConfigSection token={token} onUpdate={loadProfile} />
-          <MessageTemplateSection
-            token={token}
-            initialTemplate={profile?.messageTemplate || ''}
-            onUpdate={loadProfile}
-          />
-          <ExcludedGroupsSection
-            groups={profile?.excludedGroups || []}
-            token={token}
-            onUpdate={loadProfile}
-          />
-        </div>
-
-        {/* Aba 3: Shopee */}
+        {/* Aba 2: Shopee */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <ShopeeConfigSection
             token={token}
@@ -123,17 +99,22 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
           </div>
         </div>
 
-        {/* Aba 4: Mercado Livre */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Aba 3: Mercado Livre */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
           {mlConnected && ml ? (
             <Card
               title="📦 Mercado Livre"
-              subtitle={`Conectado como ${ml.nickname}${ml.expired ? ' (token expirado)' : ''}`}
-              action={
-                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-success)' }}>
-                  ✅ Conectado
-                </span>
+              subtitle={
+                <>
+                  Conectado como <strong>{ml.nickname}</strong>
+                  {ml.expired && (
+                    <span style={{ marginLeft: '0.4rem', color: 'var(--color-error)', fontSize: 'var(--text-xs)' }}>
+                      (token expirado)
+                    </span>
+                  )}
+                </>
               }
+              action={<span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-success)' }}>✅ Conectado</span>}
             >
               <MlConfigSection
                 mlUserId={ml.mlUserId}
@@ -145,11 +126,8 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
               />
             </Card>
           ) : (
-            <Card
-              title="📦 Mercado Livre"
-              subtitle="Conecte sua conta do Mercado Livre para gerar links de afiliado"
-            >
-              <div style={{ textAlign: 'center', padding: '0.5rem 0' }}>
+            <Card>
+              <div style={{ textAlign: 'center' }}>
                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
                   Conecte sua conta do Mercado Livre para gerar links de afiliado.
                 </p>

@@ -2,7 +2,7 @@ import { Elysia } from 'elysia';
 import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository, MirrorLogRepository } from '@omestre/db';
 import type { ExcludedGroup } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
-import { convertShopeeUrlWithCredentials } from '@omestre/converters';
+import { convertShopeeUrlWithCredentials, convertAmazonUrlWithTrackingId } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
 import { detectMarketplace } from '@omestre/shared';
 import type { ConversionResult } from '@omestre/shared';
@@ -497,13 +497,16 @@ export const affiliateRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const { url } = body as { url: string };
+    const { url, platform } = body as { url: string; platform?: string };
     if (!url) {
       set.status = 400;
       return { success: false, error: 'URL é obrigatória' };
     }
 
-    const marketplace = detectMarketplace(url);
+    // Usa a plataforma fornecida ou detecta automaticamente
+    const marketplace = platform && ['shopee', 'mercadolivre', 'amazon'].includes(platform)
+      ? platform
+      : detectMarketplace(url);
 
     if (marketplace === 'shopee') {
       return handleShopeeConversion(auth.userId, url);
@@ -513,11 +516,15 @@ export const affiliateRoutes = new Elysia()
       return handleMlConversion(auth.userId, url);
     }
 
+    if (marketplace === 'amazon') {
+      return handleAmazonConversion(auth.userId, url);
+    }
+
     set.status = 400;
     return {
       success: false,
       originalUrl: url,
-      error: 'Marketplace não suportado. Aceito: Shopee, Mercado Livre',
+      error: 'Marketplace não suportado. Aceito: Shopee, Mercado Livre, Amazon',
     };
   })
 
@@ -659,4 +666,27 @@ async function handleMlConversion(
     marketplace: 'mercadolivre',
     method: 'fallback',
   };
+}
+
+/**
+ * Converte URL da Amazon usando o tracking ID do usuário.
+ */
+async function handleAmazonConversion(
+  userId: number,
+  url: string,
+): Promise<ConversionResult> {
+  const creds = await credentialsRepo.findByUserId(userId);
+
+  if (!creds?.amazonTrackingId) {
+    return {
+      success: false,
+      originalUrl: url,
+      affiliateUrl: null,
+      marketplace: 'amazon',
+      method: 'unknown',
+      error: 'Amazon tracking ID não configurado. Configure no perfil.',
+    };
+  }
+
+  return convertAmazonUrlWithTrackingId(url, creds.amazonTrackingId);
 }
