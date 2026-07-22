@@ -6,16 +6,17 @@
  */
 import { useState } from 'react';
 import { useAuth } from './hooks/useAuth.ts';
+import { ThemeProvider } from './hooks/useTheme.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
-import { SettingsPage } from './pages/SettingsPage.tsx';
 import { GroupsPage } from './pages/GroupsPage.tsx';
 import { AppShell, type NavItem } from './components/layout/AppShell.tsx';
 import { ToastProvider } from './components/ui/index.ts';
+import { ThemeToggle } from './components/ui/ThemeToggle.tsx';
 import { Loader2 } from 'lucide-react';
 
 type AuthPage = 'login' | 'register';
@@ -28,7 +29,7 @@ const pageTitles: Record<NavItem, string> = {
   'worker-status': 'Status do Worker',
 };
 
-function App() {
+function AppContent() {
   const { user, token, loading, isAuthenticated, login, register, logout } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>('login');
   const [nav, setNav] = useState<NavItem>('dashboard');
@@ -93,6 +94,10 @@ function App() {
   // Unauthenticated — Login or Register
   return (
     <ToastProvider>
+      {/* Floating theme toggle for auth pages */}
+      <div style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 60 }}>
+        <ThemeToggle />
+      </div>
       {authPage === 'register' ? (
         <RegisterPage
           onRegister={async (name, email, password) => {
@@ -109,6 +114,14 @@ function App() {
         />
       )}
     </ToastProvider>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }
 

@@ -53,7 +53,7 @@ export function RegisterPage({ onRegister, onSwitchToLogin }: RegisterPageProps)
         alignItems: 'center',
         justifyContent: 'center',
         padding: '2rem 1rem',
-        background: 'linear-gradient(135deg, #fafafa 0%, #f0f0f5 100%)',
+        background: 'linear-gradient(135deg, var(--color-bg) 0%, var(--color-bg-secondary) 100%)',
       }}
     >
       <div

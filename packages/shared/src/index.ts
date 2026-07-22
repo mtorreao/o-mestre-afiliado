@@ -13,7 +13,7 @@ export interface ConversionResult {
   error?: string;
 }
 
-export type Marketplace = 'shopee' | 'mercadolivre' | 'amazon' | 'unknown';
+export type Marketplace = 'shopee' | 'mercadolivre' | 'amazon' | 'magalu' | 'unknown';
 
 export type ConversionMethod =
   | 'api'        // API oficial (Shopee GraphQL, ML OAuth)
@@ -55,6 +55,7 @@ export const MARKETPLACE_DOMAINS: Record<Marketplace, RegExp[]> = {
   shopee: [/shopee\.com\.br/i, /go\.promozone\.ai\/shopee/i],
   mercadolivre: [/mercadolivre\.com\.br/i, /meli\.la/i, /go\.promozone\.ai\/mercadolivre/i],
   amazon: [/amazon\.com\.br/i, /amzn\.to/i, /go\.promozone\.ai\/amazon/i],
+  magalu: [/magalu\.com\.br/i, /maga\.lu/i, /go\.promozone\.ai\/magalu/i],
   unknown: [],
 } as const;
 

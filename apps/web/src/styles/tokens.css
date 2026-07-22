@@ -103,9 +103,8 @@
   --z-toast: 150;
 }
 
-/* Dark mode — ativado automaticamente pelo sistema */
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Dark mode — ativado por data-theme via useTheme toggle */
+[data-theme="dark"] {
     /* ─── Colors ─────────────────────────────────────────────── */
     --color-bg: #0f172a;             /* Fundo principal - tom noturno */
     --color-bg-secondary: #1e293b;   /* Fundo secundário */
@@ -153,4 +152,3 @@
     --shadow-card: 0px 0px 0px 1px rgba(255, 255, 255, 0.08), 0px 2px 2px rgba(0, 0, 0, 0.2);
     --shadow-elevated: 0px 0px 0px 1px rgba(255, 255, 255, 0.08), 0px 2px 4px rgba(0, 0, 0, 0.3);
   }
-}

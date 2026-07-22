@@ -8,6 +8,7 @@
  * Transições CSS definidas em globals.css (classes sidebar-overlay,
  * sidebar-drawer, etc.) em vez de estilos inline.
  */
+import { ThemeToggle } from './../ui/ThemeToggle.tsx';
 import React, { useState } from 'react';
 import {
   LayoutDashboard,
@@ -127,6 +128,9 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
           {/* Nome da página centralizado (mobile) / alinhado à esquerda (desktop) */}
           <span className="topbar-title">{pageTitle}</span>
 
+          {/* Theme toggle */}
+          <ThemeToggle />
+
       {/* Inline styles for responsive layout */}
       <style>{`
         @media (max-width: 768px) {
@@ -138,6 +142,8 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
           }
         }
       `}</style>
+      </header>
+    </div>
     </div>
   );
 }

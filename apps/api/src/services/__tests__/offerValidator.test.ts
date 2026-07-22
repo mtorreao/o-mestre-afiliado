@@ -191,6 +191,25 @@ describe('offerValidator', () => {
       );
     });
 
+    it('retorna true para magalu.com.br', async () => {
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
+      expect(isKnownMarketplaceDomain('https://magalu.com.br/produto')).toBe(
+        true,
+      );
+    });
+
+    it('retorna true para maga.lu (encurtador Magalu)', async () => {
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
+      expect(isKnownMarketplaceDomain('https://maga.lu/abc123')).toBe(true);
+    });
+
+    it('retorna true para go.promozone.ai/magalu', async () => {
+      const { isKnownMarketplaceDomain } = await import('@omestre/shared');
+      expect(isKnownMarketplaceDomain('https://go.promozone.ai/magalu/prod')).toBe(
+        true,
+      );
+    });
+
     it('retorna true para s.shopee.com.br', async () => {
       const { isKnownMarketplaceDomain } = await import('@omestre/shared');
       expect(isKnownMarketplaceDomain('https://s.shopee.com.br/link')).toBe(
@@ -346,6 +365,16 @@ describe('offerValidator', () => {
     it('retorna true para URL direta da Amazon', async () => {
       const { isMessageValidOffer } = await import('@omestre/shared');
       expect(await isMessageValidOffer('https://amazon.com.br/dp/ABC')).toBe(true);
+    });
+
+    it('retorna true para URL direta da Magalu', async () => {
+      const { isMessageValidOffer } = await import('@omestre/shared');
+      expect(await isMessageValidOffer('https://magalu.com.br/produto')).toBe(true);
+    });
+
+    it('retorna true para maga.lu (encurtador Magalu sem redirect)', async () => {
+      const { isMessageValidOffer } = await import('@omestre/shared');
+      expect(await isMessageValidOffer('https://maga.lu/xyz')).toBe(true);
     });
 
     it('retorna false para texto sem URLs', async () => {
