@@ -16,7 +16,8 @@
     "@omestre/converters": "workspace:*",
     "@omestre/db": "workspace:*",
     "@omestre/shared": "workspace:*",
-    "elysia": "^1.2.25"
+    "elysia": "^1.2.25",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@types/bun": "latest"

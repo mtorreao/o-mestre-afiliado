@@ -10,7 +10,10 @@
   },
   "dependencies": {
     "@omestre/converters": "workspace:*",
-    "@omestre/shared": "workspace:*"
+    "@omestre/shared": "workspace:*",
+    "@omestre/db": "workspace:*",
+    "drizzle-orm": "^0.38.0",
+    "ioredis": "^5.4.1"
   },
   "devDependencies": {
     "@types/bun": "latest"
