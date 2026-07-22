@@ -61,6 +61,8 @@ export const affiliateRoutes = new Elysia()
         name: user.name,
         shopeeConfigured: !!(creds?.shopeeAppId),
         shopeeAppId: creds?.shopeeAppId || null,
+        amazonConfigured: !!(creds?.amazonTrackingId),
+        amazonTrackingId: creds?.amazonTrackingId || null,
         mercadoLivre: mlInfo,
         // Grupos de espelhamento configurados
         sourceGroups: affiliate?.sourceGroups || [],
@@ -81,14 +83,16 @@ export const affiliateRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const { shopeeAppId, shopeeAppSecret } = body as {
+    const { shopeeAppId, shopeeAppSecret, amazonTrackingId } = body as {
       shopeeAppId?: string;
       shopeeAppSecret?: string;
+      amazonTrackingId?: string;
     };
 
     await credentialsRepo.upsert(auth.userId, {
       shopeeAppId: shopeeAppId ?? undefined,
       shopeeAppSecret: shopeeAppSecret ?? undefined,
+      amazonTrackingId: amazonTrackingId ?? undefined,
     });
 
     return { success: true, message: 'Credenciais salvas' };

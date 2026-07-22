@@ -1,7 +1,7 @@
 /**
- * SettingsPage — Página de configurações com 4 abas
+ * SettingsPage — Página de configurações com 5 abas
  *
- * Reúne todas as seções de configuração (WhatsApp, Grupos, Shopee, ML)
+ * Reúne todas as seções de configuração (WhatsApp, Grupos, Shopee, ML, Amazon)
  * em abas organizadas com Radix Tabs.
  */
 import { useState, useEffect, useCallback } from 'react';
@@ -12,12 +12,13 @@ import { Card } from '../components/ui/Card.tsx';
 import { Loading } from '../components/ui/Loading.tsx';
 import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
 import { MlConfigSection } from './sections/MlConfigSection.tsx';
+import { AmazonConfigSection } from './sections/AmazonConfigSection.tsx';
 import { TestConversionSection } from './sections/TestConversionSection.tsx';
 import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
 import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
 import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
 import { WppConnection } from '../components/WppConnection.tsx';
-import { Store, Package, Smartphone, Users } from 'lucide-react';
+import { Store, Package, Smartphone, Users, ShoppingBag } from 'lucide-react';
 
 interface ProfileData {
   id: number;
@@ -25,6 +26,7 @@ interface ProfileData {
   name: string;
   shopeeConfigured: boolean;
   shopeeAppId: string | null;
+  amazonTrackingId: string | null;
   mercadoLivre:
     | { connected: false }
     | { connected: true; nickname: string; mlUserId: string; expired: boolean; hasSessionCookies: boolean; meliid: string | null; melitat: string | null };
@@ -51,6 +53,7 @@ const TABS = [
   { value: 'grupos', label: 'Grupos', icon: <Users size={16} /> },
   { value: 'shopee', label: 'Shopee', icon: <Store size={16} /> },
   { value: 'mercadolivre', label: 'Mercado Livre', icon: <Package size={16} /> },
+  { value: 'amazon', label: 'Amazon', icon: <ShoppingBag size={16} /> },
 ];
 
 export function SettingsPage({ user, token }: SettingsPageProps) {
@@ -172,6 +175,15 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
             </Card>
           )}
           <TestConversionSection token={token} />
+        </div>
+
+        {/* Aba 5: Amazon */}
+        <div>
+          <AmazonConfigSection
+            token={token}
+            initialTrackingId={profile?.amazonTrackingId || ''}
+            onUpdate={loadProfile}
+          />
         </div>
       </Tabs>
     </PageLayout>

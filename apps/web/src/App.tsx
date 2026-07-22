@@ -12,7 +12,6 @@ import { DashboardPage } from './pages/DashboardPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
-import { SettingsPage } from './pages/SettingsPage.tsx';
 import { GroupsPage } from './pages/GroupsPage.tsx';
 import { AppShell, type NavItem } from './components/layout/AppShell.tsx';
 import { ToastProvider } from './components/ui/index.ts';
@@ -75,9 +74,6 @@ function App() {
           )}
           {nav === 'mirror-logs' && (
             <MirrorLogsPage token={token} onBack={() => setNav('dashboard')} />
-          )}
-          {nav === 'settings' && (
-            <SettingsPage user={user} token={token} />
           )}
           {nav === 'worker-status' && (
             <WorkerStatusPage onBack={() => setNav('dashboard')} />

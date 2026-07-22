@@ -126,18 +126,25 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
 
           {/* Nome da página centralizado (mobile) / alinhado à esquerda (desktop) */}
           <span className="topbar-title">{pageTitle}</span>
+        </header>
 
-      {/* Inline styles for responsive layout */}
-      <style>{`
-        @media (max-width: 768px) {
-          .main-content {
-            margin-left: 0 !important;
+        {/* Main content area */}
+        <main className="main-content">
+          {children}
+        </main>
+
+        {/* Inline styles for responsive layout */}
+        <style>{`
+          @media (max-width: 768px) {
+            .main-content {
+              margin-left: 0 !important;
+            }
+            .mobile-topbar {
+              display: flex !important;
+            }
           }
-          .mobile-topbar {
-            display: flex !important;
-          }
-        }
-      `}</style>
+        `}</style>
+      </div>
     </div>
   );
 }

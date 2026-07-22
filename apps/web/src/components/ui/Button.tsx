@@ -73,6 +73,7 @@ export function Button({
     borderRadius: 'var(--radius-md)',
     cursor: isDisabled ? 'not-allowed' : 'pointer',
     transition: 'all var(--transition-fast)',
+    outline: 'none',
     lineHeight: 1.4,
     whiteSpace: 'nowrap',
     opacity: isDisabled ? 0.6 : 1,
