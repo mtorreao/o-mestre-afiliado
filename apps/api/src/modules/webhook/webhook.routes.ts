@@ -206,6 +206,35 @@ async function handleMessagesUpsert(
   return { published, ignored };
 }
 
+/**
+ * Extrai lista de mensagens do data recebido no webhook,
+ * lidando com os diferentes formatos da Evolution API v2:
+ * 1. Array direto: [msg1, msg2, ...]
+ * 2. Objeto com array: { messages: [msg1, msg2, ...] }
+ * 3. Objeto paginado: { messages: { records: [msg1, msg2, ...] } }
+ */
+function extractMessagesFromData(data: unknown): unknown[] {
+  if (Array.isArray(data)) {
+    return data as unknown[];
+  }
+
+  if (data && typeof data === 'object') {
+    const obj = data as Record<string, unknown>;
+
+    // Formato paginado: { messages: { records: [...], total, pages } }
+    if (Array.isArray((obj.messages as Record<string, unknown>)?.records)) {
+      return (obj.messages as Record<string, unknown>).records as unknown[];
+    }
+
+    // Formato com array direto: { messages: [...] }
+    if (Array.isArray(obj.messages)) {
+      return obj.messages as unknown[];
+    }
+  }
+
+  return [];
+}
+
 // ─── Routes ──────────────────────────────────────────────────────────
 
 export const webhookRoutes = new Elysia()
@@ -231,9 +260,10 @@ export const webhookRoutes = new Elysia()
         }
 
         case 'messages.upsert': {
+          const messageList = extractMessagesFromData(data);
           const result = await handleMessagesUpsert(
             instanceName ?? '',
-            Array.isArray(data) ? (data as unknown[]) : [],
+            messageList,
           );
           console.log(
             `📨 ${result.published} mensagem(ns) adicionada(s) ao stream, ${result.ignored} ignorada(s) em ${instanceName}`,
