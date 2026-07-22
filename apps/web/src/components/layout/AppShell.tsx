@@ -21,7 +21,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
-export type NavItem = 'dashboard' | 'settings' | 'groups' | 'mirror-logs' | 'worker-status';
+export type NavItem = 'dashboard' | 'settings' | 'groups' | 'mirror-logs' | 'mirror-form' | 'worker-status';
 
 interface AppShellProps {
   currentNav: NavItem;
