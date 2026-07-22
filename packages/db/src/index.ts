@@ -7,7 +7,7 @@
 
 // ─── Conexão ───────────────────────────────────────────────────────────
 
-export { getDb, closeDb, getClient } from './db.ts';
+export { getDb, closeDb, getClient, checkDbHealth } from './db.ts';
 
 // ─── Schema ────────────────────────────────────────────────────────────
 

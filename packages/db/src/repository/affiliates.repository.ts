@@ -85,4 +85,48 @@ export class AffiliatesRepository {
     const db = getDb();
     return db.select().from(affiliates);
   }
+
+  /**
+   * Busca um afiliado cujo sourceGroups contenha o JID informado.
+   *
+   * Percorre a lista de sourceGroups (JSONB) e verifica se algum
+   * registro tem o JID correspondente. Usa filtro no lado TypeScript
+   * porque o PostgreSQL JSONB não suporta busca direta em arrays de
+   * objetos aninhados com Drizzle de forma eficiente, e a quantidade
+   * de afiliados é pequena (centenas, não milhões).
+   */
+  async findBySourceGroupJid(jid: string): Promise<Affiliate | null> {
+    const db = getDb();
+    const all = await db
+      .select()
+      .from(affiliates)
+      .where(eq(affiliates.active, true));
+    
+    for (const aff of all) {
+      const groups = aff.sourceGroups as { jid: string; name: string }[] | null;
+      if (groups?.some((g) => g.jid === jid)) {
+        return aff;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Busca um afiliado cujo targetGroups contenha o JID informado.
+   */
+  async findByTargetGroupJid(jid: string): Promise<Affiliate | null> {
+    const db = getDb();
+    const all = await db
+      .select()
+      .from(affiliates)
+      .where(eq(affiliates.active, true));
+    
+    for (const aff of all) {
+      const groups = aff.targetGroups as { jid: string; name: string }[] | null;
+      if (groups?.some((g) => g.jid === jid)) {
+        return aff;
+      }
+    }
+    return null;
+  }
 }
