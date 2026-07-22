@@ -19,9 +19,10 @@ import {
   Menu,
   X,
   ChevronRight,
+  GitFork,
 } from 'lucide-react';
 
-export type NavItem = 'dashboard' | 'settings' | 'groups' | 'mirror-logs' | 'worker-status';
+export type NavItem = 'dashboard' | 'settings' | 'groups' | 'mirrors' | 'mirror-logs' | 'worker-status';
 
 interface AppShellProps {
   currentNav: NavItem;
@@ -37,7 +38,8 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
 
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    { id: 'mirror-logs', label: 'Espelhamento', icon: <Repeat2 size={18} /> },
+    { id: 'mirrors', label: 'Espelhamentos', icon: <GitFork size={18} /> },
+    { id: 'mirror-logs', label: 'Logs', icon: <Repeat2 size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
 

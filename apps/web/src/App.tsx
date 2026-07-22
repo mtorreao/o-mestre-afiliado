@@ -11,6 +11,7 @@ import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
+import { MirrorsPage } from './pages/MirrorsPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { GroupsPage } from './pages/GroupsPage.tsx';
@@ -25,6 +26,7 @@ const pageTitles: Record<NavItem, string> = {
   dashboard: 'Dashboard',
   settings: 'Configurações',
   groups: 'Grupos de Espelhamento',
+  mirrors: 'Espelhamentos',
   'mirror-logs': 'Logs de Espelhamento',
   'worker-status': 'Status do Worker',
 };
@@ -73,6 +75,9 @@ function AppContent() {
           )}
           {nav === 'groups' && (
             <GroupsPage token={token} />
+          )}
+          {nav === 'mirrors' && (
+            <MirrorsPage token={token} />
           )}
           {nav === 'mirror-logs' && (
             <MirrorLogsPage token={token} onBack={() => setNav('dashboard')} />
