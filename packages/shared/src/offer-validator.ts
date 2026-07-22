@@ -15,7 +15,7 @@ import { detectMarketplace, type Marketplace } from './index.ts';
 // ─── Configuração ──────────────────────────────────────────────────────
 
 export const VALIDATION_MESSAGE_LIMIT = 30;
-export const MIN_OFFER_RATIO = 0.7; // 70%
+export const MIN_OFFER_RATIO = 0.3; // 30%
 
 // Domínios conhecidos de encurtadores/mascaradores que redirecionam
 // para marketplaces. Se cair num destes, seguimos o redirect.

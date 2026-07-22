@@ -95,9 +95,6 @@ function AppContent() {
               }}
             />
           )}
-          {nav === 'settings' && (
-            <SettingsPage user={user} token={token} />
-          )}
           {nav === 'worker-status' && (
             <WorkerStatusPage onBack={() => setNav('dashboard')} />
           )}

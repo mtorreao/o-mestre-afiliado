@@ -19,7 +19,7 @@ export function AmazonConfigSection({ token, initialTrackingId, onUpdate }: Amaz
   const [trackingId, setTrackingId] = useState(initialTrackingId);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [configured] = useState(!!initialTrackingId);
+  const configured = !!initialTrackingId;
 
   async function handleSave() {
     setSaving(true);

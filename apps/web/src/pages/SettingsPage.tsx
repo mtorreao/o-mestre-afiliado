@@ -1,8 +1,6 @@
 /**
- * SettingsPage — Página de configurações com 4 abas
- *
- * Abas: WhatsApp, Shopee, Mercado Livre, Amazon
- * Reutiliza seções existentes do dashboard.
+ * SettingsPage — Página de configurações com 5 abas (WhatsApp, Shopee, ML, Amazon)
+ * Reúne todas as seções de configuração com abas organizadas.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Smartphone, Store, Package, ShoppingBag } from 'lucide-react';
@@ -18,6 +16,7 @@ import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
 import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
 import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
 import { FiltersSection } from './sections/FiltersSection.tsx';
+import { WppConnection } from '../components/WppConnection.tsx';
 
 interface ProfileData {
   shopeeAppId: string | null;
@@ -43,17 +42,17 @@ interface ProfileData {
   };
 }
 
+interface SettingsPageProps {
+  user: { id: number; email: string; name: string };
+  token: string;
+}
+
 const tabs = [
   { value: 'whatsapp', label: 'WhatsApp', icon: <Smartphone size={16} /> },
   { value: 'shopee', label: 'Shopee', icon: <Store size={16} /> },
   { value: 'mercadolivre', label: 'Mercado Livre', icon: <Package size={16} /> },
   { value: 'amazon', label: 'Amazon', icon: <ShoppingBag size={16} /> },
 ];
-
-interface SettingsPageProps {
-  user: { id: number; email: string; name: string };
-  token: string;
-}
 
 export function SettingsPage({ user, token }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState('whatsapp');
@@ -171,12 +170,14 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
           <TestConversionSection token={token} />
         </div>
 
-        {/* Aba 4: Amazon */}
-        <AmazonConfigSection
-          token={token}
-          initialTrackingId={profile?.amazonTrackingId || ''}
-          onUpdate={loadProfile}
-        />
+        {/* Aba 5: Amazon */}
+        <div>
+          <AmazonConfigSection
+            token={token}
+            initialTrackingId={profile?.amazonTrackingId || ''}
+            onUpdate={loadProfile}
+          />
+        </div>
       </Tabs>
     </PageLayout>
   );
