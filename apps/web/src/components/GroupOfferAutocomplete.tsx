@@ -176,7 +176,10 @@ export function GroupOfferAutocomplete({ token, value, onChange }: GroupOfferAut
               fontSize: '0.8rem',
             }}
           >
-            {g.name}
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span>{g.name}</span>
+              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{g.jid}</span>
+            </span>
             <button
               onClick={() => handleRemove(g.jid)}
               style={{
@@ -263,7 +266,10 @@ export function GroupOfferAutocomplete({ token, value, onChange }: GroupOfferAut
                   borderBottom: i < filtered.length - 1 ? '1px solid #1e293b' : 'none',
                 }}
               >
-                {g.name}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span>{g.name}</span>
+                  <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{g.jid}</span>
+                </span>
               </div>
             ))}
           </div>
