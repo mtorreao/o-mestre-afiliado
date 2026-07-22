@@ -9,6 +9,7 @@ import { useAuth } from './hooks/useAuth.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
+import { SettingsPage } from './pages/SettingsPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { AppShell, type NavItem } from './components/layout/AppShell.tsx';
@@ -57,6 +58,9 @@ function App() {
         >
           {nav === 'mirror-logs' && (
             <MirrorLogsPage token={token} onBack={() => setNav('dashboard')} />
+          )}
+          {nav === 'settings' && (
+            <SettingsPage user={user} token={token} />
           )}
           {nav === 'worker-status' && (
             <WorkerStatusPage onBack={() => setNav('dashboard')} />

@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   ScrollText,
   Activity,
+  Settings,
   LogOut,
   Menu,
   X,
@@ -15,7 +16,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-export type NavItem = 'dashboard' | 'mirror-logs' | 'worker-status';
+export type NavItem = 'dashboard' | 'settings' | 'mirror-logs' | 'worker-status';
 
 interface AppShellProps {
   currentNav: NavItem;
@@ -30,6 +31,7 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, children 
 
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+    { id: 'settings', label: 'Configurações', icon: <Settings size={18} /> },
     { id: 'mirror-logs', label: 'Espelhamento', icon: <ScrollText size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
