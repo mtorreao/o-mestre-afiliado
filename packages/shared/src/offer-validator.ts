@@ -4,19 +4,22 @@
  * Analisa as últimas N mensagens de um grupo e verifica se ~70%
  * contêm links válidos de marketplaces (Shopee, Mercado Livre, Amazon),
  * inclusive resolvendo redirecionamentos de encurtadores/mascaradores de URL.
+ *
+ * Uso compartilhado entre API e Worker.
+ * Cada app injeta sua própria implementação de fetchGroupMessages,
+ * já que API e Worker acessam a Evolution API com URLs/chaves diferentes.
  */
 
-import { detectMarketplace } from '@omestre/shared';
-import { fetchGroupMessages } from './evolution.ts';
+import { detectMarketplace } from './index.ts';
 
 // ─── Configuração ──────────────────────────────────────────────────────
 
-const VALIDATION_MESSAGE_LIMIT = 30;
-const MIN_OFFER_RATIO = 0.7; // 70%
+export const VALIDATION_MESSAGE_LIMIT = 30;
+export const MIN_OFFER_RATIO = 0.7; // 70%
 
 // Domínios conhecidos de encurtadores/mascaradores que redirecionam
 // para marketplaces. Se cair num destes, seguimos o redirect.
-const KNOWN_SHORTENER_DOMAINS = [
+export const KNOWN_SHORTENER_DOMAINS = [
   /meli\.la/i,
   /amzn\.to/i,
   /shp\.ee/i,
@@ -25,7 +28,7 @@ const KNOWN_SHORTENER_DOMAINS = [
   /bit\.ly/i,
   /tinyurl\.com/i,
   /shortlink\..*/i,
-  /app\.mktplc\.*/i,
+  /app\.mktplc\..*/i,
   /mercadoenvios\.com\.br/i,
   /go\.promozone\.ai/i,
 ];
@@ -53,6 +56,20 @@ export interface ValidationReport {
    * com a Evolution API (não por baixa taxa de ofertas). */
   connectionError?: string;
 }
+
+// ─── Types para injeção de dependência ─────────────────────────────────
+
+export interface FetchMessagesResult {
+  success: boolean;
+  messages?: { text?: string; timestamp?: number }[];
+  error?: string;
+}
+
+export type FetchMessagesFn = (
+  instanceName: string,
+  groupJid: string,
+  limit: number,
+) => Promise<FetchMessagesResult>;
 
 // ─── URL extraction ────────────────────────────────────────────────────
 
@@ -157,11 +174,15 @@ export async function isMessageValidOffer(text: string): Promise<boolean> {
 /**
  * Valida as últimas N mensagens de um grupo específico.
  * Retorna quantas são ofertas válidas e a proporção.
+ *
+ * @param fetchGroupMessages - Função injetada para buscar mensagens da Evolution API
+ *                             (cada app tem sua própria implementação)
  */
 export async function validateGroup(
   instanceName: string,
   groupJid: string,
   groupName: string,
+  fetchGroupMessages: FetchMessagesFn,
   limit: number = VALIDATION_MESSAGE_LIMIT,
 ): Promise<GroupValidationResult> {
   const errors: string[] = [];
@@ -226,17 +247,13 @@ export async function validateGroup(
 }
 
 /**
- * Valida múltiplos grupos de ofertas.
- * Retorna um relatório consolidado.
- */
-/**
  * Detecta se todos os grupos falharam por erro de conexão com a Evolution API.
  * Quando offline, todos os grupos recebem erros como "fetch failed",
  * "connect ECONNREFUSED", "Evolution API retornou HTTP ...", etc.
  * Retorna o erro mais específico encontrado, ou undefined se ao menos um
  * grupo falhou por motivo de conteúdo (ratio baixo).
  */
-function detectConnectionError(results: GroupValidationResult[]): string | undefined {
+export function detectConnectionError(results: GroupValidationResult[]): string | undefined {
   if (results.length === 0) return undefined;
 
   // Se algum grupo passou, não é erro de conexão
@@ -272,12 +289,19 @@ function detectConnectionError(results: GroupValidationResult[]): string | undef
   return specific || results[0]!.errors[0]!;
 }
 
+/**
+ * Valida múltiplos grupos de ofertas.
+ * Retorna um relatório consolidado.
+ *
+ * @param fetchGroupMessages - Função injetada para buscar mensagens da Evolution API
+ */
 export async function validateOfferGroups(
   instanceName: string,
   sourceGroups: { jid: string; name: string }[],
+  fetchGroupMessages: FetchMessagesFn,
 ): Promise<ValidationReport> {
   const results = await Promise.all(
-    sourceGroups.map((g) => validateGroup(instanceName, g.jid, g.name)),
+    sourceGroups.map((g) => validateGroup(instanceName, g.jid, g.name, fetchGroupMessages)),
   );
 
   const totalMessages = results.reduce((sum, r) => sum + r.totalMessages, 0);

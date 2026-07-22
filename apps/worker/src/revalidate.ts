@@ -12,7 +12,8 @@
  *   bun apps/worker/src/index.ts --revalidate-daemon
  */
 
-import { detectMarketplace } from '@omestre/shared';
+import type { GroupValidationResult } from '@omestre/shared';
+import { validateOfferGroups } from '@omestre/shared';
 import { AffiliatesRepository } from '@omestre/db';
 import { getDb } from '@omestre/db';
 import { processFailure, classifyConversionError } from './notifier.ts';
@@ -25,46 +26,6 @@ const REVALIDATION_INTERVAL_DAYS = parseInt(
   process.env.REVALIDATION_INTERVAL_DAYS || '7',
   10,
 );
-
-const VALIDATION_MESSAGE_LIMIT = 30;
-const MIN_OFFER_RATIO = 0.7;
-
-// Domínios conhecidos de encurtadores/mascaradores que redirecionam
-// para marketplaces.
-const KNOWN_SHORTENER_DOMAINS = [
-  /meli\.la/i,
-  /amzn\.to/i,
-  /shp\.ee/i,
-  /s\.shopee\.com\.br/i,
-  /vtao\.com/i,
-  /bit\.ly/i,
-  /tinyurl\.com/i,
-  /shortlink\..*/i,
-  /app\.mktplc\..*/i,
-  /mercadoenvios\.com\.br/i,
-  /go\.promozone\.ai/i,
-];
-
-// ─── Tipos ─────────────────────────────────────────────────────────────────
-
-export interface GroupValidationResult {
-  groupJid: string;
-  groupName: string;
-  totalMessages: number;
-  validOffers: number;
-  invalidMessages: number;
-  ratio: number;
-  passed: boolean;
-  errors: string[];
-}
-
-export interface ValidationReport {
-  overallPassed: boolean;
-  overallRatio: number;
-  totalMessages: number;
-  totalValidOffers: number;
-  groups: GroupValidationResult[];
-}
 
 // ─── Logging ───────────────────────────────────────────────────────────────
 
@@ -174,181 +135,6 @@ async function fetchGroupMessages(
   }
 }
 
-// ─── URL extraction & validation ──────────────────────────────────────────
-
-/**
- * Extrai todas as URLs de um texto.
- */
-function extractUrls(text: string): string[] {
-  const urlRegex = /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)/gi;
-  const matches = text.match(urlRegex);
-  if (!matches) return [];
-  return [...new Set(matches)];
-}
-
-/**
- * Segue redirecionamentos HTTP para obter a URL final.
- */
-async function resolveUrl(url: string): Promise<string> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-
-    const res = await fetch(url, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-    });
-
-    clearTimeout(timeout);
-    try { await res.body?.cancel?.(); } catch {}
-
-    return res.url || url;
-  } catch {
-    return url;
-  }
-}
-
-/**
- * Verifica se uma mensagem contém um link de oferta válido.
- */
-async function isMessageValidOffer(text: string): Promise<boolean> {
-  const urls = extractUrls(text);
-  if (urls.length === 0) return false;
-
-  for (const url of urls) {
-    // Passo 1: Verificação rápida por domínio
-    const marketplace = detectMarketplace(url);
-    if (marketplace !== 'unknown') return true;
-
-    // Passo 2: Se for encurtador conhecido, segue o redirect
-    if (KNOWN_SHORTENER_DOMAINS.some((p) => p.test(url))) {
-      const resolved = await resolveUrl(url);
-      if (resolved !== url) {
-        const resolvedMarketplace = detectMarketplace(resolved);
-        if (resolvedMarketplace !== 'unknown') return true;
-      }
-    }
-
-    // Passo 3: Para URLs desconhecidas, tenta seguir redirect
-    if (!url.startsWith('http')) continue;
-    try {
-      const resolved = await resolveUrl(url);
-      if (resolved !== url) {
-        const resolvedMarketplace = detectMarketplace(resolved);
-        if (resolvedMarketplace !== 'unknown') return true;
-      }
-    } catch {
-      // Ignora falhas de resolução
-    }
-  }
-
-  return false;
-}
-
-// ─── Validação de grupos ──────────────────────────────────────────────────
-
-/**
- * Valida as últimas N mensagens de um grupo específico.
- * Retorna quantas são ofertas válidas e a proporção.
- */
-async function validateGroup(
-  instanceName: string,
-  groupJid: string,
-  groupName: string,
-  limit: number = VALIDATION_MESSAGE_LIMIT,
-): Promise<GroupValidationResult> {
-  const errors: string[] = [];
-
-  const result = await fetchGroupMessages(instanceName, groupJid, limit);
-
-  if (!result.success) {
-    return {
-      groupJid,
-      groupName,
-      totalMessages: 0,
-      validOffers: 0,
-      invalidMessages: 0,
-      ratio: 0,
-      passed: false,
-      errors: [result.error || 'Erro ao buscar mensagens do grupo'],
-    };
-  }
-
-  const messages = result.messages ?? [];
-
-  if (messages.length === 0) {
-    return {
-      groupJid,
-      groupName,
-      totalMessages: 0,
-      validOffers: 0,
-      invalidMessages: 0,
-      ratio: 0,
-      passed: false,
-      errors: ['Nenhuma mensagem encontrada nos últimos registros do grupo'],
-    };
-  }
-
-  // Verifica cada mensagem em paralelo (com limite de concorrência)
-  const concurrencyLimit = 5;
-  let validCount = 0;
-
-  for (let i = 0; i < messages.length; i += concurrencyLimit) {
-    const batch = messages.slice(i, i + concurrencyLimit);
-    const results = await Promise.all(
-      batch.map((msg) => isMessageValidOffer(msg.text ?? '')),
-    );
-    validCount += results.filter(Boolean).length;
-  }
-
-  const totalMessages = messages.length;
-  const ratio = totalMessages > 0 ? validCount / totalMessages : 0;
-  const passed = ratio >= MIN_OFFER_RATIO;
-
-  return {
-    groupJid,
-    groupName,
-    totalMessages,
-    validOffers: validCount,
-    invalidMessages: totalMessages - validCount,
-    ratio: Math.round(ratio * 100) / 100,
-    passed,
-    errors,
-  };
-}
-
-/**
- * Valida múltiplos grupos de ofertas para uma instância.
- * Retorna um relatório consolidado.
- */
-async function validateOfferGroups(
-  instanceName: string,
-  sourceGroups: { jid: string; name: string }[],
-): Promise<ValidationReport> {
-  const results = await Promise.all(
-    sourceGroups.map((g) => validateGroup(instanceName, g.jid, g.name)),
-  );
-
-  const totalMessages = results.reduce((sum, r) => sum + r.totalMessages, 0);
-  const totalValidOffers = results.reduce((sum, r) => sum + r.validOffers, 0);
-  const overallRatio = totalMessages > 0 ? totalValidOffers / totalMessages : 0;
-
-  // Overall passed: TODOS os grupos individuais passaram
-  const overallPassed = results.every((r) => r.passed) && results.length > 0;
-
-  return {
-    overallPassed,
-    overallRatio: Math.round(overallRatio * 100) / 100,
-    totalMessages,
-    totalValidOffers,
-    groups: results,
-  };
-}
-
 // ─── Revalidação Principal ────────────────────────────────────────────────
 
 /**
@@ -404,7 +190,7 @@ export async function runRevalidation(): Promise<{
       groups: sourceGroups.map((g) => g.name),
     });
 
-    const validation = await validateOfferGroups(instanceName, sourceGroups);
+    const validation = await validateOfferGroups(instanceName, sourceGroups, fetchGroupMessages);
 
     // Verifica mudança de status
     const previouslyPassed = affiliate.lastValidationPassed;

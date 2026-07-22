@@ -73,6 +73,27 @@ export type { MirrorDLQEntry } from './mirror-message.ts';
 
 // ─── Constantes do pipeline ────────────────────────────────────────────
 
+// ─── Offer Validator ──────────────────────────────────────────────────
+
+export {
+  VALIDATION_MESSAGE_LIMIT,
+  MIN_OFFER_RATIO,
+  KNOWN_SHORTENER_DOMAINS,
+  extractUrls,
+  isKnownMarketplaceDomain,
+  resolveUrl,
+  isMessageValidOffer,
+  validateGroup,
+  validateOfferGroups,
+  detectConnectionError,
+} from './offer-validator.ts';
+export type {
+  GroupValidationResult,
+  ValidationReport,
+  FetchMessagesResult,
+  FetchMessagesFn,
+} from './offer-validator.ts';
+
 /** (DEPRECATED) Canal Redis PubSub — mantido para referência */
 export const MIRROR_MESSAGE_CHANNEL = 'omestre:mirror:message';
 
