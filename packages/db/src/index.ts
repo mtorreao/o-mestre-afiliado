@@ -21,6 +21,7 @@ export {
   users,
   userCredentials,
   userWhatsAppInstances,
+  mirrors,
 } from './schema/index.ts';
 
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
@@ -50,3 +51,6 @@ export type { Affiliate, NewAffiliate, AffiliateGroupConfig, ExcludedGroup } fro
 
 export { MirrorLogRepository } from './repository/mirrorLog.repository.ts';
 export type { MirrorLogRow, MirrorLogFilters, MirrorLogResponse } from './repository/mirrorLog.repository.ts';
+
+export { MirrorRepository } from './repository/mirrors.repository.ts';
+export type { Mirror, NewMirror, MirrorListFilters, MirrorListResponse, MirrorUpdateData } from './repository/mirrors.repository.ts';
