@@ -10,7 +10,7 @@
  * já que API e Worker acessam a Evolution API com URLs/chaves diferentes.
  */
 
-import { detectMarketplace } from './index.ts';
+import { detectMarketplace, type Marketplace } from './index.ts';
 
 // ─── Configuração ──────────────────────────────────────────────────────
 
@@ -74,14 +74,48 @@ export type FetchMessagesFn = (
 
 // ─── URL extraction ────────────────────────────────────────────────────
 
+/** Domínios conhecidos que também são capturados em formato sem protocolo */
+const PROTOCOL_LESS_DOMAIN_PATTERNS = [
+  /go\.promozone\.ai/i,
+  /meli\.la/i,
+  /amzn\.to/i,
+  /shp\.ee/i,
+  /s\.shopee\.com\.br/i,
+  /vtao\.com/i,
+  /bit\.ly/i,
+  /tinyurl\.com/i,
+  /shopee\.com\.br/i,
+  /mercadolivre\.com\.br/i,
+  /amazon\.com\.br/i,
+  /mercadoenvios\.com\.br/i,
+];
+
 /**
  * Extrai todas as URLs de um texto.
  * Captura http/https e também URLs sem protocolo (ex: www.exemplo.com/link)
  */
 export function extractUrls(text: string): string[] {
+  // Regex 1: URLs completas com protocolo http/https
   const urlRegex = /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)/gi;
-  const matches = text.match(urlRegex);
-  if (!matches) return [];
+  const matches: string[] = text.match(urlRegex) ?? [];
+
+  // Regex 2: URLs sem protocolo (ex: go.promozone.ai/mercadolivre/YhHbav)
+  // Só captura se o domínio estiver na lista de conhecidos (evita falsos positivos)
+  const noProtocolRegex = /(?<!\w)(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\/[-a-zA-Z0-9()@:%_+.~#?&/=]+/gi;
+  const protocolLessMatches: string[] = text.match(noProtocolRegex) ?? [];
+
+  for (const raw of protocolLessMatches) {
+    // Verifica se o domínio é conhecido antes de adicionar
+    if (PROTOCOL_LESS_DOMAIN_PATTERNS.some((p) => p.test(raw))) {
+      // Só adiciona se não houver versão http ou https já capturada
+      // (evita duplicatas como http://meli.la/x + https://meli.la/x)
+      const withHttp = `http://${raw}`;
+      const withHttps = `https://${raw}`;
+      if (!matches.includes(withHttp) && !matches.includes(withHttps)) {
+        matches.push(withHttps);
+      }
+    }
+  }
 
   // Deduplica mantendo ordem
   return [...new Set(matches)];
@@ -131,6 +165,23 @@ export async function resolveUrl(url: string): Promise<string> {
 }
 
 /**
+ * Detecta marketplace pela análise do PATH da URL.
+ * Útil para redirectors JS (go.promozone.ai) onde HTTP redirect
+ * não pode ser seguido, mas o path da URL já indica o marketplace.
+ */
+export function detectMarketplaceByPath(url: string): Marketplace {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    if (/\/shopee\b|\/shp\b/i.test(pathname)) return 'shopee';
+    if (/\/mercadolivre\b|\/mercadolibre\b|\/ml\b/i.test(pathname)) return 'mercadolivre';
+    if (/\/amazon\b|\/amzn\b/i.test(pathname)) return 'amazon';
+  } catch {
+    // URL inválida, ignora
+  }
+  return 'unknown';
+}
+
+/**
  * Verifica se uma mensagem contém um link de oferta válido.
  * Isso inclui URLs diretas de marketplace e URLs encurtadas
  * que redirecionam para marketplaces.
@@ -148,8 +199,13 @@ export async function isMessageValidOffer(text: string): Promise<boolean> {
     if (KNOWN_SHORTENER_DOMAINS.some((p) => p.test(url))) {
       const resolved = await resolveUrl(url);
       if (resolved !== url) {
+        // HTTP redirect funcionou — verifica o destino
         const resolvedMarketplace = detectMarketplace(resolved);
         if (resolvedMarketplace !== 'unknown') return true;
+      } else {
+        // JS redirect (go.promozone.ai, etc) — detecta marketplace pelo path da URL
+        const pathMarketplace = detectMarketplaceByPath(url);
+        if (pathMarketplace !== 'unknown') return true;
       }
     }
 

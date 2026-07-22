@@ -378,7 +378,37 @@ function extractEphemeralCaption(msg: Record<string, unknown> | undefined): stri
   // Tenta extendedTextMessage
   const extMsg = innerMsg.extendedTextMessage as Record<string, unknown> | undefined;
   if (extMsg?.text) return String(extMsg.text);
+
+  // Tenta audioMessage
+  const audMsg = innerMsg.audioMessage as Record<string, unknown> | undefined;
+  if (audMsg?.caption) return String(audMsg.caption);
   
+  return undefined;
+}
+
+/**
+ * Extrai caption de mensagens de mídia NÃO efêmeras.
+ * Mensagens comuns de imagem/vídeo/documento sem disappearing messages.
+ */
+function extractMediaCaption(msg: Record<string, unknown> | undefined): string | undefined {
+  if (!msg) return undefined;
+
+  // imageMessage > caption
+  const imgMsg = msg.imageMessage as Record<string, unknown> | undefined;
+  if (imgMsg?.caption) return String(imgMsg.caption);
+
+  // videoMessage > caption
+  const vidMsg = msg.videoMessage as Record<string, unknown> | undefined;
+  if (vidMsg?.caption) return String(vidMsg.caption);
+
+  // documentMessage > caption
+  const docMsg = msg.documentMessage as Record<string, unknown> | undefined;
+  if (docMsg?.caption) return String(docMsg.caption);
+
+  // audioMessage (voice/podcast) > caption
+  const audMsg = msg.audioMessage as Record<string, unknown> | undefined;
+  if (audMsg?.caption) return String(audMsg.caption);
+
   return undefined;
 }
 
@@ -455,6 +485,8 @@ export async function fetchGroupMessages(
           item.text ??
             msg?.conversation ??
             (msg?.extendedTextMessage as Record<string, unknown> | undefined)?.text ??
+            // Caption de mídia não efêmera (imageMessage/videoMessage/documentMessage)
+            extractMediaCaption(msg) ??
             // Mensagens efêmeras (ephemeralMessage) com caption em imageMessage/videoMessage
             extractEphemeralCaption(msg) ??
             '',

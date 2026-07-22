@@ -52,9 +52,9 @@ export interface AmazonConfig {
 // ─── Utilitários ─────────────────────────────────────────────────────────
 
 export const MARKETPLACE_DOMAINS: Record<Marketplace, RegExp[]> = {
-  shopee: [/shopee\.com\.br/i, /go\.promozone\.ai\/shopee/i],
-  mercadolivre: [/mercadolivre\.com\.br/i, /meli\.la/i, /go\.promozone\.ai\/mercadolivre/i],
-  amazon: [/amazon\.com\.br/i, /amzn\.to/i, /go\.promozone\.ai\/amazon/i],
+  shopee: [/shopee\.com\.br/i, /s\.shopee\.com\.br/i, /shopee\.com/i, /go\.promozone\.ai\/shopee/i, /go\.promozone\.ai\/shp/i],
+  mercadolivre: [/mercadolivre\.com\.br/i, /mercadolibre\.com(\.[a-z]{2})?/i, /meli\.la/i, /go\.promozone\.ai\/mercadolivre/i, /go\.promozone\.ai\/ml/i, /go\.promozone\.ai\/mercadolibre/i],
+  amazon: [/amazon\.com\.br/i, /amazon\.com/i, /amzn\.to/i, /go\.promozone\.ai\/amazon/i, /go\.promozone\.ai\/amzn/i],
   magalu: [/magalu\.com\.br/i, /maga\.lu/i, /go\.promozone\.ai\/magalu/i],
   unknown: [],
 } as const;
@@ -83,6 +83,7 @@ export {
   extractUrls,
   isKnownMarketplaceDomain,
   resolveUrl,
+  detectMarketplaceByPath,
   isMessageValidOffer,
   validateGroup,
   validateOfferGroups,
