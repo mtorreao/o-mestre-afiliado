@@ -11,11 +11,19 @@ import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
+import { SettingsPage } from './pages/SettingsPage.tsx';
 import { AppShell, type NavItem } from './components/layout/AppShell.tsx';
 import { ToastProvider } from './components/ui/index.ts';
 import { Loader2 } from 'lucide-react';
 
 type AuthPage = 'login' | 'register';
+
+const pageTitles: Record<NavItem, string> = {
+  dashboard: 'Dashboard',
+  settings: 'Configurações',
+  'mirror-logs': 'Logs de Espelhamento',
+  'worker-status': 'Status do Worker',
+};
 
 function App() {
   const { user, token, loading, isAuthenticated, login, register, logout } = useAuth();
@@ -54,7 +62,11 @@ function App() {
             setNav('dashboard');
           }}
           userName={user.name}
+          pageTitle={pageTitles[nav]}
         >
+          {nav === 'settings' && (
+            <SettingsPage user={user} token={token} />
+          )}
           {nav === 'mirror-logs' && (
             <MirrorLogsPage token={token} onBack={() => setNav('dashboard')} />
           )}
