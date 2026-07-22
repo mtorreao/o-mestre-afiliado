@@ -964,7 +964,7 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
     const hasKeyword = filters.keywords.some(kw => textLower.includes(kw.toLowerCase()));
     if (!hasKeyword) {
       log('info', 'Mensagem filtrada por keywords — nenhuma keyword encontrada', { messageId, keywords: filters.keywords });
-      incrementCounter('mirror_messages_blocked_total', { reason: 'keywords' });
+      incrementCounter('mirror_messages_blocked_total', { reason: 'no_keyword_match' });
       await logReflectedOffer({
         affiliateId,
         sourceGroupJid,
