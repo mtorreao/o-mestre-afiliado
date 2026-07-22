@@ -203,6 +203,8 @@ services:
       EVOLUTION_API_URL: http://evolution-api:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5451}
+      # Worker metrics API (DNS interno do container)
+      WORKER_METRICS_URL: http://worker:9092
       # Webhook que a Evolution API usa para chamar de volta
       WEBHOOK_URL: http://api:5442/webhook/message
       REDIS_URL: redis://redis:6379
