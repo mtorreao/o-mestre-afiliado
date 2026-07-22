@@ -9,12 +9,15 @@ import { useAuth } from './hooks/useAuth.ts';
 import { LoginPage } from './components/LoginPage.tsx';
 import { RegisterPage } from './components/RegisterPage.tsx';
 import { AffiliateDashboard } from './components/AffiliateDashboard.tsx';
+import { MirrorLogs } from './components/MirrorLogs.tsx';
+import { WorkerStatus } from './components/WorkerStatus.tsx';
 
 type Page = 'login' | 'register';
 
 function App() {
   const { user, token, loading, isAuthenticated, login, register, logout } = useAuth();
   const [page, setPage] = useState<Page>('login');
+  const [subPage, setSubPage] = useState<'dashboard' | 'mirror-logs' | 'worker-status'>('dashboard');
 
   // Se estiver carregando (verificando token), mostra loading
   if (loading) {
@@ -33,9 +36,15 @@ function App() {
     );
   }
 
-  // Se autenticado, mostra dashboard
+  // Se autenticado, mostra dashboard, logs ou worker status
   if (isAuthenticated && user && token) {
-    return <AffiliateDashboard user={user} token={token} onLogout={logout} />;
+    if (subPage === 'mirror-logs') {
+      return <MirrorLogs token={token} onBack={() => setSubPage('dashboard')} />;
+    }
+    if (subPage === 'worker-status') {
+      return <WorkerStatus onBack={() => setSubPage('dashboard')} />;
+    }
+    return <AffiliateDashboard user={user} token={token} onLogout={logout} onNavigateToLogs={() => setSubPage('mirror-logs')} onNavigateToWorkerStatus={() => setSubPage('worker-status')} />;
   }
 
   // Se não autenticado, mostra login ou registro

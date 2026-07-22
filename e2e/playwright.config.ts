@@ -38,7 +38,7 @@ export default defineConfig({
     },
     {
       name: 'mirror-api',
-      testMatch: '**/mirror-flow.api.spec.ts',
+      testMatch: ['**/mirror-flow.api.spec.ts', '**/mirror-verification.api.spec.ts'],
       use: {
         baseURL: `http://localhost:${API_MIRROR_PORT}`,
         extraHTTPHeaders: {

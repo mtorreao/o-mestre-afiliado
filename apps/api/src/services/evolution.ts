@@ -295,6 +295,52 @@ export async function fetchGroups(instanceName: string): Promise<{
   }
 }
 
+/**
+ * Busca informações de um grupo específico via Evolution API.
+ *
+ * Evolution API v2: GET /group/groupInfo/{instanceName}/{groupJid}
+ * Retorna o nome do grupo (subject) e outros metadados.
+ *
+ * Caso o endpoint específico não exista (ex: versão mais antiga),
+ * faz fallback para fetchGroups + filtro.
+ */
+export async function fetchGroupInfo(
+  instanceName: string,
+  groupJid: string,
+): Promise<{ jid: string; name: string } | null> {
+  // Tenta endpoint específico primeiro (Evolution API v2+)
+  try {
+    const res = await fetch(
+      `${EVOLUTION_API_URL}/group/groupInfo/${instanceName}/${encodeURIComponent(groupJid)}`,
+      {
+        method: 'GET',
+        headers: headers(),
+      },
+    );
+
+    if (res.ok) {
+      const data = (await res.json()) as Record<string, unknown>;
+      // Resposta pode ser { jid, subject, name, ... } ou { id, subject, ... }
+      const jid = String(data.jid ?? data.id ?? '');
+      const name = String(data.name ?? data.subject ?? '');
+      if (jid && name) {
+        return { jid, name };
+      }
+    }
+  } catch {
+    // Fallback silencioso para fetchGroups
+  }
+
+  // Fallback: busca todos os grupos e filtra pelo JID
+  try {
+    const result = await fetchGroups(instanceName);
+    if (!result.success || !result.groups) return null;
+    return result.groups.find((g) => g.jid === groupJid) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** 
  * Extrai caption de mensagens efêmeras (ephemeralMessage).
  * Evolution API v2: mensagens com tempo de expiração usam este formato.

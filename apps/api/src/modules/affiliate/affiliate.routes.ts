@@ -1,5 +1,5 @@
 import { Elysia } from 'elysia';
-import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository } from '@omestre/db';
+import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository, MirrorLogRepository } from '@omestre/db';
 import type { ExcludedGroup } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { convertShopeeUrlWithCredentials } from '@omestre/converters';
@@ -15,6 +15,7 @@ const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
 const mlRepo = new MlAffiliateRepository();
 const affiliatesRepo = new AffiliatesRepository();
+const mirrorLogRepo = new MirrorLogRepository();
 
 export const affiliateRoutes = new Elysia()
   .use(createJwtPlugin())
@@ -116,6 +117,29 @@ export const affiliateRoutes = new Elysia()
 
     const validation = await validateOfferGroups(instanceName, sourceGroups);
 
+    // Se a Evolution API está offline, retorna o erro real em vez do genérico
+    if (validation.connectionError) {
+      return {
+        success: false,
+        error: `Evolution API offline: ${validation.connectionError}`,
+        report: {
+          overallRatio: validation.overallRatio,
+          totalMessages: validation.totalMessages,
+          totalValidOffers: validation.totalValidOffers,
+          groups: validation.groups.map((g) => ({
+            groupJid: g.groupJid,
+            groupName: g.groupName,
+            totalMessages: g.totalMessages,
+            validOffers: g.validOffers,
+            invalidMessages: g.invalidMessages,
+            ratio: g.ratio,
+            passed: g.passed,
+            errors: g.errors,
+          })),
+        },
+      };
+    }
+
     return {
       success: true,
       validated: validation.overallPassed,
@@ -183,6 +207,28 @@ export const affiliateRoutes = new Elysia()
 
     // Se nenhum grupo passou, aí sim bloqueia o save
     if (passedGroups.length === 0) {
+      // Se a Evolution API está offline, retorna o erro real em vez do genérico
+      if (validation.connectionError) {
+        return {
+          success: false,
+          error: `Evolution API offline: ${validation.connectionError}`,
+          report: {
+            overallRatio: validation.overallRatio,
+            totalMessages: validation.totalMessages,
+            totalValidOffers: validation.totalValidOffers,
+            groups: validation.groups.map((g) => ({
+              groupJid: g.groupJid,
+              groupName: g.groupName,
+              totalMessages: g.totalMessages,
+              validOffers: g.validOffers,
+              ratio: g.ratio,
+              passed: g.passed,
+              errors: g.errors,
+            })),
+          },
+        };
+      }
+
       return {
         success: false,
         error: 'Nenhum dos grupos selecionados passou na validação. Todos precisam ter no mínimo 70% de mensagens com links de marketplaces.',
@@ -310,6 +356,35 @@ export const affiliateRoutes = new Elysia()
           validOffers: result.validOffers,
           ratio: result.ratio,
           passed: true,
+          errors: result.errors,
+        },
+      };
+    }
+
+    // Ainda não passou — verifica se foi erro de conexão com Evolution API
+    // Detecta se o erro é de conexão (Evolution API offline)
+    const isConnectionError = result.errors.some((e) =>
+      ['evolution api', 'connect', 'econnrefused', 'fetch failed', 'unable to connect', 'enotfound', 'etimedout', 'econnreset', 'erro ao buscar mensagens']
+        .some((kw) => e.toLowerCase().includes(kw))
+    );
+
+    if (isConnectionError) {
+      // Se Evolution API offline, retorna o erro real sem modificar excludedGroups
+      const specificError = result.errors.find(
+        (e) => !['erro ao buscar mensagens do grupo', 'erro ao buscar mensagens']
+          .some((g) => e.toLowerCase().includes(g))
+      ) || result.errors[0] || 'Erro de conexão com Evolution API';
+
+      return {
+        success: false,
+        error: `Evolution API offline: ${specificError}`,
+        report: {
+          groupJid: result.groupJid,
+          groupName: result.groupName,
+          totalMessages: result.totalMessages,
+          validOffers: result.validOffers,
+          ratio: result.ratio,
+          passed: false,
           errors: result.errors,
         },
       };
@@ -466,6 +541,48 @@ export const affiliateRoutes = new Elysia()
       success: true,
       message: 'Template de mensagem atualizado',
     };
+  })
+
+  // ─── GET /api/affiliate/mirror-logs ─────────────────────────────────
+  .get('/api/affiliate/mirror-logs', async ({ jwt, request, set, query }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const {
+      sourceGroupJid,
+      targetGroupJid,
+      status,
+      marketplace,
+      dateFrom,
+      dateTo,
+      search,
+      page,
+      pageSize,
+    } = query as Record<string, string | undefined>;
+
+    try {
+      const result = await mirrorLogRepo.list({
+        sourceGroupJid,
+        targetGroupJid,
+        status: (status as 'sent' | 'failed' | 'blocked' | undefined),
+        marketplace,
+        dateFrom,
+        dateTo,
+        search,
+        page: page ? parseInt(page, 10) : undefined,
+        pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
+      });
+      return { success: true, ...result };
+    } catch (err) {
+      set.status = 500;
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Erro ao buscar logs',
+      };
+    }
   });
 
 /**

@@ -50,6 +50,20 @@
       "when": 1784734742245,
       "tag": "0006_nosy_zemo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784735000000,
+      "tag": "0007_add_amazon_tracking_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784736000000,
+      "tag": "0008_add_blocked_status_and_reason",
+      "breakpoints": true
     }
   ]
 }

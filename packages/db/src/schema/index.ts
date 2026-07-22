@@ -14,7 +14,7 @@ import { users } from './users.ts';
 
 export const marketplaceEnum = pgEnum('marketplace', ['shopee', 'mercadolivre', 'amazon', 'unknown']);
 
-export const offerStatusEnum = pgEnum('offer_status', ['sent', 'failed']);
+export const offerStatusEnum = pgEnum('offer_status', ['sent', 'failed', 'blocked']);
 
 // ─── Afiliados (WhatsApp Worker) ────────────────────────────────────
 
@@ -144,6 +144,9 @@ export const reflectedOffers = omestre.table('reflected_offers', {
 
   reflectedAt: timestamp('reflected_at').notNull().defaultNow(),
   status: offerStatusEnum('status').notNull().default('sent'),
+
+  // Motivo da falha/bloqueio (ex: \"conversion_failed\", \"blocked:blacklist\", \"blocked:no_url\")
+  failureReason: text('failure_reason'),
 });
 
 // ─── Índices ────────────────────────────────────────────────────────

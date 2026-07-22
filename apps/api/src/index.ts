@@ -24,6 +24,7 @@ const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
 const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.ML_REDIRECT_URI || 'http://localhost:5442/api/ml/callback';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5441';
+const WORKER_METRICS_URL = process.env.WORKER_METRICS_URL || 'http://localhost:9092';
 
 // ─── Repository (banco PostgreSQL via Drizzle) ────────────────────────
 
@@ -89,6 +90,7 @@ const app = new Elysia()
       'whatsapp/connect': 'POST /api/whatsapp/connect',
       'whatsapp/status': 'GET /api/whatsapp/status',
       'whatsapp/disconnect': 'DELETE /api/whatsapp/disconnect',
+      'worker/status': 'GET /api/worker/status',
       docs: '/docs',
     },
   }))
@@ -563,6 +565,33 @@ const app = new Elysia()
       return { success: false, error: 'Afiliado não encontrado' };
     }
     return { success: true, message: `Afiliado ${mlUserId} removido` };
+  })
+
+  // ─── Worker Status — Proxy para o servidor de métricas do worker ───
+  .get('/api/worker/status', async ({ set }) => {
+    try {
+      const res = await fetch(`${WORKER_METRICS_URL}/status`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) {
+        set.status = 502;
+        return {
+          success: false,
+          error: `Worker retornou HTTP ${res.status}`,
+          workerStatus: 'unreachable',
+        };
+      }
+      const data = await res.json() as Record<string, unknown>;
+      return { success: true, ...data };
+    } catch (err) {
+      set.status = 503;
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Falha ao contactar worker',
+        workerStatus: 'unreachable',
+        workerUrl: WORKER_METRICS_URL,
+      };
+    }
   });
 
 app.listen(PORT);

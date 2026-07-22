@@ -15,6 +15,7 @@ export type NewUserCredentials = InferInsertModel<typeof userCredentials>;
 export interface UserCredentialsInput {
   shopeeAppId?: string | null;
   shopeeAppSecret?: string | null;
+  amazonTrackingId?: string | null;
 }
 
 // ─── Repository ──────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ export class UserCredentialsRepository {
       const updateData: Record<string, unknown> = {};
       if (data.shopeeAppId !== undefined) updateData.shopeeAppId = data.shopeeAppId;
       if (data.shopeeAppSecret !== undefined) updateData.shopeeAppSecret = data.shopeeAppSecret;
+      if (data.amazonTrackingId !== undefined) updateData.amazonTrackingId = data.amazonTrackingId;
 
       if (Object.keys(updateData).length === 0) return existing;
 
@@ -64,6 +66,7 @@ export class UserCredentialsRepository {
         userId,
         shopeeAppId: data.shopeeAppId ?? null,
         shopeeAppSecret: data.shopeeAppSecret ?? null,
+        amazonTrackingId: data.amazonTrackingId ?? null,
       })
       .returning();
 

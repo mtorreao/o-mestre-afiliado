@@ -25,6 +25,18 @@ export type { MercadoLivreCredentials, MlConversionOptions, MlStrategy } from '.
 export { generateShortAffiliateLink } from './ml-linkbuilder.ts';
 export type { ShortLinkResult } from './ml-linkbuilder.ts';
 
+export {
+  extractAsin,
+  isShortUrl,
+  isPromozoneAmazonUrl,
+  extractPromozoneAsin,
+  resolvePromozoneUrl,
+  resolveShortUrl,
+  buildAffiliateUrl,
+  convertAmazonUrl,
+  convertAmazonUrlWithTrackingId,
+} from './amazon.ts';
+
 /**
  * Converte qualquer URL suportada em link de afiliado.
  * Detecta automaticamente o marketplace.
@@ -33,6 +45,7 @@ import { detectMarketplace } from '@omestre/shared';
 import type { ConversionResult } from '@omestre/shared';
 import { convertShopeeUrl } from './shopee.ts';
 import { convertMercadoLivreUrl } from './mercadolivre.ts';
+import { convertAmazonUrl } from './amazon.ts';
 
 export async function convertUrl(url: string): Promise<ConversionResult> {
   const marketplace = detectMarketplace(url);
@@ -42,6 +55,8 @@ export async function convertUrl(url: string): Promise<ConversionResult> {
       return convertShopeeUrl(url);
     case 'mercadolivre':
       return convertMercadoLivreUrl(url);
+    case 'amazon':
+      return convertAmazonUrl(url);
     default:
       return {
         success: false,

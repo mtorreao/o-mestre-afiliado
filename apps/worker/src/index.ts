@@ -23,7 +23,8 @@ import type { MirrorMessageEvent } from '@omestre/shared';
 import { getDb, AffiliatesRepository } from '@omestre/db';
 import { processMirrorMessage } from './mirror-pipeline.ts';
 import { runRevalidation, runRevalidationDaemon } from './revalidate.ts';
-import { startMetricsServer } from './metrics.ts';
+import { startMetricsServer, setStatusMeta } from './metrics.ts';
+import { pushToDLQ, purgeOldDLQItems } from './dead-letter-queue.ts';
 
 // ─── Constantes do cache de sourceGroups ────────────────────────────────
 // (mesma estrutura do group-cache.ts na API)
@@ -93,6 +94,10 @@ async function ensureConsumerGroup(redis: Redis): Promise<void> {
 /**
  * Processa mensagens pendentes na inicialização (recuperação de workers
  * que morreram antes de fazer ACK).
+ *
+ * Mensagens com deliveryCount > 3 são lidas do stream e movidas para
+ * a Dead Letter Queue antes de receberem ACK, garantindo que nenhum
+ * payload seja perdido mesmo em caso de falha catastrófica do worker.
  */
 async function processPendingMessages(redis: Redis): Promise<void> {
   try {
@@ -112,7 +117,41 @@ async function processPendingMessages(redis: Redis): Promise<void> {
 
       if (deliveryCount > 3) {
         log('warn', 'Mensagem excedeu tentativas — movendo para DLQ', { msgId });
-        // Opcional: XADD para uma fila de dead-letter
+
+        try {
+          // Lê o conteúdo da mensagem do stream antes de fazer ACK
+          const raw = await redis.xrange(
+            MIRROR_STREAM,
+            msgId,
+            msgId,
+          );
+
+          if (raw && Array.isArray(raw) && raw.length > 0) {
+            const msgEntry = raw[0] as [string, string[]];
+            const fields = msgEntry[1];
+            const payloadIndex = fields.indexOf('payload');
+            if (payloadIndex !== -1 && payloadIndex + 1 < fields.length) {
+              const rawPayload = fields[payloadIndex + 1] as string;
+              try {
+                const event = JSON.parse(rawPayload) as MirrorMessageEvent;
+                await pushToDLQ({
+                  event,
+                  failureReason: 'stream_exceeded_delivery_count',
+                  attempts: deliveryCount,
+                  lastError: `Mensagem excedeu ${deliveryCount} tentativas de entrega no stream`,
+                });
+              } catch {
+                log('warn', 'Payload inválido na mensagem pendente — DLQ ignorada', { msgId });
+              }
+            }
+          }
+        } catch (err) {
+          log('warn', 'Erro ao ler payload da mensagem pendente para DLQ', {
+            msgId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
         await redis.xack(MIRROR_STREAM, MIRROR_CONSUMER_GROUP, msgId);
         continue;
       }
@@ -259,6 +298,7 @@ async function runMirror(): Promise<void> {
 
     // ── Inicia servidor de métricas ──
     startMetricsServer();
+    setStatusMeta({ mode: 'mirror' });
 
     // ── Popula cache de sourceGroups do banco ──
     await populateSourceGroupCache(redis);
@@ -268,6 +308,12 @@ async function runMirror(): Promise<void> {
 
     // ── Recupera mensagens pendentes de execuções anteriores ──
     await processPendingMessages(redis);
+
+    // ── Remove itens expirados da DLQ ──
+    const purged = await purgeOldDLQItems();
+    if (purged > 0) {
+      log('info', `DLQ limpa — ${purged} itens antigos removidos`, {});
+    }
 
     // ── Loop principal de consumo ──
     while (running) {
@@ -403,6 +449,9 @@ async function processItem(item: QueueItem): Promise<void> {
 }
 
 async function pollQueue(): Promise<void> {
+  // Atualiza tamanho da fila no /status
+  setStatusMeta({ queueSize: queue.length });
+
   const pending = queue.filter(
     (item) => item.status === 'pending' && !isProcessing.has(item.id),
   );
@@ -422,6 +471,8 @@ async function runPolling(): Promise<void> {
     maxRetries: MAX_RETRIES,
     concurrency: CONCURRENCY,
   });
+
+  setStatusMeta({ mode: 'poll' });
 
   const interval = setInterval(pollQueue, POLL_INTERVAL_MS);
   await pollQueue();
@@ -496,6 +547,7 @@ async function runRevalidateDaemon(): Promise<void> {
   log('info', 'Worker iniciado em modo revalidate-daemon');
   // Inicia servidor HTTP com /metrics e /health para healthcheck de orquestrador
   startMetricsServer();
+  setStatusMeta({ mode: 'revalidate-daemon' });
   await runRevalidationDaemon();
 }
 
@@ -540,4 +592,16 @@ async function main() {
   }
 }
 
-main();
+// ═══════════════════════════════════════════════════════════════════════════
+// Exports (para testes)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export { populateSourceGroupCache, CACHE_PREFIX, CACHE_SET_KEY };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Entry point — só executa quando o arquivo é rodado diretamente
+// ═══════════════════════════════════════════════════════════════════════════
+
+if (import.meta.main) {
+  main();
+}

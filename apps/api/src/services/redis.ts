@@ -4,7 +4,9 @@
  * Usa a env var REDIS_URL (ex: redis://redis:6379 ou redis://localhost:5455).
  * Se não configurada, o cache é desabilitado (graceful fallback).
  *
- * Também provê PubSub para comunicação API → Worker.
+ * Também provê fila via Redis Stream para comunicação API → Worker.
+ * Diferente do PubSub (que perdia mensagens se o worker reiniciasse),
+ * Stream persiste mensagens e usa consumer group com ACK explícito.
  */
 import Redis from 'ioredis';
 
@@ -90,51 +92,25 @@ export async function cacheDel(key: string): Promise<void> {
   }
 }
 
-// ─── PubSub ─────────────────────────────────────────────────────────
+// ─── Redis Stream (substitui PubSub) ─────────────────────────────────
 
 /**
- * Canal Redis para mensagens de grupos de espelhamento.
- * API → publica, Worker → consome.
- */
-export const MIRROR_MESSAGE_CHANNEL = 'omestre:mirror:message';
-
-/**
- * Publica uma mensagem no canal PubSub.
+ * Adiciona uma mensagem a um Redis Stream.
+ *
+ * Usa XADD com `*` (ID auto-gerado pelo Redis). A mensagem é serializada
+ * como JSON no campo `payload`.
+ *
  * Retorna false se Redis estiver desabilitado.
+ * Retorna a ID da mensagem no stream em caso de sucesso.
  */
-export async function publish(channel: string, message: object): Promise<boolean> {
+export async function streamAdd(stream: string, message: object): Promise<string | false> {
   const r = getRedis();
   if (!r) return false;
   try {
-    await r.publish(channel, JSON.stringify(message));
-    return true;
+    const id = await r.xadd(stream, '*', 'payload', JSON.stringify(message));
+    return id ?? false;
   } catch {
     return false;
-  }
-}
-
-/**
- * Cria um subscriber Redis isolado (não compartilha conexão com o client de cache).
- * O subscriber não pode fazer comandos normais — apenas subscribe.
- *
- * Retorna null se Redis estiver desabilitado.
- */
-export function createSubscriber(): Redis | null {
-  const url = getRedisUrl();
-  if (!url) return null;
-
-  try {
-    const sub = new Redis(url, {
-      maxRetriesPerRequest: 1,
-      retryStrategy(times) {
-        if (times > 3) return null;
-        return Math.min(times * 200, 1000);
-      },
-      lazyConnect: true,
-    });
-    return sub;
-  } catch {
-    return null;
   }
 }
 
