@@ -51,9 +51,9 @@ export interface AmazonConfig {
 // ─── Utilitários ─────────────────────────────────────────────────────────
 
 export const MARKETPLACE_DOMAINS: Record<Marketplace, RegExp[]> = {
-  shopee: [/shopee\.com\.br/i],
-  mercadolivre: [/mercadolivre\.com\.br/i, /meli\.la/i],
-  amazon: [/amazon\.com\.br/i, /amzn\.to/i],
+  shopee: [/shopee\.com\.br/i, /go\.promozone\.ai\/shopee/i],
+  mercadolivre: [/mercadolivre\.com\.br/i, /meli\.la/i, /go\.promozone\.ai\/mercadolivre/i],
+  amazon: [/amazon\.com\.br/i, /amzn\.to/i, /go\.promozone\.ai\/amazon/i],
   unknown: [],
 } as const;
 
@@ -64,3 +64,12 @@ export function detectMarketplace(url: string): Marketplace {
   }
   return 'unknown';
 }
+
+// ─── Tipos do pipeline de espelhamento ──────────────────────────────────
+
+export type { MirrorMessageEvent } from './mirror-message.ts';
+
+// ─── Constantes do pipeline ────────────────────────────────────────────
+
+/** Canal Redis para envio de mensagens de grupos de espelhamento */
+export const MIRROR_MESSAGE_CHANNEL = 'omestre:mirror:message';

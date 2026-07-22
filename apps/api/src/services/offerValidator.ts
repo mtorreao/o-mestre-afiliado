@@ -27,6 +27,7 @@ const KNOWN_SHORTENER_DOMAINS = [
   /shortlink\..*/i,
   /app\.mktplc\.*/i,
   /mercadoenvios\.com\.br/i,
+  /go\.promozone\.ai/i,
 ];
 
 // ─── Tipos ─────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ export async function resolveUrl(url: string): Promise<string> {
     const timeout = setTimeout(() => controller.abort(), 5000);
 
     const res = await fetch(url, {
-      method: 'HEAD',
+      method: 'GET',
       redirect: 'follow',
       signal: controller.signal,
       headers: {
@@ -97,6 +98,10 @@ export async function resolveUrl(url: string): Promise<string> {
     });
 
     clearTimeout(timeout);
+
+    // Cancela o body pra não baixar a página inteira — só queremos a URL final
+    try { await res.body?.cancel?.(); } catch {}
+
     return res.url || url;
   } catch {
     // Se falhar (timeout, rede), retorna a URL original
