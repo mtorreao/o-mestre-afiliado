@@ -6,8 +6,7 @@
     "dev": "bun --env-file ../../.env run --hot src/index.ts",
     "build": "bun build src/index.ts --outdir=dist --target=bun",
     "start": "bun run dist/index.js",
-    "typecheck": "tsc --noEmit",
-    "seed:ml": "bun run src/seed-ml.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.2.0",

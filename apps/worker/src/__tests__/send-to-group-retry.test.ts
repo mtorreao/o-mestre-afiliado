@@ -157,7 +157,6 @@ describe('sendToGroup — retry com backoff (3 tentativas, 2s/4s/8s)', () => {
       },
       MIRROR_CONVERSION_CACHE_PREFIX: 'mirror:conversion:',
       MIRROR_CONVERSION_CACHE_TTL: 3600,
-      MIRROR_MESSAGE_CHANNEL: 'omestre:mirror:message',
       MIRROR_STREAM: 'omestre:mirror:stream',
       MIRROR_CONSUMER_GROUP: 'omestre:mirror:workers',
       MIRROR_DLQ_LIST: 'mirror:dlq:entries',

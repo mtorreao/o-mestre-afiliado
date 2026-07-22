@@ -96,9 +96,6 @@ export type {
   FetchMessagesFn,
 } from './offer-validator.ts';
 
-/** (DEPRECATED) Canal Redis PubSub — mantido para referência */
-export const MIRROR_MESSAGE_CHANNEL = 'omestre:mirror:message';
-
 /** Stream Redis para fila persistente de mensagens de espelhamento */
 export const MIRROR_STREAM = 'omestre:mirror:stream';
 

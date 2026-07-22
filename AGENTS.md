@@ -12,7 +12,7 @@ Monorepo Bun Workspaces com 3 apps (`apps/`), 3 pacotes compartilhados (`package
 o-mestre-afiliado/
 ├── apps/
 │   ├── api/          # Elysia REST API (:5442)
-│   ├── worker/       # Background worker (fila + polling + pipeline)
+│   ├── worker/       # Background worker (pipeline de espelhamento via Redis Stream)
 │   └── web/          # React 19 + Vite 6 (:5441)
 ├── packages/
 │   ├── shared/       # Tipos e utils (@omestre/shared)
@@ -23,7 +23,6 @@ o-mestre-afiliado/
 ├── assets/
 │   └── logos/        # Logos do projeto
 ├── docs/             # Documentação de arquitetura
-├── data/             # Store de afiliados (legado — migrado para PostgreSQL)
 ├── scripts/          # Scripts auxiliares (dev.ts)
 ├── deploy/           # Config de deploy (cloudflared, etc.)
 ├── package.json      # Workspace raiz
@@ -59,7 +58,7 @@ o-mestre-afiliado/
 | Monorepo | Bun Workspaces |
 | API | Elysia 1.x |
 | Web | React 19, Vite 6 |
-| Worker | Bun runtime nativo (setInterval + fila em memória) |
+| Worker | Bun runtime nativo (Redis Stream + pipeline de espelhamento) |
 | Database ORM | Drizzle ORM |
 | Database | PostgreSQL 17 |
 | Cache | Redis 7 |
@@ -109,8 +108,9 @@ o-mestre-afiliado/
 
 ### Worker
 
-- Fila em memória (`queue: QueueItem[]`) — não há persistência.
-- 3 modos: `poll` (default), `batch` (--batch), `once` (--once).
+- Pipeline de espelhamento via Redis Stream com consumer group e ACK explícito.
+- Modo: `mirror` (default) — lê do Redis Stream continuamente.
+- Modos auxiliares: `--revalidate` (uma rodada) e `--revalidate-daemon` (daemon periódico).
 - Logs em JSON estruturado no stdout.
 - Graceful shutdown via SIGINT/SIGTERM.
 
@@ -180,9 +180,6 @@ Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
 | `ML_REFRESH_TOKEN` | Para ML OAuth | converters, api, worker |
 | `ML_COOKIES` | Para ML Cookies | converters, api, worker |
 | `API_PORT` | Não (default 5442) | api |
-| `WORKER_POLL_INTERVAL` | Não (default 30000) | worker |
-| `WORKER_MAX_RETRIES` | Não (default 3) | worker |
-| `WORKER_CONCURRENCY` | Não (default 5) | worker |
 | `EVOLUTION_API_KEY` | Sim | api, worker |
 | `EVOLUTION_WEBHOOK_URL` | Não | api |
 | `POSTGRES_URL` | Não | api, worker (URI completa) |
@@ -249,9 +246,7 @@ CREATE TABLE omestre.ml_affiliates (
 Acesso via `MlAffiliateRepository` em `packages/db/src/repository/mlAffiliates.repository.ts`.  
 Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch()`, `refreshTokens()`, `touch()`, `delete()`.
 
-> O arquivo `data/ml-affiliates.json` ainda existe como legado.  
-> O script `bun run seed:ml` (em `apps/api/src/seed-ml.ts`) faz a migração inicial.  
-> Dados novos são lidos/escritos exclusivamente via PostgreSQL.
+> Dados são lidos/escritos exclusivamente via PostgreSQL.
 
 ### Formatos de link gerados
 
@@ -299,7 +294,7 @@ Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch(
 
 **Converters:** nunca lançam — retornam `ConversionResult` com `success: false`.
 **API:** captura erros inesperados no handler e retorna HTTP 200 com `success: false`.
-**Worker:** usa retry com limite (`MAX_RETRIES`) antes de marcar como falha permanente.
+**Worker:** pipeline de espelhamento com retry e Dead Letter Queue.
 
 ### Logging
 

@@ -49,11 +49,6 @@
 │  │  │  envia para o store do backend    │                            │   │
 │  │  └────────────────────────────────────┘                            │   │
 │  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │  DATA                                                              │   │
-│  │  └── ml-affiliates.json  — Store de afiliados (tokens + cookies)    │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -69,7 +64,7 @@ Usuário (Web)
 ┌─────────────────────────────────────────────────┐
 │ apps/api/src/index.ts                           │
 │                                                  │
-│  1. Busca afiliado no store (ml-affiliates.json) │
+│  1. Busca afiliado no banco (tabela ml_affiliates) │
 │  2. Tem sessionCookies?                          │
 │     ├── SIM                                     │
 │     │   generateShortAffiliateLink()            │
@@ -99,7 +94,7 @@ Concatena como "nome=valor; nome=valor; ..."
     │ PUT /api/ml/affiliates/:mlUserId
     │ { sessionCookies: "..." }
     ▼
-Backend armazena em data/ml-affiliates.json
+Backend armazena no PostgreSQL (tabela ml_affiliates.session_cookies)
 ```
 
 ---
@@ -146,7 +141,6 @@ Cada app usa `bun --hot` para reload automático. **Nota:** arquivos de pacotes 
 | `ML_CLIENT_SECRET` | converters, api, worker | Para ML OAuth |
 | `ML_COOKIES` | converters, api, worker | Para ML Cookies |
 | `API_PORT` | api | Não (default 5442) |
-| `WORKER_POLL_INTERVAL` | worker | Não (default 30000ms) |
 | `EVOLUTION_API_KEY` | api, worker | Para Evolution API |
 | `POSTGRES_URL` | api, worker | URI do PostgreSQL |
 | `FRONTEND_URL` | api | Não (default http://localhost:5441) |
@@ -156,17 +150,18 @@ Cada app usa `bun --hot` para reload automático. **Nota:** arquivos de pacotes 
 
 ## 📦 Store de Afiliados
 
-Arquivo `data/ml-affiliates.json` — lido/escrito em cada request.
+Armazenamento no PostgreSQL (tabela `omestre.ml_affiliates`):
 
 ```typescript
-interface AffiliateRecord {
+interface MlAffiliateRecord {
+  id: number;
   mlUserId: string;
   nickname: string;
   accessToken: string;      // OAuth token
   refreshToken: string;
-  expiresAt: string;
-  connectedAt: string;
-  lastUsedAt: string;
+  expiresAt: Date;
+  connectedAt: Date;
+  lastUsedAt: Date;
   meliid?: string;          // URL param (formato antigo)
   melitat?: string;          // Etiqueta do afiliado
   sessionCookies?: string;   // Cookies de sessão ML (para link curto)
