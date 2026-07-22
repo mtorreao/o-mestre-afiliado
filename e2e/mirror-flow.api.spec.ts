@@ -196,7 +196,7 @@ test.describe('Mirror Flow — Groups Config', () => {
     const { status, body } = await authPostMirror(
       '/api/affiliate/groups-config',
       token,
-      { sourceGroups: [], targetGroup: { jid: '120363000000000003@g.us', name: 'Destino' } },
+      { sourceGroups: [], targetGroups: [{ jid: '120363000000000003@g.us', name: 'Destino' }] },
     );
     expect(body.success).toBe(false);
     expect(body.error).toContain('pelo menos 1');
@@ -213,13 +213,13 @@ test.describe('Mirror Flow — Groups Config', () => {
     const { status, body } = await authPostMirror(
       '/api/affiliate/groups-config',
       token,
-      { sourceGroups: manyGroups, targetGroup: { jid: '120363000000000003@g.us', name: 'Destino' } },
+      { sourceGroups: manyGroups, targetGroups: [{ jid: '120363000000000003@g.us', name: 'Destino' }] },
     );
     expect(body.success).toBe(false);
     expect(body.error).toContain('Máximo de 3');
   });
 
-  test('POST /api/affiliate/groups-config — valida targetGroup vazio', async () => {
+  test('POST /api/affiliate/groups-config — valida targetGroups vazio', async () => {
     const { token } = await createUserWithConnectedWhatsApp();
 
     const { status, body } = await authPostMirror(
@@ -227,11 +227,11 @@ test.describe('Mirror Flow — Groups Config', () => {
       token,
       {
         sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Grupo 1' }],
-        targetGroup: null,
+        targetGroups: null,
       },
     );
     expect(body.success).toBe(false);
-    expect(body.error).toMatch(/pelo menos 1|Selecione pelo menos|Selecione exatamente 1/);
+    expect(body.error).toMatch(/pelo menos 1|Selecione pelo menos/);
   });
 
   test('POST /api/affiliate/groups-config — valida ofertas com sucesso (simulador retorna 70%+ links)', async () => {
@@ -244,14 +244,14 @@ test.describe('Mirror Flow — Groups Config', () => {
       token,
       {
         sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
-        targetGroup: { jid: '120363000000000003@g.us', name: 'Grupo Teste 3' },
+        targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
       },
     );
     expect(status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.affiliateId).toBeDefined();
     expect(body.sourceGroups).toBeDefined();
-    expect(body.targetGroup).toBeDefined();
+    expect(body.targetGroups).toBeDefined();
   });
 });
 
@@ -271,7 +271,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
       token,
       {
         sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
-        targetGroup: { jid: '120363000000000003@g.us', name: 'Grupo Teste 3' },
+        targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
       },
     );
     expect(configRes.body.success).toBe(true);
@@ -328,7 +328,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // Configura grupos
     await authPostMirror('/api/affiliate/groups-config', token, {
       sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
-      targetGroup: { jid: '120363000000000003@g.us', name: 'Grupo Teste 3' },
+      targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     });
 
     // Mensagem SEM link de marketplace
@@ -369,7 +369,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // Configura grupos
     await authPostMirror('/api/affiliate/groups-config', token, {
       sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
-      targetGroup: { jid: '120363000000000003@g.us', name: 'Grupo Teste 3' },
+      targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     });
 
     // Mensagem de um grupo NÃO configurado como source
@@ -408,7 +408,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
 
     await authPostMirror('/api/affiliate/groups-config', token, {
       sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
-      targetGroup: { jid: '120363000000000003@g.us', name: 'Grupo Teste 3' },
+      targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     });
 
     // Mensagem com fromMe=true

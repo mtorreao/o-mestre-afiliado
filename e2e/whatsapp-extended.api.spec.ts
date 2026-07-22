@@ -81,7 +81,7 @@ test.describe('WhatsApp Groups - Auth', () => {
     const res = await fetch(`${API}/api/affiliate/groups-config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceGroups: [], targetGroup: {} }),
+      body: JSON.stringify({ sourceGroups: [], targetGroups: [] }),
     });
     expect(res.status).toBe(401);
   });
@@ -220,7 +220,7 @@ test.describe('Affiliate - Configurar Espelhamento de Grupos', () => {
       token,
       {
         sourceGroups: [],
-        targetGroup: { jid: '120363000000000@g.us', name: 'Destino' },
+        targetGroups: [{ jid: '120363000000000@g.us', name: 'Destino' }],
       },
     );
     expect(status).toBe(200);
@@ -228,7 +228,7 @@ test.describe('Affiliate - Configurar Espelhamento de Grupos', () => {
     expect(body.error).toContain('Selecione pelo menos 1');
   });
 
-  test('deve rejeitar se targetGroup estiver vazio', async () => {
+  test('deve rejeitar se targetGroups estiver vazio', async () => {
     const { token } = await createTestUser();
 
     const { status, body } = await authPost(
@@ -236,15 +236,15 @@ test.describe('Affiliate - Configurar Espelhamento de Grupos', () => {
       token,
       {
         sourceGroups: [{ jid: '120363123@g.us', name: 'Fonte' }],
-        targetGroup: null,
+        targetGroups: null,
       },
     );
     expect(status).toBe(200);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('Selecione exatamente 1');
+    expect(body.error).toContain('pelo menos 1');
   });
 
-  test('deve rejeitar se targetGroup não tiver jid', async () => {
+  test('deve rejeitar se targetGroups for array vazio', async () => {
     const { token } = await createTestUser();
 
     const { status, body } = await authPost(
@@ -252,12 +252,12 @@ test.describe('Affiliate - Configurar Espelhamento de Grupos', () => {
       token,
       {
         sourceGroups: [{ jid: '120363123@g.us', name: 'Fonte' }],
-        targetGroup: { name: 'Destino sem JID' },
+        targetGroups: [],
       },
     );
     expect(status).toBe(200);
     expect(body.success).toBe(false);
-    expect(body.error).toContain('Selecione exatamente 1');
+    expect(body.error).toContain('pelo menos 1');
   });
 
   test('deve rejeitar mais de 3 sourceGroups', async () => {
@@ -273,7 +273,7 @@ test.describe('Affiliate - Configurar Espelhamento de Grupos', () => {
           { jid: '3@g.us', name: 'G3' },
           { jid: '4@g.us', name: 'G4' },
         ],
-        targetGroup: { jid: '999@g.us', name: 'Destino' },
+        targetGroups: [{ jid: '999@g.us', name: 'Destino' }],
       },
     );
     expect(status).toBe(200);
@@ -293,7 +293,7 @@ test.describe('Affiliate - Configurar Espelhamento de Grupos', () => {
         sourceGroups: [
           { jid: '120363111111111@g.us', name: 'Ofertas Grupo 1' },
         ],
-        targetGroup: { jid: '120363222222222@g.us', name: 'Repasse' },
+        targetGroups: [{ jid: '120363222222222@g.us', name: 'Repasse' }],
       },
     );
     expect(status).toBe(200);
@@ -307,7 +307,7 @@ test.describe('Affiliate - Configurar Espelhamento de Grupos', () => {
       // deve retornar affiliateId
       expect(body.affiliateId).toBeDefined();
       expect(body.sourceGroups).toBeInstanceOf(Array);
-      expect(body.targetGroup).toBeDefined();
+      expect(body.targetGroups).toBeDefined();
     }
   });
 
@@ -319,7 +319,7 @@ test.describe('Affiliate - Configurar Espelhamento de Grupos', () => {
       token,
       {
         sourceGroups: [{ name: 'Grupo inválido' }],
-        targetGroup: { jid: '120363000@g.us', name: 'Destino' },
+        targetGroups: [{ jid: '120363000@g.us', name: 'Destino' }],
       },
     );
     expect(status).toBe(200);
