@@ -90,6 +90,7 @@ const app = new Elysia()
       'whatsapp/connect': 'POST /api/whatsapp/connect',
       'whatsapp/status': 'GET /api/whatsapp/status',
       'whatsapp/disconnect': 'DELETE /api/whatsapp/disconnect',
+      'whatsapp/regenerate-qr': 'POST /api/whatsapp/regenerate-qr',
       'worker/status': 'GET /api/worker/status',
       docs: '/docs',
     },

@@ -30,6 +30,7 @@ export function WppConnection({ token }: WppConnectionProps) {
   const [state, setState] = useState<WppState>({ status: 'loading' });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectingRef = useRef(false);
+  const regeneratingRef = useRef(false);
 
   // ─── Buscar status inicial ─────────────────────────────────────────
   const fetchStatus = useCallback(async () => {
@@ -188,6 +189,46 @@ export function WppConnection({ token }: WppConnectionProps) {
     }
   }
 
+  // ─── Regenerar QR Code ──────────────────────────────────────────
+  async function handleRegenerateQR() {
+    if (regeneratingRef.current) return;
+    regeneratingRef.current = true;
+
+    setState({ status: 'connecting' });
+
+    try {
+      const res = await fetch('/api/whatsapp/regenerate-qr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json() as {
+        success: boolean;
+        qrcode?: string;
+        error?: string;
+      };
+
+      if (!data.success) {
+        setState({ status: 'error', message: data.error || 'Falha ao regenerar QR Code' });
+        return;
+      }
+
+      if (data.qrcode) {
+        setState({ status: 'awaiting_scan', qrcode: data.qrcode });
+        // Inicia polling
+        startPolling();
+      } else {
+        setState({ status: 'error', message: 'QR Code não retornado pela Evolution API' });
+      }
+    } catch (err) {
+      setState({ status: 'error', message: err instanceof Error ? err.message : 'Erro de conexão' });
+    } finally {
+      regeneratingRef.current = false;
+    }
+  }
+
   // ─── Estilos compartilhados ─────────────────────────────────────────
   const cardStyle: React.CSSProperties = {
     background: '#1e293b',
@@ -230,6 +271,12 @@ export function WppConnection({ token }: WppConnectionProps) {
   const redButton: React.CSSProperties = {
     ...buttonStyle,
     background: '#ef4444',
+    color: 'white',
+  };
+
+  const orangeButton: React.CSSProperties = {
+    ...buttonStyle,
+    background: '#f59e0b',
     color: 'white',
   };
 
@@ -342,12 +389,21 @@ export function WppConnection({ token }: WppConnectionProps) {
                 {state.phone}
               </div>
             )}
-            <button
-              onClick={handleDisconnect}
-              style={redButton}
-            >
-              Desconectar WhatsApp
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button
+                onClick={handleRegenerateQR}
+                disabled={regeneratingRef.current}
+                style={regeneratingRef.current ? { ...orangeButton, opacity: 0.6, cursor: 'not-allowed' } : orangeButton}
+              >
+                {regeneratingRef.current ? 'Regenerando...' : '🔄 Regenerar QR Code'}
+              </button>
+              <button
+                onClick={handleDisconnect}
+                style={redButton}
+              >
+                Desconectar WhatsApp
+              </button>
+            </div>
           </>
         );
 
@@ -369,17 +425,26 @@ export function WppConnection({ token }: WppConnectionProps) {
             <div style={{ color: '#f87171', fontSize: '0.9rem', textAlign: 'center' }}>
               {state.message}
             </div>
-            <button
-              onClick={handleConnect}
-              style={{
-                ...greenButton,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-              }}
-            >
-              Tentar novamente
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button
+                onClick={handleConnect}
+                style={{
+                  ...greenButton,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                Tentar novamente
+              </button>
+              <button
+                onClick={handleRegenerateQR}
+                disabled={regeneratingRef.current}
+                style={regeneratingRef.current ? { ...orangeButton, opacity: 0.6, cursor: 'not-allowed' } : orangeButton}
+              >
+                {regeneratingRef.current ? 'Regenerando...' : '🔄 Regenerar QR Code'}
+              </button>
+            </div>
           </>
         );
     }
