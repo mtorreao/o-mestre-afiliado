@@ -7,11 +7,15 @@
  * Estrutura no Redis:
  *   mirror:source-group:{jid} → { affiliateId: number, groupName: string }
  *
- * O webhook consulta este cache (O(1)), sem fallback ao DB.
- * A população acontece via API quando o usuário configura grupos.
+ * O webhook consulta este cache (O(1)), com fallback ao PostgreSQL
+ * se a chave não estiver no Redis (TTL expirou, crash, etc.).
+ * O fallback popula o cache automaticamente para evitar nova consulta DB.
  */
 
 import { getRedis, cacheDel } from './redis.ts';
+import { AffiliatesRepository } from '@omestre/db';
+
+const affiliatesRepo = new AffiliatesRepository();
 
 const CACHE_PREFIX = 'mirror:source-group:';
 const CACHE_SET_KEY = 'mirror:source-groups:all';
@@ -29,46 +33,95 @@ export interface SourceGroupCacheEntry {
  * Extrai o affiliateId e nome do grupo do cache para um JID de grupo de origem.
  * Retorna null se o JID não for um sourceGroup conhecido.
  *
- * NÃO consulta o banco — apenas Redis. Se não estiver no cache,
- * a mensagem não é de um grupo de espelhamento configurado.
+ * 1. Consulta Redis (O(1)) — hot path
+ * 2. Se Redis não tem a chave, consulta PostgreSQL (fallback)
+ * 3. Se encontrou no DB, popula o cache automaticamente
  */
 export async function getAffiliateIdBySourceGroup(
   groupJid: string,
 ): Promise<number | null> {
+  // ── 1. Tenta Redis ──────────────────────────────────────────────────
   const r = getRedis();
-  if (!r) return null;
-
-  try {
-    const raw = await r.get(`${CACHE_PREFIX}${groupJid}`);
-    if (!raw) return null;
-    const data = JSON.parse(raw) as SourceGroupCacheEntry;
-    // Renova o TTL no acesso para manter entradas quentes vivas
-    await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
-    return data.affiliateId;
-  } catch {
-    return null;
+  if (r) {
+    try {
+      const raw = await r.get(`${CACHE_PREFIX}${groupJid}`);
+      if (raw) {
+        const data = JSON.parse(raw) as SourceGroupCacheEntry;
+        // Renova o TTL no acesso para manter entradas quentes vivas
+        await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
+        return data.affiliateId;
+      }
+    } catch {
+      // fallback silencioso para PostgreSQL
+    }
   }
+
+  // ── 2. Fallback: PostgreSQL ─────────────────────────────────────────
+  try {
+    const affiliate = await affiliatesRepo.findBySourceGroupJid(groupJid);
+    if (affiliate) {
+      // Encontrou no DB — popula o cache para evitar nova consulta DB
+      const groups = affiliate.sourceGroups as { jid: string; name: string }[] | null;
+      const groupName = groups?.find((g) => g.jid === groupJid)?.name ?? '';
+      await cacheSourceGroup(groupJid, affiliate.id, groupName);
+      console.log(
+        `[group-cache] Fallback DB: sourceGroup ${groupJid} carregado para ` +
+        `affiliateId=${affiliate.id} (cache foi populado)`,
+      );
+      return affiliate.id;
+    }
+  } catch {
+    // silencia falha de DB
+  }
+
+  return null;
 }
 
 /**
  * Versão completa: retorna affiliateId + groupName do cache.
  * Útil quando o caller precisa do nome do grupo para logging ou enriquecimento.
+ *
+ * 1. Consulta Redis (O(1)) — hot path
+ * 2. Se Redis não tem a chave, consulta PostgreSQL (fallback)
+ * 3. Se encontrou no DB, popula o cache automaticamente
  */
 export async function getSourceGroupInfo(
   groupJid: string,
 ): Promise<SourceGroupCacheEntry | null> {
+  // ── 1. Tenta Redis ──────────────────────────────────────────────────
   const r = getRedis();
-  if (!r) return null;
-
-  try {
-    const raw = await r.get(`${CACHE_PREFIX}${groupJid}`);
-    if (!raw) return null;
-    // Renova o TTL no acesso
-    await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
-    return JSON.parse(raw) as SourceGroupCacheEntry;
-  } catch {
-    return null;
+  if (r) {
+    try {
+      const raw = await r.get(`${CACHE_PREFIX}${groupJid}`);
+      if (raw) {
+        // Renova o TTL no acesso
+        await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
+        return JSON.parse(raw) as SourceGroupCacheEntry;
+      }
+    } catch {
+      // fallback silencioso para PostgreSQL
+    }
   }
+
+  // ── 2. Fallback: PostgreSQL ─────────────────────────────────────────
+  try {
+    const affiliate = await affiliatesRepo.findBySourceGroupJid(groupJid);
+    if (affiliate) {
+      const groups = affiliate.sourceGroups as { jid: string; name: string }[] | null;
+      const groupName = groups?.find((g) => g.jid === groupJid)?.name ?? '';
+      const entry: SourceGroupCacheEntry = { affiliateId: affiliate.id, groupName };
+      await cacheSourceGroup(groupJid, affiliate.id, groupName);
+      console.log(
+        `[group-cache] Fallback DB: sourceGroup ${groupJid} info carregada para ` +
+        `affiliateId=${affiliate.id} (cache foi populado)`,
+      );
+      return entry;
+    }
+  } catch {
+    // silencia falha de DB
+  }
+
+  return null;
 }
 
 /**
@@ -198,5 +251,38 @@ export async function clearSourceGroupCache(): Promise<void> {
     await pipeline.exec();
   } catch {
     // silencia
+  }
+}
+
+/**
+ * Warm-up: carrega todos os sourceGroups do PostgreSQL para o Redis.
+ *
+ * Deve ser chamado no startup da API para garantir que o cache
+ * de sourceGroups esteja populado antes de começar a receber
+ * webhooks da Evolution API.
+ *
+ * Loga quantos grupos foram carregados.
+ */
+export async function warmSourceGroupCache(): Promise<void> {
+  try {
+    const all = await affiliatesRepo.findAllActiveWithSourceGroups();
+    let totalGroups = 0;
+
+    for (const affiliate of all) {
+      const groups = affiliate.sourceGroups as { jid: string; name: string }[] | null;
+      if (!groups || groups.length === 0) continue;
+
+      for (const group of groups) {
+        await cacheSourceGroup(group.jid, affiliate.id, group.name);
+        totalGroups++;
+      }
+    }
+
+    console.log(
+      `🔥 Cache de sourceGroups warmado: ${totalGroups} grupo(s) carregado(s) ` +
+      `de ${all.length} afiliado(s) ativo(s)`,
+    );
+  } catch (error) {
+    console.error('[group-cache] Erro ao warmar cache de sourceGroups:', error);
   }
 }

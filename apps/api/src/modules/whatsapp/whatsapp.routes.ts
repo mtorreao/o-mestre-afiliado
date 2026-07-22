@@ -11,8 +11,11 @@ import {
   fetchGroups,
 } from '../../services/evolution.ts';
 import { cacheGet, cacheSet, cacheDel } from '../../services/redis.ts';
+import { removeSourceGroups } from '../../services/group-cache.ts';
+import { AffiliatesRepository } from '@omestre/db';
 
 const instanceRepo = new WhatsAppInstanceRepository();
+const affiliatesRepo = new AffiliatesRepository();
 
 // Mapeia estado da Evolution API para nosso domínio
 function mapStatus(evolutionState: string): string {
@@ -296,6 +299,23 @@ export const whatsAppRoutes = new Elysia()
 
       // Invalida cache de grupos
       await cacheDel(`whatsapp:groups:${instanceName}`);
+
+      // Limpa cache de sourceGroups do afiliado
+      try {
+        const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
+        if (affiliate?.sourceGroups) {
+          const jids = (affiliate.sourceGroups as { jid: string; name: string }[]).map((g) => g.jid);
+          if (jids.length > 0) {
+            await removeSourceGroups(jids);
+            console.log(
+              `[whatsapp] Cache de sourceGroups limpo para ${instanceName} ` +
+              `(${jids.length} grupo(s) removido(s))`,
+            );
+          }
+        }
+      } catch {
+        // Falha silenciosa — cache pode já estar vazio
+      }
 
       await logoutInstance(instanceName);
 

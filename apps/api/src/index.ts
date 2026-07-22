@@ -18,6 +18,7 @@ import { authRoutes } from './modules/auth/auth.routes.ts';
 import { affiliateRoutes } from './modules/affiliate/affiliate.routes.ts';
 import { whatsAppRoutes } from './modules/whatsapp/whatsapp.routes.ts';
 import { webhookRoutes } from './modules/webhook/webhook.routes.ts';
+import { warmSourceGroupCache } from './services/group-cache.ts';
 
 const PORT = parseInt(process.env.API_PORT || '5442', 10);
 const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
@@ -593,7 +594,14 @@ const app = new Elysia()
         workerUrl: WORKER_METRICS_URL,
       };
     }
-  });
+  })
+
+  // ─── Cache warming no startup ─────────────────────────────────────
+  .onStart(async () => {
+    // Carrega todos os sourceGroups do PostgreSQL para o Redis
+    // para evitar que mensagens sejam ignoradas após restart
+    await warmSourceGroupCache();
+  })
 
 app.listen(PORT);
 
