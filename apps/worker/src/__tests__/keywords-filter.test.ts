@@ -202,7 +202,7 @@ describe('Filtro por keywords (whitelist)', () => {
   describe('filters.keywords vazio / ausente — não filtra', () => {
     it('keywords vazio [] — passa sem bloquear por keywords', async () => {
       setKeywords([]); // explícito
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('qualquer coisa https://shopee.com.br/p/1', 'empty-1'));
       expect(blockedByKeywords()).toBe(false);
     });
@@ -211,14 +211,14 @@ describe('Filtro por keywords (whitelist)', () => {
       // Busca no banco: o row tem filters, mas a query select({ filters: affiliates.filters })
       // retorna o valor de affiliates.filters, que é o mock vazio ({}) — então filters é undefined
       // e keywords?.length é undefined → não entra no if
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('mensagem comum https://shopee.com.br/p/2', 'undef-1'));
       expect(blockedByKeywords()).toBe(false);
     });
 
     it('noRows (afiliado não encontrado) — getFilters retorna null, passa', async () => {
       mockDbState.noRows = true;
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('sem afiliado https://shopee.com.br/p/3', 'norow-1'));
       expect(blockedByKeywords()).toBe(false);
     });
@@ -231,21 +231,21 @@ describe('Filtro por keywords (whitelist)', () => {
   describe('keywords preenchida e mensagem CONTÉM keyword — passa', () => {
     it('match na keyword exata', async () => {
       setKeywords(['promoção']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('PROMOÇÃO imperdível! https://shopee.com.br/p/a'));
       expect(blockedByKeywords()).toBe(false);
     });
 
     it('case insensitive — keyword maiúscula, texto sem acento minúsculo', async () => {
       setKeywords(['PROMOCAO']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('aproveite a promocao https://shopee.com.br/p/b'));
       expect(blockedByKeywords()).toBe(false);
     });
 
     it('case insensitive — keyword minúscula, texto maiúsculo acentuado', async () => {
       setKeywords(['promocao']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('PROMOÇÃO RELÂMPAGO https://shopee.com.br/p/c'));
       // 'promocao' não contém acento, 'PROMOÇÃO' com lower() = 'promoção'
       // .includes('promocao') em 'promoção' → FALSE em JS
@@ -256,14 +256,14 @@ describe('Filtro por keywords (whitelist)', () => {
 
     it('múltiplas keywords — acerta a última (motorola)', async () => {
       setKeywords(['iphone', 'samsung', 'xiaomi', 'motorola', 'lg']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('MOTOROLA EDGE 40 https://shopee.com.br/p/d'));
       expect(blockedByKeywords()).toBe(false);
     });
 
     it('keyword dentro da URL', async () => {
       setKeywords(['iphone']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Veja: https://shopee.com.br/iphone-15'));
       expect(blockedByKeywords()).toBe(false);
     });
@@ -271,21 +271,21 @@ describe('Filtro por keywords (whitelist)', () => {
     it('keyword como substring de palavra maior', async () => {
       // O código usa .includes(), então 'note' em 'notebook' corresponde
       setKeywords(['note']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Notebook Dell https://shopee.com.br/p/e'));
       expect(blockedByKeywords()).toBe(false);
     });
 
     it('keyword com números', async () => {
       setKeywords(['rtx 4070']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('RTX 4070 Ti https://shopee.com.br/p/f'));
       expect(blockedByKeywords()).toBe(false);
     });
 
     it('acentos preservados — match funciona', async () => {
       setKeywords(['promoção']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Na promoção hoje! https://shopee.com.br/p/g'));
       expect(blockedByKeywords()).toBe(false);
     });
@@ -298,7 +298,7 @@ describe('Filtro por keywords (whitelist)', () => {
   describe('keywords preenchida e mensagem NÃO CONTÉM keyword — bloqueia', () => {
     it('bloqueia com reason=keywords', async () => {
       setKeywords(['promoção', 'oferta', 'desconto']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Olha que legal! https://shopee.com.br/p/block1'));
 
       expect(blockedByKeywords()).toBe(true);
@@ -310,7 +310,7 @@ describe('Filtro por keywords (whitelist)', () => {
 
     it('bloqueia corretamente — métrica incrementada com reason="keywords"', async () => {
       setKeywords(['frete grátis']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Produto sem frete gratis https://shopee.com.br/p/block2'));
 
       const kwBlock = metricCalls.find(
@@ -322,7 +322,7 @@ describe('Filtro por keywords (whitelist)', () => {
 
     it('keyword multi-palavra — não corresponde se apenas parte aparece', async () => {
       setKeywords(['frete grátis']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       // "frete" aparece mas "frete grátis" (junto) não aparece
       await processMirrorMessage(msg('Frete hoje mesmo https://shopee.com.br/p/block3'));
       expect(blockedByKeywords()).toBe(true);
@@ -330,7 +330,7 @@ describe('Filtro por keywords (whitelist)', () => {
 
     it('não trata keywords como regex — caractere especial não escapa', async () => {
       setKeywords(['produto+']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       // "produto" aparece mas "produto+" não (e .includes() trata literalmente)
       await processMirrorMessage(msg('melhor produto do ano https://shopee.com.br/p/block4'));
       expect(blockedByKeywords()).toBe(true);
@@ -338,14 +338,14 @@ describe('Filtro por keywords (whitelist)', () => {
 
     it('keyword com número diferente — não corresponde', async () => {
       setKeywords(['rtx 4070']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Placa RTX 3060 https://shopee.com.br/p/block5'));
       expect(blockedByKeywords()).toBe(true);
     });
 
     it('nenhuma das múltiplas keywords corresponde', async () => {
       setKeywords(['iphone', 'samsung', 'motorola']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('Xiaomi Redmi Note https://shopee.com.br/p/block6'));
       expect(blockedByKeywords()).toBe(true);
     });
@@ -361,7 +361,7 @@ describe('Filtro por keywords (whitelist)', () => {
       setKeywords(['promoção']);
       mockDbState.row.filters.blacklist = ['lixo'];
 
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(
         msg('Que promoção lixo! https://shopee.com.br/p/order1', 'order1'),
       );
@@ -373,7 +373,7 @@ describe('Filtro por keywords (whitelist)', () => {
 
     it('mensagem sem URL é bloqueada como no_url antes de qualquer filtro', async () => {
       setKeywords(['promoção']);
-      const { processMirrorMessage } = await import('./mirror-pipeline.ts');
+      const { processMirrorMessage } = await import('../mirror-pipeline.ts');
       await processMirrorMessage(msg('apenas texto sem link'));
 
       // Deve bloquear como no_url, sem chegar a keywords

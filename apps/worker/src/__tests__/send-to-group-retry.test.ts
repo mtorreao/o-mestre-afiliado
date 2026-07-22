@@ -164,9 +164,9 @@ describe('sendToGroup — retry com backoff (3 tentativas, 2s/4s/8s)', () => {
       MIRROR_DLQ_INDEX: 'mirror:dlq:index',
       MIRROR_DLQ_TTL: 7 * 24 * 3600,
       MARKETPLACE_DOMAINS: {
-        shopee: [/shopee/, /go\\.promozone\\.ai\\/shopee/],
-        mercadolivre: [/mercadolivre/, /meli/, /go\\.promozone\\.ai\\/mercadolivre/],
-        amazon: [/amazon/, /amzn/, /go\\.promozone\\.ai\\/amazon/],
+        shopee: [/shopee/, /go\.promozone\.ai\/shopee/],
+        mercadolivre: [/mercadolivre/, /meli/, /go\.promozone\.ai\/mercadolivre/],
+        amazon: [/amazon/, /amzn/, /go\.promozone\.ai\/amazon/],
         unknown: [],
       },
       MirrorMessageEvent: class {},
