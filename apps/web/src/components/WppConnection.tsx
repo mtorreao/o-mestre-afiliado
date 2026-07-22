@@ -19,7 +19,7 @@ interface WppConnectionProps {
 type WppState =
   | { status: 'loading' }
   | { status: 'disconnected' }
-  | { status: 'connecting' }
+  | { status: 'connecting'; message?: string }
   | { status: 'awaiting_scan'; qrcode: string }
   | { status: 'connected'; phone: string | null }
   | { status: 'error'; message: string };
@@ -79,12 +79,46 @@ export function WppConnection({ token }: WppConnectionProps) {
             }
             setState({ status: 'connected', phone: null });
           } else if (data.status === 'disconnected' || data.status === 'close') {
-            // QR expirou ou conexão perdida
-            if (pollRef.current) {
-              clearInterval(pollRef.current);
-              pollRef.current = null;
+            // QR expirou — tentar auto-recovery 1x
+            if (regeneratingRef.current) return;
+
+            regeneratingRef.current = true;
+            setState({ status: 'connecting', message: 'QR expirou — regenerando...' });
+
+            try {
+              const regRes = await fetch('/api/whatsapp/regenerate-qr', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+              const regData = await regRes.json() as {
+                success: boolean;
+                qrcode?: string;
+                error?: string;
+              };
+
+              if (regData.success && regData.qrcode) {
+                // Auto-recovery bem-sucedido → novo QR, polling continua
+                setState({ status: 'awaiting_scan', qrcode: regData.qrcode });
+              } else {
+                // Auto-recovery falhou → parar polling e mostrar erro
+                if (pollRef.current) {
+                  clearInterval(pollRef.current);
+                  pollRef.current = null;
+                }
+                setState({ status: 'error', message: regData.error || 'QR Code expirou. Clique em Regenerar QR Code.' });
+              }
+            } catch {
+              if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+              setState({ status: 'error', message: 'QR Code expirou. Clique em Regenerar QR Code.' });
+            } finally {
+              regeneratingRef.current = false;
             }
-            setState({ status: 'error', message: 'QR Code expirou. Tente novamente.' });
           }
           // Se ainda 'connecting', continua polling
         }
@@ -334,7 +368,7 @@ export function WppConnection({ token }: WppConnectionProps) {
             }} />
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-              Conectando ao WhatsApp...
+              {state.message || 'Conectando ao WhatsApp...'}
             </span>
           </div>
         );
@@ -361,6 +395,9 @@ export function WppConnection({ token }: WppConnectionProps) {
             <div style={{ color: '#64748b', fontSize: '0.8rem', textAlign: 'center' }}>
               Abra o WhatsApp no celular → Menu ou Configurações →
               Dispositivos Conectados → Conectar um dispositivo
+            </div>
+            <div style={{ color: '#fbbf24', fontSize: '0.8rem', textAlign: 'center' }}>
+              ⏱ Este QR expira em ~60 segundos
             </div>
           </>
         );
@@ -426,17 +463,6 @@ export function WppConnection({ token }: WppConnectionProps) {
               {state.message}
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <button
-                onClick={handleConnect}
-                style={{
-                  ...greenButton,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                }}
-              >
-                Tentar novamente
-              </button>
               <button
                 onClick={handleRegenerateQR}
                 disabled={regeneratingRef.current}
