@@ -16,7 +16,7 @@
  *   - Verifica expire() chamado em todas as operações de leitura
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, mock, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
 
 // ══════════════════════════════════════════════════════════════════════
 // CACHE_TTL deve ser 3600 (1 hora) — validamos nas assertions

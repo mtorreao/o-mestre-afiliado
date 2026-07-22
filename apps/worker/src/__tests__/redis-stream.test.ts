@@ -21,7 +21,7 @@
  *  10. XADD → XREADGROUP → XACK — ciclo completo
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test';
+import { describe, it, expect, mock, beforeAll, afterAll, beforeEach, afterEach, spyOn } from 'bun:test';
 import type { MirrorMessageEvent, MirrorDLQEntry } from '@omestre/shared';
 import { MIRROR_STREAM, MIRROR_CONSUMER_GROUP, MIRROR_DLQ_LIST, MIRROR_DLQ_INDEX } from '@omestre/shared';
 

@@ -13,7 +13,7 @@
  *     usa console.log spy para verificar notificações
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test';
 
 // ══════════════════════════════════════════════════════════════════════
 // Fake Redis — implementação mínima para interceptar chamadas
@@ -65,18 +65,25 @@ class FakeRedis {
 // (Bun module cache: primeiro import fixa as referências)
 // ══════════════════════════════════════════════════════════════════════
 
-mock.module('ioredis', () => ({ default: FakeRedis }));
-
 // ══════════════════════════════════════════════════════════════════════
-// Testes: classifyConversionError (pure function)
+// Testes
 // ══════════════════════════════════════════════════════════════════════
 
-describe('classifyConversionError', () => {
-  let classifyConversionError: typeof import('./notifier.ts').classifyConversionError;
+describe('notifier', () => {
+  beforeAll(() => {
+    mock.module('ioredis', () => ({ default: FakeRedis }));
+  });
+
+  afterAll(() => {
+    mock.restore();
+  });
+
+  describe('classifyConversionError', () => {
+  let classifyConversionError: typeof import('../notifier.ts').classifyConversionError;
 
   beforeEach(async () => {
     redisState.clear();
-    const mod = await import('./notifier.ts');
+    const mod = await import('../notifier.ts');
     classifyConversionError = mod.classifyConversionError;
   });
 
@@ -155,11 +162,11 @@ describe('classifyConversionError', () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe('getNotifiableType', () => {
-  let getNotifiableType: typeof import('./notifier.ts').getNotifiableType;
+  let getNotifiableType: typeof import('../notifier.ts').getNotifiableType;
 
   beforeEach(async () => {
     redisState.clear();
-    const mod = await import('./notifier.ts');
+    const mod = await import('../notifier.ts');
     getNotifiableType = mod.getNotifiableType;
   });
 
@@ -183,7 +190,7 @@ describe('getNotifiableType', () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe('processFailure', () => {
-  let processFailure: typeof import('./notifier.ts').processFailure;
+  let processFailure: typeof import('../notifier.ts').processFailure;
   let consoleLogCalls: unknown[][];
   let originalConsoleLog: typeof console.log;
   let originalFetch: typeof globalThis.fetch;
@@ -207,7 +214,7 @@ describe('processFailure', () => {
       return new Response('OK', { status: 200 }) as unknown as Response;
     };
 
-    const mod = await import('./notifier.ts');
+    const mod = await import('../notifier.ts');
     processFailure = mod.processFailure;
   });
 
@@ -434,4 +441,5 @@ describe('processFailure', () => {
       expect(msg).toContain('3 ofertas');
     });
   });
+});
 });

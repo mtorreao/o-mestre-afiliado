@@ -19,7 +19,7 @@
  * o módulo (que é recarregado via import dinâmico no Bun test).
  */
 
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeAll, afterAll, beforeEach } from 'bun:test';
 import type { MirrorMessageEvent } from '@omestre/shared';
 
 // ========================================================
@@ -67,91 +67,99 @@ function setKeywords(kws: string[]) {
   mockDbState.row.filters.keywords = kws;
 }
 
-// ========================================================
-// Mocks — executados ANTES de qualquer import do módulo
-// ========================================================
-
-mock.module('./conversion-cache.ts', () => ({
-  getCachedConversion: () => Promise.resolve(null),
-  setCachedConversion: () => Promise.resolve(),
-}));
-
-mock.module('./rate-limiter.ts', () => ({
-  tryAcquireSlot: () => Promise.resolve({ acquired: true, waitMs: 0 }),
-  waitForSlot: () => Promise.resolve(true),
-}));
-
-mock.module('./notifier.ts', () => ({
-  processFailure: () => Promise.resolve(),
-  classifyConversionError: () => null,
-}));
-
-mock.module('./dead-letter-queue.ts', () => ({
-  pushToDLQ: () => Promise.resolve(),
-}));
-
-mock.module('./metrics.ts', () => ({
-  incrementCounter: (name: string, labels?: Record<string, string>) => {
-    metricCalls.push({ name, labels });
-  },
-  observeHistogram: () => {},
-}));
-
-// ── DB mock — usa estado mutável ──
-mock.module('@omestre/db', () => ({
-  getDb: () => ({
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => {
-            if (mockDbState.noRows) return Promise.resolve([]);
-            return Promise.resolve([{ ...mockDbState.row }]);
-          },
-        }),
-      }),
-    }),
-  }),
-  affiliates: {},
-  reflectedOffers: {},
-  UserCredentialsRepository: class {
-    async findByUserId() {
-      return null;
-    }
-  },
-  MlAffiliateRepository: class {
-    async findByPlatformUserId() {
-      return null;
-    }
-  },
-  AffiliatesRepository: class {},
-}));
-
-mock.module('@omestre/shared', () => ({
-  detectMarketplace: (url: string) => {
-    if (url.includes('shopee')) return 'shopee';
-    if (url.includes('mercadolivre') || url.includes('meli')) return 'mercadolivre';
-    if (url.includes('amazon')) return 'amazon';
-    return 'unknown';
-  },
-}));
-
-mock.module('@omestre/converters', () => ({
-  convertUrl: () =>
-    Promise.resolve({ success: false, affiliateUrl: null, error: 'simulated' }),
-  convertShopeeUrlWithCredentials: () =>
-    Promise.resolve({ success: false, affiliateUrl: null, error: 'simulated' }),
-  generateShortAffiliateLink: () =>
-    Promise.resolve({ success: false, shortUrl: null, error: 'simulated' }),
-  generateViaUrlParams: () => 'https://example.com/params',
-  convertAmazonUrlWithTrackingId: () =>
-    Promise.resolve({ success: false, affiliateUrl: null, error: 'simulated' }),
-}));
-
 // ════════════════════════════════════════════════════════
 // Testes
 // ════════════════════════════════════════════════════════
 
 describe('Filtro por keywords (whitelist)', () => {
+  // ✅ beforeAll/afterAll isolam mocks entre test files (mock.module é global)
+  beforeAll(() => {
+    mock.restore(); // limpa mocks de outros arquivos
+    // ── Cache de conversão (Redis) — sempre miss ──
+    mock.module('./conversion-cache.ts', () => ({
+      getCachedConversion: () => Promise.resolve(null),
+      setCachedConversion: () => Promise.resolve(),
+    }));
+
+    // ── Rate limiter (Redis) — sempre concede slot ──
+    mock.module('./rate-limiter.ts', () => ({
+      tryAcquireSlot: () => Promise.resolve({ acquired: true, waitMs: 0 }),
+      waitForSlot: () => Promise.resolve(true),
+    }));
+
+    // ── Notifier (Redis) — silencioso ──
+    mock.module('./notifier.ts', () => ({
+      processFailure: () => Promise.resolve(),
+      classifyConversionError: () => null,
+    }));
+
+    // ── Dead Letter Queue (Redis) — silenciosa ──
+    mock.module('./dead-letter-queue.ts', () => ({
+      pushToDLQ: () => Promise.resolve(),
+    }));
+
+    // ── Métricas — contador de chamadas ──
+    mock.module('./metrics.ts', () => ({
+      incrementCounter: (name: string, labels?: Record<string, string>) => {
+        metricCalls.push({ name, labels });
+      },
+      observeHistogram: () => {},
+    }));
+
+    // ── DB mock — usa estado mutável ──
+    mock.module('@omestre/db', () => ({
+      getDb: () => ({
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              limit: () => {
+                if (mockDbState.noRows) return Promise.resolve([]);
+                return Promise.resolve([{ ...mockDbState.row }]);
+              },
+            }),
+          }),
+        }),
+      }),
+      affiliates: {},
+      reflectedOffers: {},
+      UserCredentialsRepository: class {
+        async findByUserId() {
+          return null;
+        }
+      },
+      MlAffiliateRepository: class {
+        async findByPlatformUserId() {
+          return null;
+        }
+      },
+      AffiliatesRepository: class {},
+    }));
+
+    mock.module('@omestre/shared', () => ({
+      detectMarketplace: (url: string) => {
+        if (url.includes('shopee')) return 'shopee';
+        if (url.includes('mercadolivre') || url.includes('meli')) return 'mercadolivre';
+        if (url.includes('amazon')) return 'amazon';
+        return 'unknown';
+      },
+    }));
+
+    mock.module('@omestre/converters', () => ({
+      convertUrl: () =>
+        Promise.resolve({ success: false, affiliateUrl: null, error: 'simulated' }),
+      convertShopeeUrlWithCredentials: () =>
+        Promise.resolve({ success: false, affiliateUrl: null, error: 'simulated' }),
+      generateShortAffiliateLink: () =>
+        Promise.resolve({ success: false, shortUrl: null, error: 'simulated' }),
+      generateViaUrlParams: () => 'https://example.com/params',
+      convertAmazonUrlWithTrackingId: () =>
+        Promise.resolve({ success: false, affiliateUrl: null, error: 'simulated' }),
+    }));
+  });
+
+  afterAll(() => {
+    mock.restore();
+  });
   const BASE_EVENT: MirrorMessageEvent = {
     messageId: 'kw-test',
     instanceName: 'user-1',

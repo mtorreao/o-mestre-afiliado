@@ -25,7 +25,7 @@
  *  14. DLQ desligada após múltiplas falhas de conexão
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test';
+import { describe, it, expect, mock, beforeAll, afterAll, beforeEach, afterEach, spyOn } from 'bun:test';
 import type { MirrorMessageEvent, MirrorDLQEntry } from '@omestre/shared';
 import { MIRROR_DLQ_LIST, MIRROR_DLQ_INDEX, MIRROR_DLQ_TTL } from '@omestre/shared';
 
@@ -178,29 +178,34 @@ function createRedisMock() {
 let currentRedisMock: ReturnType<typeof createRedisMock>;
 
 // Mapeia require('ioredis') / import Redis from 'ioredis'
-mock.module('ioredis', () => {
-  return {
-    default: class MockRedis {
-      constructor() {
-        currentRedisMock = createRedisMock();
-        // Copia todos os métodos do currentRedisMock para this
-        Object.assign(this, currentRedisMock);
-      }
-      on() {}
-      disconnect() {}
-      quit() {}
-    },
-    Redis: class MockRedis {
-      constructor() {
-        currentRedisMock = createRedisMock();
-        Object.assign(this, currentRedisMock);
-      }
-      on() {}
-      disconnect() {}
-      quit() {}
-    },
-  };
-});
+// ✅ mock.module dentro de beforeAll/afterAll para isolar mocks entre test files
+let mockModuleSetup = false;
+function ensureMockModule() {
+  if (mockModuleSetup) return;
+  mockModuleSetup = true;
+  mock.module('ioredis', () => {
+    return {
+      default: class MockRedis {
+        constructor() {
+          currentRedisMock = createRedisMock();
+          Object.assign(this, currentRedisMock);
+        }
+        on() {}
+        disconnect() {}
+        quit() {}
+      },
+      Redis: class MockRedis {
+        constructor() {
+          currentRedisMock = createRedisMock();
+          Object.assign(this, currentRedisMock);
+        }
+        on() {}
+        disconnect() {}
+        quit() {}
+      },
+    };
+  });
+}
 
 // ========================================================
 // Fixtures
@@ -231,6 +236,16 @@ const baseEvent2: MirrorMessageEvent = {
 // ════════════════════════════════════════════════════════
 
 describe('Dead Letter Queue — unit tests', () => {
+  // ✅ beforeAll/afterAll isolam mocks entre test files (mock.module é global)
+  beforeAll(() => {
+    mock.restore(); // limpa mocks de outros arquivos
+    ensureMockModule();
+  });
+
+  afterAll(() => {
+    mock.restore();
+  });
+
   // Import dinâmico para pegar os mocks
   let dlq: typeof import('../dead-letter-queue.ts');
 

@@ -13,7 +13,7 @@
  * terceiro, etc.).
  */
 
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeAll, afterAll, beforeEach } from 'bun:test';
 import type { MirrorMessageEvent } from '@omestre/shared';
 
 // ========================================================

@@ -20,7 +20,7 @@
  *   9. waitForSlot retorna false no timeout
  */
 
-import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test';
 
 // ════════════════════════════════════════════════════════
 // Mock ioredis — executado ANTES de qualquer import
@@ -59,10 +59,6 @@ class MockRedis {
   constructor(_url?: string, _opts?: Record<string, unknown>) {}
 }
 
-mock.module('ioredis', () => ({
-  default: MockRedis,
-}));
-
 // ════════════════════════════════════════════════════════
 // Helpers
 // ════════════════════════════════════════════════════════
@@ -89,7 +85,18 @@ function extractWindowIndex(key: string): number | null {
 // Testes
 // ════════════════════════════════════════════════════════
 
-describe('rate-limiter — tryAcquireSlot', () => {
+describe('rate-limiter', () => {
+  beforeAll(() => {
+    mock.module('ioredis', () => ({
+      default: MockRedis,
+    }));
+  });
+
+  afterAll(() => {
+    mock.restore();
+  });
+
+  describe('rate-limiter — tryAcquireSlot', () => {
   beforeEach(() => {
     resetMocks();
   });
@@ -439,4 +446,5 @@ describe('rate-limiter — validação de limites (múltiplas instâncias)', () 
       expect(r3).toEqual({ acquired: true, waitMs: 0 });  // primeira chamada
     },
   );
+});
 });

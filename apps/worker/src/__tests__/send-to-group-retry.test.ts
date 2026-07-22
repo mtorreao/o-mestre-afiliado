@@ -17,7 +17,7 @@
  *   6. Backoff timing: delays crescentes entre tentativas (2s, 4s)
  */
 
-import { describe, it, expect, mock, afterEach } from 'bun:test';
+import { describe, it, expect, mock, beforeAll, afterAll, afterEach } from 'bun:test';
 import type { MirrorMessageEvent } from '@omestre/shared';
 
 // ========================================================
@@ -33,175 +33,11 @@ type FetchBehavior =
 /** Contador global de chamadas fetch realizadas (resetado por afterEach) */
 let fetchCallCount = 0;
 
-// ========================================================
-// Mocks — executados ANTES de qualquer import do módulo
-// ========================================================
-
-// ── Cache de conversão (Redis) — sempre miss ──
-mock.module('./conversion-cache.ts', () => ({
-  getCachedConversion: () => Promise.resolve(null),
-  setCachedConversion: () => Promise.resolve(),
-}));
-
-// ── Rate limiter (Redis) — sempre concede slot ──
-mock.module('./rate-limiter.ts', () => ({
-  tryAcquireSlot: () => Promise.resolve({ acquired: true, waitMs: 0 }),
-  waitForSlot: () => Promise.resolve(true),
-}));
-
-// ── Notifier (Redis) — silencioso ──
-mock.module('./notifier.ts', () => ({
-  processFailure: () => Promise.resolve(),
-  classifyConversionError: () => null,
-}));
-
-// ── Dead Letter Queue (Redis) — silenciosa ──
-mock.module('./dead-letter-queue.ts', () => ({
-  pushToDLQ: () => Promise.resolve(),
-}));
-
-// ── Métricas — sem contadores reais ──
-mock.module('./metrics.ts', () => ({
-  incrementCounter: () => {},
-  observeHistogram: () => {},
-}));
-
-// ── Conversores — sempre sucesso com Shopee (sem params de afiliado) ──
-mock.module('@omestre/converters', () => ({
-  convertUrl: () =>
-    Promise.resolve({
-      success: true,
-      affiliateUrl: 'https://shopee.com.br/product/12345-converted',
-      error: undefined,
-    }),
-  convertShopeeUrlWithCredentials: () =>
-    Promise.resolve({
-      success: true,
-      affiliateUrl: 'https://shopee.com.br/product/12345-converted',
-      error: undefined,
-    }),
-  generateShortAffiliateLink: () =>
-    Promise.resolve({
-      success: false,
-      shortUrl: null,
-      error: 'Erro simulado: link curto ML falhou (teste)',
-    }),
-  generateViaUrlParams: () => 'https://example.com/params',
-  convertAmazonUrlWithTrackingId: () =>
-    Promise.resolve({
-      success: true,
-      affiliateUrl: 'https://www.amazon.com.br/dp/B0ABC?tag=tracking-test-20',
-      error: undefined,
-    }),
-}));
-
-// ── Shared — detectMarketplace + constantes ──
-mock.module('@omestre/shared', () => ({
-  detectMarketplace: (url: string) => {
-    if (url.includes('shopee')) return 'shopee';
-    if (url.includes('mercadolivre') || url.includes('meli')) return 'mercadolivre';
-    if (url.includes('amazon')) return 'amazon';
-    return 'unknown';
-  },
-  MIRROR_CONVERSION_CACHE_PREFIX: 'mirror:conversion:',
-  MIRROR_CONVERSION_CACHE_TTL: 3600,
-  MIRROR_MESSAGE_CHANNEL: 'omestre:mirror:message',
-  MIRROR_STREAM: 'omestre:mirror:stream',
-  MIRROR_CONSUMER_GROUP: 'omestre:mirror:workers',
-  MIRROR_DLQ_LIST: 'mirror:dlq:entries',
-  MIRROR_DLQ_INDEX: 'mirror:dlq:index',
-  MIRROR_DLQ_TTL: 7 * 24 * 3600,
-  MARKETPLACE_DOMAINS: {
-    shopee: [/shopee/, /go\.promozone\.ai\/shopee/],
-    mercadolivre: [/mercadolivre/, /meli/, /go\.promozone\.ai\/mercadolivre/],
-    amazon: [/amazon/, /amzn/, /go\.promozone\.ai\/amazon/],
-    unknown: [],
-  },
-  // Tipos — não são valores, mas mock.module precisa de algo
-  MirrorMessageEvent: class {},
-  MirrorDLQEntry: class {},
-}));
-
-// ── DB (PostgreSQL) — mock dinâmico com targetGroups ──
-// Precisamos que targetGroups tenha ao menos 1 grupo para a pipeline
-// chegar ao sendToGroup(). getFilters() retorna vazio (sem filtros).
-// getMessageTemplate() retorna null (template padrão).
-
-const targetGroups = [{ jid: '120363000000000001@g.us', name: 'Grupo Teste Destino' }];
-
-mock.module('@omestre/db', () => ({
-  getDb: () => ({
-    select: (fields: any) => {
-      const isEvolutionId = fields && 'evolutionInstanceId' in fields;
-      const isTargetGroups = fields && 'targetGroups' in fields;
-      const isFilters = fields && 'filters' in fields;
-      const isMessageTemplate = fields && 'messageTemplate' in fields;
-
-      return {
-        from: () => ({
-          where: () => ({
-            limit: () => {
-              if (isEvolutionId) {
-                return Promise.resolve([{ evolutionInstanceId: 'user-42' }]);
-              }
-              if (isTargetGroups) {
-                return Promise.resolve([{ targetGroups }]);
-              }
-              if (isFilters) {
-                return Promise.resolve([]); // sem filtros
-              }
-              if (isMessageTemplate) {
-                return Promise.resolve([]); // sem template personalizado
-              }
-              // isDuplicate → sem duplicatas
-              return Promise.resolve([]);
-            },
-          }),
-        }),
-      };
-    },
-    insert: () => ({
-      values: () => Promise.resolve(),
-    }),
-  }),
-  affiliates: {
-    id: 'id',
-    evolutionInstanceId: 'evolutionInstanceId',
-    targetGroups: 'targetGroups',
-    filters: 'filters',
-    messageTemplate: 'messageTemplate',
-  },
-  and: (...args: any[]) => args,
-  eq: (a: any, b: any) => ({ a, b }),
-  gte: (a: any, b: any) => ({ a, b }),
-  reflectedOffers: {
-    id: 'id',
-    affiliateId: 'affiliateId',
-    originalLink: 'originalLink',
-    reflectedAt: 'reflectedAt',
-  },
-  MlAffiliateRepository: class {
-    async findByPlatformUserId() {
-      return null; // Shopee não usa ML
-    }
-  },
-  UserCredentialsRepository: class {
-    async findByUserId() {
-      return null; // Fallback para credenciais globais
-    }
-  },
-  AffiliatesRepository: class {
-    async findById() {
-      return { id: 1, evolutionInstanceId: 'user-42' };
-    }
-  },
-}));
-
 // ════════════════════════════════════════════════════════
 // Helpers
 // ════════════════════════════════════════════════════════
 
-function makeResponse(ok: boolean, status: number, body = ''): Response {
+function makeResponse
   // Bun requires status in range [200, 599] for ok=false; use 500+ for errors
   return new Response(body, { status, statusText: ok ? 'OK' : 'Error' });
 }
