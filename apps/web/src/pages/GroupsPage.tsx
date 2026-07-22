@@ -3,11 +3,14 @@
  *
  * Reúne MirrorConfigSection, MessageTemplateSection e ExcludedGroupsSection
  * em uma página independente, separada das configurações de marketplace.
+ *
+ * Loading por seção: cada card carrega seu próprio conteúdo.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Loading } from '../components/ui/index.ts';
+import { Card, Loading } from '../components/ui/index.ts';
+import { fetchApi } from '../lib/api-client.ts';
 import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
 import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
 import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
@@ -43,29 +46,20 @@ export function GroupsPage({ token }: GroupsPageProps) {
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async () => {
-    try {
-      const res = await fetch('/api/affiliate/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json() as { success: boolean; profile: ProfileData };
-      if (data.success) {
-        setProfile(data.profile);
-      }
-    } catch { /* ignore */ }
+    setLoading(true);
+    const res = await fetchApi<{ success: boolean; profile: ProfileData }>(
+      '/api/affiliate/profile',
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (res.success && res.data?.profile) {
+      setProfile(res.data.profile);
+    }
     setLoading(false);
   }, [token]);
 
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
-
-  if (loading) {
-    return (
-      <PageLayout>
-        <Loading text="Carregando perfil..." />
-      </PageLayout>
-    );
-  }
 
   return (
     <PageLayout maxWidth="960px">
@@ -75,19 +69,34 @@ export function GroupsPage({ token }: GroupsPageProps) {
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
+        {/* Mirror Config — loading independente */}
         <MirrorConfigSection token={token} onUpdate={loadProfile} />
 
-        <MessageTemplateSection
-          token={token}
-          initialTemplate={profile?.messageTemplate || ''}
-          onUpdate={loadProfile}
-        />
+        {/* Message Template */}
+        {loading ? (
+          <Card title="💬 Template de Mensagem">
+            <Loading text="Carregando template..." size="sm" />
+          </Card>
+        ) : (
+          <MessageTemplateSection
+            token={token}
+            initialTemplate={profile?.messageTemplate || ''}
+            onUpdate={loadProfile}
+          />
+        )}
 
-        <ExcludedGroupsSection
-          groups={profile?.excludedGroups || []}
-          token={token}
-          onUpdate={loadProfile}
-        />
+        {/* Excluded Groups */}
+        {loading ? (
+          <Card title="⚠️ Grupos Desativados">
+            <Loading text="Carregando grupos..." size="sm" />
+          </Card>
+        ) : (
+          <ExcludedGroupsSection
+            groups={profile?.excludedGroups || []}
+            token={token}
+            onUpdate={loadProfile}
+          />
+        )}
       </div>
     </PageLayout>
   );

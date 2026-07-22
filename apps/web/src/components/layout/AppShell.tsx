@@ -1,15 +1,13 @@
 /**
  * AppShell — Layout responsivo para usuários autenticados
  *
- * Estrutura:
- *   - Desktop (≥768px): Sidebar fixa 260px + (Topbar 56px + Main content)
- *   - Mobile  (<768px): Drawer overlay + Topbar + Main content
+ * Estrutura: Sidebar esquerda + (Topbar + conteúdo principal via <Outlet />)
  *
- * Transições CSS definidas em globals.css (classes sidebar-overlay,
- * sidebar-drawer, etc.) em vez de estilos inline.
+ * Agora integrado com React Router: navegação via <NavLink /> e useNavigate.
  */
 import { ThemeToggle } from './../ui/ThemeToggle.tsx';
 import React, { useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Repeat2,
@@ -24,17 +22,33 @@ import {
 
 export type NavItem = 'dashboard' | 'settings' | 'groups' | 'mirrors' | 'mirror-logs' | 'mirror-form' | 'worker-status';
 
-interface AppShellProps {
-  currentNav: NavItem;
-  onNavigate: (item: NavItem) => void;
-  onLogout: () => void;
+interface AppShellLayoutProps {
   userName: string;
-  pageTitle?: string;
-  children: React.ReactNode;
+  onLogout: () => void;
 }
 
-export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle = '', children }: AppShellProps) {
+/** Mapeia o pathname atual para um NavItem */
+function pathToNav(pathname: string): NavItem {
+  const path = pathname.replace(/^\//, '') || 'dashboard';
+  if (['dashboard', 'settings', 'groups', 'mirror-logs', 'worker-status'].includes(path)) {
+    return path as NavItem;
+  }
+  return 'dashboard';
+}
+
+const pageTitles: Record<NavItem, string> = {
+  dashboard: 'Dashboard',
+  settings: 'Configurações',
+  groups: 'Grupos de Espelhamento',
+  'mirror-logs': 'Logs de Espelhamento',
+  'worker-status': 'Status do Worker',
+};
+
+export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const currentNav = pathToNav(location.pathname);
 
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
@@ -44,6 +58,12 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
     { id: 'mirror-logs', label: 'Logs de espelhamento', icon: <Repeat2 size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
+
+  function handleNavigate(id: NavItem) {
+    const path = id === 'dashboard' ? '/' : `/${id}`;
+    navigate(path);
+    setSidebarOpen(false);
+  }
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-bg)' }}>
@@ -82,11 +102,29 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
             return (
               <button
                 key={item.id}
-                onClick={() => {
-                  onNavigate(item.id);
-                  setSidebarOpen(false);
+                onClick={() => handleNavigate(item.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.625rem',
+                  padding: 'var(--spacing-2) var(--spacing-3)',
+                  borderRadius: 'var(--radius-md)',
+                  border: 'none',
+                  background: isActive ? 'var(--color-primary-subtle)' : 'transparent',
+                  color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                  fontSize: 'var(--text-sm)',
+                  fontWeight: isActive ? 600 : 400,
+                  cursor: 'pointer',
+                  transition: 'all var(--transition-fast)',
+                  textAlign: 'left',
+                  width: '100%',
                 }}
-                className={`sidebar-nav-item${isActive ? ' active' : ''}`}
+                onMouseEnter={(e) => {
+                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-primary-subtle)';
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                }}
               >
                 {item.icon}
                 <span>{item.label}</span>
@@ -106,11 +144,24 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
         </div>
       </aside>
 
-      {/* Main content: topbar + children */}
-      <div className="app-main-area">
-        {/* Topbar — sempre visível, altura fixa 56px */}
-        <header className="topbar">
-          {/* Hamburger — 44×44px touch target */}
+      {/* Main area: topbar + Outlet */}
+      <div
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', marginLeft: '260px' }}
+        className="main-content"
+      >
+        {/* Topbar — always visible */}
+        <div
+          className="topbar"
+          style={{
+            display: 'flex',
+            padding: 'var(--spacing-3) var(--spacing-4)',
+            borderBottom: '1px solid var(--color-border)',
+            background: 'var(--color-surface)',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.5rem',
+          }}
+        >
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             aria-expanded={sidebarOpen}
@@ -129,16 +180,16 @@ export function AppShell({ currentNav, onNavigate, onLogout, userName, pageTitle
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
 
-          {/* Nome da página centralizado (mobile) / alinhado à esquerda (desktop) */}
-          <span className="topbar-title">{pageTitle}</span>
+          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            {pageTitles[currentNav]}
+          </span>
 
           {/* Theme toggle */}
           <ThemeToggle />
         </header>
 
-        {/* Main content area */}
-        <main className="main-content">
-          {children}
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <Outlet />
         </main>
 
         {/* Inline styles for responsive layout */}

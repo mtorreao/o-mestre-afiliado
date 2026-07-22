@@ -5,9 +5,10 @@
  * atalhos rápidos para outras páginas e atividade recente de espelhamento.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { Card, Badge, Button, Loading } from '../components/ui/index.ts';
-import type { NavItem } from '../components/layout/AppShell.tsx';
+import { fetchApi } from '../lib/api-client.ts';
 import {
   Users,
   TrendingUp,
@@ -207,13 +208,12 @@ function marketplaceIcon(mp: string): string {
 interface DashboardPageProps {
   user: { id: number; email: string; name: string };
   token: string;
-  onNavigate?: (nav: NavItem) => void;
 }
 
-export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
+export function DashboardPage({ user, token }: DashboardPageProps) {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
-  const [profileError, setProfileError] = useState(false);
 
   const [wppStatus, setWppStatus] = useState<WppStatusResponse | null>(null);
   const [wppLoading, setWppLoading] = useState(true);
@@ -227,19 +227,13 @@ export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
   // ─── Load profile ───────────────────────────────────
   const loadProfile = useCallback(async () => {
     setProfileLoading(true);
-    setProfileError(false);
-    try {
-      const res = await fetch('/api/affiliate/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json() as { success: boolean; profile: ProfileData };
-      if (data.success) {
-        setProfile(data.profile);
-      } else {
-        setProfileError(true);
-      }
-    } catch {
-      setProfileError(true);
+    const res = await fetchApi<{ success: boolean; profile: ProfileData }>(
+      '/api/affiliate/profile',
+      { headers: { Authorization: `Bearer ${token}` } },
+      false, // no toast — mostra warning no card
+    );
+    if (res.success && res.data?.profile) {
+      setProfile(res.data.profile);
     }
     setProfileLoading(false);
   }, [token]);
@@ -247,49 +241,46 @@ export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
   // ─── Load WhatsApp status ────────────────────────────
   const loadWppStatus = useCallback(async () => {
     setWppLoading(true);
-    try {
-      const res = await fetch('/api/whatsapp/status', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json() as WppStatusResponse;
-      if (data.success) {
-        setWppStatus(data);
-      }
-    } catch { /* ignore */ }
+    const res = await fetchApi<WppStatusResponse>(
+      '/api/whatsapp/status',
+      { headers: { Authorization: `Bearer ${token}` } },
+      false,
+    );
+    if (res.success && res.data) {
+      setWppStatus(res.data);
+    }
     setWppLoading(false);
   }, [token]);
 
-  // ─── Load mirror logs total (pageSize=1 to get total count) ──
+  // ─── Load mirror logs total ──────────────────────────
   const loadMirrorTotal = useCallback(async () => {
     setMirrorTotalLoading(true);
-    try {
-      const res = await fetch('/api/affiliate/mirror-logs?page=1&pageSize=1', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json() as MirrorLogResponse;
-      if (data.success) {
-        setMirrorTotal(data.total);
-      }
-    } catch { /* ignore */ }
+    const res = await fetchApi<MirrorLogResponse>(
+      '/api/affiliate/mirror-logs?page=1&pageSize=1',
+      { headers: { Authorization: `Bearer ${token}` } },
+      false,
+    );
+    if (res.success && res.data) {
+      setMirrorTotal(res.data.total);
+    }
     setMirrorTotalLoading(false);
   }, [token]);
 
-  // ─── Load recent activity (5 sent) ───────────────────
+  // ─── Load recent activity ────────────────────────────
   const loadRecentLogs = useCallback(async () => {
     setRecentLogsLoading(true);
-    try {
-      const res = await fetch('/api/affiliate/mirror-logs?page=1&pageSize=5&status=sent', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json() as MirrorLogResponse;
-      if (data.success) {
-        setRecentLogs(data.rows);
-      }
-    } catch { /* ignore */ }
+    const res = await fetchApi<MirrorLogResponse>(
+      '/api/affiliate/mirror-logs?page=1&pageSize=5&status=sent',
+      { headers: { Authorization: `Bearer ${token}` } },
+      false,
+    );
+    if (res.success && res.data) {
+      setRecentLogs(res.data.rows);
+    }
     setRecentLogsLoading(false);
   }, [token]);
 
-  // ─── Load everything in parallel ──────────────────────
+  // ─── Load in parallel ────────────────────────────────
   useEffect(() => {
     loadProfile();
     loadWppStatus();
@@ -302,8 +293,6 @@ export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
   const shopeeConfigured = !!profile?.shopeeConfigured;
   const mlConnected = profile?.mercadoLivre.connected === true;
   const wppConnected = wppStatus?.connected === true;
-
-  const isLoading = profileLoading && wppLoading && mirrorTotalLoading && recentLogsLoading;
 
   // ─── Render ────────────────────────────────────────
   return (
@@ -319,14 +308,13 @@ export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
         <MetricCard
           icon={<Users size={20} />}
           label="Grupos Monitorados"
-          value={profileLoading ? '…' : profileError ? '—' : groupCount}
-          warning={profileError ? 'Não foi possível carregar' : undefined}
+          value={profileLoading ? '…' : !profile ? '—' : groupCount}
+          warning={!profile && !profileLoading ? 'Não foi possível carregar' : undefined}
         />
         <MetricCard
           icon={<TrendingUp size={20} />}
           label="Ofertas Espelhadas"
           value={mirrorTotalLoading ? '…' : mirrorTotal !== null ? mirrorTotal : '—'}
-          warning={mirrorTotal === null && !mirrorTotalLoading ? 'Indisponível' : undefined}
         />
         <MetricCard
           icon={<Smartphone size={20} />}
@@ -346,20 +334,20 @@ export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
           value={
             profileLoading
               ? '…'
-              : profileError
+              : !profile
               ? '—'
               : [shopeeConfigured && 'Shopee', mlConnected && 'ML']
                   .filter(Boolean)
                   .join(' + ') || 'Nenhum'
           }
           badge={
-            !profileLoading && !profileError
+            !profileLoading && profile
               ? shopeeConfigured || mlConnected
                 ? { label: `${[shopeeConfigured && 'Shopee', mlConnected && 'ML'].filter(Boolean).length} configurado(s)`, variant: 'success' as const }
                 : { label: 'Nenhum configurado', variant: 'neutral' as const }
               : undefined
           }
-          warning={profileError ? 'Não foi possível carregar' : undefined}
+          warning={!profile && !profileLoading ? 'Não foi possível carregar' : undefined}
         />
       </div>
 
@@ -376,24 +364,24 @@ export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
             icon={<Settings size={20} />}
             label="Configurar integrações"
             description="WhatsApp, Shopee e Mercado Livre"
-            onClick={() => onNavigate?.('settings')}
+            onClick={() => navigate('/settings')}
           />
           <QuickActionCard
             icon={<ScrollText size={20} />}
             label="Ver logs de espelhamento"
             description="Histórico completo de ofertas espelhadas"
-            onClick={() => onNavigate?.('mirror-logs')}
+            onClick={() => navigate('/mirror-logs')}
           />
           <QuickActionCard
             icon={<Activity size={20} />}
             label="Status do Worker"
             description="Métricas, filas e saúde do worker"
-            onClick={() => onNavigate?.('worker-status')}
+            onClick={() => navigate('/worker-status')}
           />
         </div>
       </Card>
 
-      {/* Section 3: Recent activity (optional) */}
+      {/* Section 3: Recent activity */}
       <Card title="Atividade Recente">
         {recentLogsLoading ? (
           <Loading text="Carregando atividade..." size="sm" />

@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { Card, Button, Badge } from '../../components/ui/index.ts';
 import { RotateCw, Zap } from 'lucide-react';
+import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
 
 interface ExcludedGroup {
   groupJid: string;
@@ -31,8 +32,11 @@ export function ExcludedGroupsSection({ groups, token, onUpdate }: ExcludedGroup
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ groupJid: group.groupJid, groupName: group.groupName }),
       });
+      showSuccessToast('Grupo', `Revalidando ${group.groupName}...`);
       onUpdate();
-    } catch { /* ignore */ }
+    } catch {
+      showErrorToast('Grupo', `Erro ao revalidar ${group.groupName}`);
+    }
     setActionLoading(null);
   }
 
@@ -44,8 +48,11 @@ export function ExcludedGroupsSection({ groups, token, onUpdate }: ExcludedGroup
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ groupJid: group.groupJid, groupName: group.groupName }),
       });
+      showSuccessToast('Grupo', `Forçando ativação de ${group.groupName}...`);
       onUpdate();
-    } catch { /* ignore */ }
+    } catch {
+      showErrorToast('Grupo', `Erro ao ativar ${group.groupName}`);
+    }
     setActionLoading(null);
   }
 

@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { Card, Button } from '../../components/ui/index.ts';
 import { MessageSquare, Save } from 'lucide-react';
+import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
 
 interface MessageTemplateSectionProps {
   token: string;
@@ -25,13 +26,18 @@ export function MessageTemplateSection({ token, initialTemplate, onUpdate }: Mes
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ messageTemplate: template || null }),
       });
-      const data = await res.json() as { success: boolean };
+      const data = await res.json() as { success: boolean; error?: string };
       if (data.success) {
         setSaved(true);
+        showSuccessToast('Template', 'Template salvo com sucesso');
         onUpdate();
         setTimeout(() => setSaved(false), 4000);
+      } else {
+        showErrorToast('Template', data.error || 'Erro ao salvar template');
       }
-    } catch { /* ignore */ }
+    } catch {
+      showErrorToast('Template', 'Erro de conexão ao salvar');
+    }
     setSaving(false);
   }
 

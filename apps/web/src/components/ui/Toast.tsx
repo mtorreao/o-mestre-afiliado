@@ -4,11 +4,15 @@
  * Uso: <ToastProvider>
  *        <Toast title="Sucesso" description="Operação concluída" variant="success" />
  *      </ToastProvider>
+ *
+ * Também escuta eventos globais 'toast:show' dispatchados pelo
+ * ToastEmitter (lib/toast-emitter.ts) para uso fora de hooks.
  */
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import * as RadixToast from '@radix-ui/react-toast';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import clsx from 'clsx';
+import type { ToastEventDetail } from '../../lib/toast-emitter.ts';
 
 type ToastVariant = 'success' | 'error' | 'warning' | 'info';
 
@@ -52,6 +56,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  // Escutar eventos globais do ToastEmitter (lib/toast-emitter.ts)
+  useEffect(() => {
+    const handler = (e: CustomEvent<ToastEventDetail>) => {
+      addToast(e.detail.title, e.detail.description, e.detail.variant);
+    };
+    window.addEventListener('toast:show', handler as EventListener);
+    return () => window.removeEventListener('toast:show', handler as EventListener);
+  }, [addToast]);
 
   return (
     <ToastContext.Provider value={{ addToast }}>

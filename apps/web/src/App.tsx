@@ -3,43 +3,35 @@
  *
  * Com autenticação: Login → Dashboard do Afiliado
  * Design system: Radix UI + Lucide + Tema light minimalista
+ *
+ * Rotas (React Router):
+ *   /login          → LoginPage
+ *   /register       → RegisterPage
+ *   /               → DashboardPage (protegida)
+ *   /settings       → SettingsPage (protegida)
+ *   /groups         → GroupsPage (protegida)
+ *   /mirror-logs    → MirrorLogsPage (protegida)
+ *   /worker-status  → WorkerStatusPage (protegida)
  */
-import { useState } from 'react';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth.ts';
 import { ThemeProvider } from './hooks/useTheme.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
-import { MirrorsPage } from './pages/MirrorsPage.tsx';
-import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
-import { MirrorFormPage } from './pages/MirrorFormPage.tsx';
-import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
-import { GroupsPage } from './pages/GroupsPage.tsx';
-import { AppShell, type NavItem } from './components/layout/AppShell.tsx';
+import { AppShellLayout } from './components/layout/AppShell.tsx';
 import { ToastProvider } from './components/ui/index.ts';
 import { ThemeToggle } from './components/ui/ThemeToggle.tsx';
 import { Loader2 } from 'lucide-react';
 
-type AuthPage = 'login' | 'register';
+// ─── Protected route guard ──────────────────────────────
 
-const pageTitles: Record<NavItem, string> = {
-  dashboard: 'Dashboard',
-  settings: 'Configurações',
-  groups: 'Grupos',
-  mirrors: 'Espelhamentos',
-  'mirror-logs': 'Espelhamento',
-  'mirror-form': 'Novo Espelhamento',
-  'worker-status': 'Status do Worker',
-};
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
 
-function AppContent() {
-  const { user, token, loading, isAuthenticated, login, register, logout } = useAuth();
-  const [authPage, setAuthPage] = useState<AuthPage>('login');
-  const [nav, setNav] = useState<NavItem>('dashboard');
-  const [editingMirrorId, setEditingMirrorId] = useState<number | null>(null);
-
-  // Loading state
   if (loading) {
     return (
       <div
@@ -59,83 +51,107 @@ function AppContent() {
     );
   }
 
-  // Authenticated — AppShell + Pages
-  if (isAuthenticated && user && token) {
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <>{children}</>;
+}
+
+// ─── Auth-aware route redirect for login/register ────────
+
+function GuestRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
     return (
-      <ToastProvider>
-        <AppShell
-          currentNav={nav}
-          onNavigate={setNav}
-          onLogout={() => {
-            logout();
-            setNav('dashboard');
-          }}
-          userName={user.name}
-          pageTitle={pageTitles[nav]}
-        >
-          {nav === 'settings' && (
-            <SettingsPage user={user} token={token} />
-          )}
-          {nav === 'groups' && (
-            <GroupsPage token={token} />
-          )}
-          {nav === 'mirrors' && (
-            <MirrorsPage token={token} />
-          )}
-          {nav === 'mirror-logs' && (
-            <MirrorLogsPage token={token} />
-          )}
-          {nav === 'mirror-form' && (
-            <MirrorFormPage
-              token={token}
-              mirrorId={editingMirrorId}
-              onBack={() => {
-                setEditingMirrorId(null);
-                setNav('dashboard');
-              }}
-            />
-          )}
-          {nav === 'worker-status' && (
-            <WorkerStatusPage onBack={() => setNav('dashboard')} />
-          )}
-          {nav === 'dashboard' && (
-            <DashboardPage
-              user={user}
-              token={token}
-              onNavigate={(item: NavItem) => {
-                setEditingMirrorId(null);
-                setNav(item);
-              }}
-            />
-          )}
-        </AppShell>
-      </ToastProvider>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--color-bg)',
+        }}
+      >
+        <Loader2 size={32} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--color-primary)' }} />
+      </div>
     );
   }
 
-  // Unauthenticated — Login or Register
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+// ─── Main App ────────────────────────────────────────────
+
+function App() {
+  const { user, token, login, register, logout, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
   return (
-    <ToastProvider>
-      {/* Floating theme toggle for auth pages */}
-      <div style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 60 }}>
-        <ThemeToggle />
-      </div>
-      {authPage === 'register' ? (
-        <RegisterPage
-          onRegister={async (name, email, password) => {
-            await register(name, email, password);
-          }}
-          onSwitchToLogin={() => setAuthPage('login')}
-        />
-      ) : (
-        <LoginPage
-          onLogin={async (email, password) => {
-            await login(email, password);
-          }}
-          onSwitchToRegister={() => setAuthPage('register')}
-        />
-      )}
-    </ToastProvider>
+    <Routes>
+      {/* Public routes — só visível quando deslogado */}
+      <Route
+        path="/login"
+        element={
+          <GuestRoute>
+            <ToastProvider>
+              <LoginPage
+                onLogin={async (email, password) => {
+                  await login(email, password);
+                }}
+                onSwitchToRegister={() => navigate('/register')}
+              />
+            </ToastProvider>
+          </GuestRoute>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <GuestRoute>
+            <ToastProvider>
+              <RegisterPage
+                onRegister={async (name, email, password) => {
+                  await register(name, email, password);
+                }}
+                onSwitchToLogin={() => navigate('/login')}
+              />
+            </ToastProvider>
+          </GuestRoute>
+        }
+      />
+
+      {/* Protected routes — AppShell com sidebar */}
+      <Route
+        element={
+          <ProtectedRoute>
+            <ToastProvider>
+              <AppShellLayout
+                userName={user?.name ?? ''}
+                onLogout={() => {
+                  logout();
+                  navigate('/login');
+                }}
+              />
+            </ToastProvider>
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<DashboardPage user={user!} token={token!} />} />
+        <Route path="settings" element={<SettingsPage user={user!} token={token!} />} />
+        <Route path="groups" element={<GroupsPage token={token!} />} />
+        <Route path="mirror-logs" element={<MirrorLogsPage token={token!} />} />
+        <Route path="worker-status" element={<WorkerStatusPage />} />
+      </Route>
+
+      {/* Catch-all → redirect to dashboard or login */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
