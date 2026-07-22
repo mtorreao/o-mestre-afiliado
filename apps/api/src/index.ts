@@ -25,6 +25,7 @@ const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.ML_REDIRECT_URI || 'http://localhost:5442/api/ml/callback';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5441';
 const WORKER_METRICS_URL = process.env.WORKER_METRICS_URL || 'http://localhost:9092';
+const WORKER_METRICS_API_KEY = process.env.METRICS_API_KEY || '';
 
 // ─── Repository (banco PostgreSQL via Drizzle) ────────────────────────
 
@@ -571,8 +572,13 @@ const app = new Elysia()
   // ─── Worker Status — Proxy para o servidor de métricas do worker ───
   .get('/api/worker/status', async ({ set }) => {
     try {
+      const headers: Record<string, string> = {};
+      if (WORKER_METRICS_API_KEY) {
+        headers['x-api-key'] = WORKER_METRICS_API_KEY;
+      }
       const res = await fetch(`${WORKER_METRICS_URL}/status`, {
         signal: AbortSignal.timeout(5000),
+        headers,
       });
       if (!res.ok) {
         set.status = 502;

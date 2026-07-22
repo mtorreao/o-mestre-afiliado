@@ -208,6 +208,8 @@ services:
       # Webhook que a Evolution API usa para chamar de volta
       WEBHOOK_URL: http://api:5442/webhook/message
       REDIS_URL: redis://redis:6379
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      METRICS_API_KEY: ${METRICS_API_KEY}
     healthcheck:
       test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)"]
       interval: 15s
@@ -238,6 +240,8 @@ services:
       EVOLUTION_API_URL: http://evolution-api:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
       REDIS_URL: redis://redis:6379
+      METRICS_API_KEY: ${METRICS_API_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     networks:
       - omestre-dev-net
 
@@ -286,6 +290,7 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
       REDIS_URL: redis://redis:6379
       REVALIDATION_INTERVAL_DAYS: ${REVALIDATION_INTERVAL_DAYS:-7}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     networks:
       - omestre-dev-net
 
