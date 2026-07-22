@@ -122,16 +122,11 @@ class FakeRedis {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Mocks — mock.module antes de qualquer import
+// Mock functions — mock.module é chamado dentro de beforeAll para isolar
 // ══════════════════════════════════════════════════════════════════════
 
 const mockGetRedis = mock<() => FakeRedis | null>(() => new FakeRedis());
 const mockCacheDel = mock<(key: string) => Promise<void>>();
-
-mock.module('../redis.ts', () => ({
-  getRedis: mockGetRedis,
-  cacheDel: mockCacheDel,
-}));
 
 // ══════════════════════════════════════════════════════════════════════
 // Helpers
@@ -157,6 +152,19 @@ function secondArg(call: CapturedCall): unknown {
 // ══════════════════════════════════════════════════════════════════════
 
 describe('group-cache — TTL e renovação automática', () => {
+  // ✅ beforeAll/afterAll isolam mocks entre test files (mock.module é global)
+  beforeAll(() => {
+    mock.restore();
+    mock.module('../redis.ts', () => ({
+      getRedis: mockGetRedis,
+      cacheDel: mockCacheDel,
+    }));
+  });
+
+  afterAll(() => {
+    mock.restore();
+  });
+
   const TEST_JID = '120363000000000001@g.us';
   const TEST_KEY = `${PREFIX}${TEST_JID}`;
   const TEST_AFFILIATE_ID = 42;

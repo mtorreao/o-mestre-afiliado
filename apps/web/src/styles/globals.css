@@ -1,0 +1,482 @@
+/* ═══════════════════════════════════════════════════════════════
+   Global Styles — O Mestre Afiliado
+   ═══════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('./tokens.css');
+
+/* ─── Reset ────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Typography ───────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-tight);
+  color: var(--color-text-primary);
+}
+
+h1 { font-size: var(--text-2xl); }
+h2 { font-size: var(--text-xl); }
+h3 { font-size: var(--text-lg); }
+
+p {
+  color: var(--color-text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+/* ─── Focus ring ───────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Scrollbar ────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* ─── Utilities ────────────────────────────────────────────── */
+.text-xs   { font-size: var(--text-xs); }
+.text-sm   { font-size: var(--text-sm); }
+.text-base { font-size: var(--text-base); }
+.text-lg   { font-size: var(--text-lg); }
+.text-xl   { font-size: var(--text-xl); }
+.text-2xl  { font-size: var(--text-2xl); }
+
+.font-medium   { font-weight: var(--font-medium); }
+.font-semibold { font-weight: var(--font-semibold); }
+.font-bold     { font-weight: var(--font-bold); }
+
+.text-secondary { color: var(--color-text-secondary); }
+.text-muted    { color: var(--color-text-muted); }
+.text-success  { color: var(--color-success); }
+.text-warning  { color: var(--color-warning); }
+.text-error    { color: var(--color-error); }
+.text-primary  { color: var(--color-primary); }
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ─── Radix Toast Viewport ─────────────────────────────────── */
+.ToastViewport {
+  --viewport-padding: var(--spacing-6);
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--viewport-padding);
+  gap: var(--spacing-3);
+  width: 390px;
+  max-width: 100vw;
+  margin: 0;
+  list-style: none;
+  z-index: var(--z-toast);
+  outline: none;
+}
+
+/* ─── Radix Select ─────────────────────────────────────────── */
+.SelectTrigger {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.SelectTrigger:hover {
+  border-color: var(--color-primary);
+}
+
+.SelectTrigger:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-subtle);
+}
+
+.SelectTrigger[data-placeholder] {
+  color: var(--color-text-placeholder);
+}
+
+.SelectContent {
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+}
+
+.SelectViewport {
+  padding: var(--spacing-1);
+}
+
+.SelectItem {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.SelectItem[data-highlighted] {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.SelectItem[data-state="checked"] {
+  font-weight: var(--font-medium);
+}
+
+.SelectIndicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+}
+
+/* ─── Radix Dialog ─────────────────────────────────────────── */
+.DialogOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: var(--z-modal);
+  animation: overlayShow var(--transition-base);
+}
+
+.DialogContent {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90vw;
+  max-width: 480px;
+  max-height: 85vh;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  z-index: var(--z-modal);
+  animation: contentShow var(--transition-base);
+  overflow-y: auto;
+}
+
+@keyframes overlayShow {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes contentShow {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* ─── Radix Toast ──────────────────────────────────────────── */
+.ToastRoot {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-4);
+  display: grid;
+  grid-template-areas: 'title action' 'description action';
+  grid-template-columns: auto max-content;
+  column-gap: var(--spacing-4);
+  align-items: center;
+}
+
+.ToastRoot[data-state='open'] {
+  animation: toastSlideIn var(--transition-base);
+}
+
+.ToastRoot[data-state='closed'] {
+  animation: toastSlideOut var(--transition-fast);
+}
+
+.ToastRoot[data-swipe='move'] {
+  transform: translateX(var(--radix-toast-swipe-move-x));
+}
+
+.ToastRoot[data-swipe='cancel'] {
+  transform: translateX(0);
+  transition: transform var(--transition-base);
+}
+
+.ToastRoot[data-swipe='end'] {
+  animation: toastSwipeOut var(--transition-fast);
+}
+
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(calc(100% + var(--viewport-padding)));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes toastSlideOut {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(100% + var(--viewport-padding)));
+  }
+}
+
+@keyframes toastSwipeOut {
+  from {
+    transform: translateX(var(--radix-toast-swipe-end-x));
+  }
+  to {
+    transform: translateX(calc(100% + var(--viewport-padding)));
+  }
+}
+
+.ToastTitle {
+  grid-area: title;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.ToastDescription {
+  grid-area: description;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ─── Radix Tabs ───────────────────────────────────────────── */
+.TabsList {
+  display: flex;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+}
+
+.TabsTrigger {
+  all: unset;
+  padding: var(--spacing-2) var(--spacing-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.TabsTrigger:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+}
+
+.TabsTrigger[data-state='active'] {
+  color: var(--color-primary);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ─── Radix Checkbox ───────────────────────────────────────── */
+.CheckboxRoot {
+  all: unset;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.CheckboxRoot:hover {
+  border-color: var(--color-primary);
+}
+
+.CheckboxRoot[data-state='checked'] {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.CheckboxIndicator {
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── Radix Switch ─────────────────────────────────────────── */
+.SwitchRoot {
+  all: unset;
+  width: 36px;
+  height: 20px;
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  position: relative;
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.SwitchRoot[data-state='checked'] {
+  background: var(--color-primary);
+}
+
+.SwitchThumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: var(--radius-full);
+  transition: transform var(--transition-fast);
+  transform: translateX(2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.SwitchThumb[data-state='checked'] {
+  transform: translateX(18px);
+}
+
+/* ─── Spinner keyframe ─────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─── Badge base ───────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 0.125rem 0.5rem;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.badge--success {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+}
+
+.badge--warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.badge--error {
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+}
+
+.badge--info {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.badge--neutral {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+}

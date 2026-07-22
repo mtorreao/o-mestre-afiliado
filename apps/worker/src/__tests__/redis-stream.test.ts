@@ -318,36 +318,6 @@ function createRedisMock() {
 // Mock do módulo ioredis
 let currentRedisMock: ReturnType<typeof createRedisMock>;
 
-mock.module('ioredis', () => {
-  return {
-    default: class MockRedis {
-      constructor() {
-        currentRedisMock = createRedisMock();
-        Object.assign(this, currentRedisMock);
-      }
-      on() {}
-      disconnect() {}
-      quit() {}
-    },
-    Redis: class MockRedis {
-      constructor() {
-        currentRedisMock = createRedisMock();
-        Object.assign(this, currentRedisMock);
-      }
-      on() {}
-      disconnect() {}
-      quit() {}
-    },
-  };
-});
-
-// ════════════════════════════════════════════════════════
-// Constantes locais (cópia do index.ts)
-// ════════════════════════════════════════════════════════
-
-const CACHE_PREFIX = 'mirror:source-group:';
-const CACHE_SET_KEY = 'mirror:source-groups:all';
-
 // ════════════════════════════════════════════════════════
 // Fixtures
 // ════════════════════════════════════════════════════════
@@ -370,6 +340,37 @@ const samplePayload = JSON.stringify(baseEvent);
 
 describe('Redis Stream pipeline', () => {
   let redis: any;
+
+  // ✅ beforeAll/afterAll isolam mocks entre test files (mock.module é global)
+  beforeAll(() => {
+    mock.restore();
+    mock.module('ioredis', () => {
+      return {
+        default: class MockRedis {
+          constructor() {
+            currentRedisMock = createRedisMock();
+            Object.assign(this, currentRedisMock);
+          }
+          on() {}
+          disconnect() {}
+          quit() {}
+        },
+        Redis: class MockRedis {
+          constructor() {
+            currentRedisMock = createRedisMock();
+            Object.assign(this, currentRedisMock);
+          }
+          on() {}
+          disconnect() {}
+          quit() {}
+        },
+      };
+    });
+  });
+
+  afterAll(() => {
+    mock.restore();
+  });
 
   beforeEach(async () => {
     resetRedisState();
