@@ -21,6 +21,7 @@ services:
       POSTGRES_DATABASE: omestre_db
       POSTGRES_SCHEMA: omestre
       EVOLUTION_API_URL: "http://evolution-api:8080"
+      WORKER_METRICS_URL: "http://worker:9092"
       FRONTEND_URL: "${FRONTEND_URL:-http://localhost:5441}"
     networks:
       - omestre-prod-net
