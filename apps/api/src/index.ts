@@ -16,6 +16,7 @@ import { detectMarketplace } from '@omestre/shared';
 import { UserRepository, UserCredentialsRepository, checkDbHealth } from '@omestre/db';
 import { authRoutes } from './modules/auth/auth.routes.ts';
 import { affiliateRoutes } from './modules/affiliate/affiliate.routes.ts';
+import { mirrorRoutes } from './modules/mirrors/mirrors.routes.ts';
 import { whatsAppRoutes } from './modules/whatsapp/whatsapp.routes.ts';
 import { webhookRoutes } from './modules/webhook/webhook.routes.ts';
 import { mlRoutes } from './modules/ml/ml.routes.ts';
@@ -67,6 +68,7 @@ const app = new Elysia()
   })
   .use(authRoutes)
   .use(affiliateRoutes)
+  .use(mirrorRoutes)
   .use(whatsAppRoutes)
   .use(webhookRoutes)
   .use(mlRoutes)
