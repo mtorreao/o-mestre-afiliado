@@ -218,7 +218,7 @@ export async function deleteInstance(instanceName: string): Promise<{
       headers: headers(),
     });
 
-    if (!res.ok && res.status !== 404) {
+    if (!res.ok && res.status !== 404 && res.status !== 403) {
       const text = await res.text();
       return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
     }
@@ -483,7 +483,7 @@ export async function logoutInstance(instanceName: string): Promise<{
       headers: headers(),
     });
 
-    if (!res.ok && res.status !== 404) {
+    if (!res.ok && res.status !== 404 && res.status !== 403) {
       const text = await res.text();
       return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
     }
