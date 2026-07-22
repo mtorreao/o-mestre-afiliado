@@ -19,6 +19,7 @@ import {
   Package,
   AlertCircle,
   ChevronRight,
+  PlusCircle,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────
@@ -365,6 +366,12 @@ export function DashboardPage({ user, token, onNavigate }: DashboardPageProps) {
       {/* Section 2: Quick actions */}
       <Card title="Atalhos Rápidos">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
+          <QuickActionCard
+            icon={<PlusCircle size={20} />}
+            label="Novo Espelhamento"
+            description="Criar nova configuração de espelhamento de ofertas"
+            onClick={() => onNavigate?.('mirror-form')}
+          />
           <QuickActionCard
             icon={<Settings size={20} />}
             label="Configurar integrações"

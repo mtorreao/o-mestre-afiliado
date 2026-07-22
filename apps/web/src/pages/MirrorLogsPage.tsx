@@ -7,7 +7,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Button, Select, Badge, Loading, LoadingSkeleton } from '../components/ui/index.ts';
-import { Filter, RotateCw, Search, X, ChevronDown, ChevronUp, Copy } from 'lucide-react';
+import { Filter, RotateCw, Search, X, ChevronDown, ChevronUp, Copy, PlusCircle } from 'lucide-react';
+import type { NavItem } from '../components/layout/AppShell.tsx';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -38,6 +39,8 @@ interface MirrorLogResponse {
 
 interface MirrorLogsPageProps {
   token: string;
+  onBack: () => void;
+  onNavigate?: (nav: NavItem) => void;
 }
 
 // ─── Helpers ────────────────────────────────────────
@@ -68,7 +71,7 @@ function formatDate(iso: string): string {
 
 // ─── Component ──────────────────────────────────────
 
-export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
+export function MirrorLogsPage({ token, onBack, onNavigate }: MirrorLogsPageProps) {
   const [data, setData] = useState<MirrorLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -132,6 +135,11 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
         subtitle={data ? `${data.total} registro(s)` : 'Carregando...'}
         actions={
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {onNavigate && (
+              <Button variant="outline" size="sm" onClick={() => onNavigate('mirror-form')} icon={<PlusCircle size={14} />}>
+                Novo
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={handleReset} icon={<X size={14} />}>
               Limpar
             </Button>
