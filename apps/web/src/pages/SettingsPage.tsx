@@ -112,12 +112,15 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
         </div>
 
         {/* Aba 3: Shopee */}
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <ShopeeConfigSection
             token={token}
             initialAppId={profile?.shopeeAppId || ''}
             onUpdate={loadProfile}
           />
+          <div style={{ marginTop: '1.25rem' }}>
+            <TestConversionSection token={token} />
+          </div>
         </div>
 
         {/* Aba 4: Mercado Livre */}
