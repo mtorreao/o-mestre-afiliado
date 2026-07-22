@@ -9,6 +9,7 @@ import { useAuth } from './hooks/useAuth.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
+import { GroupsPage } from './pages/GroupsPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
@@ -21,6 +22,7 @@ type AuthPage = 'login' | 'register';
 const pageTitles: Record<NavItem, string> = {
   dashboard: 'Dashboard',
   settings: 'Configurações',
+  groups: 'Grupos de Espelhamento',
   'mirror-logs': 'Logs de Espelhamento',
   'worker-status': 'Status do Worker',
 };
@@ -66,6 +68,9 @@ function App() {
         >
           {nav === 'settings' && (
             <SettingsPage user={user} token={token} />
+          )}
+          {nav === 'groups' && (
+            <GroupsPage token={token} />
           )}
           {nav === 'mirror-logs' && (
             <MirrorLogsPage token={token} onBack={() => setNav('dashboard')} />
