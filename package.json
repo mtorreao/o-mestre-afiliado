@@ -24,7 +24,6 @@
     "db:migrate": "bun run --cwd packages/db db:migrate",
     "db:push": "bun run --cwd packages/db db:push",
     "db:studio": "bun run --cwd packages/db db:studio",
-    "seed:ml": "bun run --cwd apps/api seed:ml",
     "test:e2e": "bun run scripts/test-e2e.ts",
     "deploy:local": "bun run scripts/deploy-local.ts"
   },
