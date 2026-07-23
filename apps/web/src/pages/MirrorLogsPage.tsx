@@ -86,7 +86,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
   const pageSize = 25;
 
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchLogs = useCallback(async (p: number) => {
     setLoading(true);
