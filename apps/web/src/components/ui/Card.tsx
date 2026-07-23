@@ -41,7 +41,7 @@ export function Card({ children, title, subtitle, action, className, style }: Ca
       {(title || action) && (
         <div style={headerStyle}>
           <div>
-            {title && <h3 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 600 }}>{title}</h3>}
+            {title && <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 600 }}>{title}</h3>}
             {subtitle && <p style={{ margin: '0.15rem 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>{subtitle}</p>}
           </div>
           {action && <div>{action}</div>}
