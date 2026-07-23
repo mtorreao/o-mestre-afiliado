@@ -4,7 +4,6 @@
  * Tabela com filtros por status, marketplace, período e busca textual.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Button, Select, Badge, Loading, LoadingSkeleton } from '../components/ui/index.ts';
@@ -71,7 +70,6 @@ function formatDate(iso: string): string {
 // ─── Component ──────────────────────────────────────
 
 export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
-  const navigate = useNavigate();
   const [data, setData] = useState<MirrorLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -135,9 +133,17 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
       <PageHeader
         title="📋 Logs de Espelhamento"
         subtitle={data ? `${data.total} registro(s)` : 'Carregando...'}
-        onBack={() => navigate('/')}
         actions={
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => fetchLogs(page)}
+              disabled={loading}
+              icon={<RotateCw size={14} className={loading ? 'spin' : ''} />}
+            >
+              Atualizar
+            </Button>
             <Button variant="ghost" size="sm" onClick={handleReset} icon={<X size={14} />}>
               Limpar
             </Button>
