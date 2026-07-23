@@ -156,8 +156,15 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
 
       {/* Filters */}
       <Card>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
-          <div style={{ flex: '1 1 130px', minWidth: '120px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+            gap: '0.75rem',
+            alignItems: 'end',
+          }}
+        >
+          <div>
             <Select
               label="Status"
               value={statusFilter}
@@ -172,7 +179,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             />
           </div>
 
-          <div style={{ flex: '1 1 130px', minWidth: '120px' }}>
+          <div>
             <Select
               label="Marketplace"
               value={marketplaceFilter}
@@ -188,7 +195,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             />
           </div>
 
-          <div style={{ flex: '1 1 130px', minWidth: '120px' }}>
+          <div>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               De
             </label>
@@ -210,7 +217,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             />
           </div>
 
-          <div style={{ flex: '1 1 130px', minWidth: '120px' }}>
+          <div>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               Até
             </label>
@@ -232,7 +239,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             />
           </div>
 
-          <div style={{ flex: '2 1 180px', minWidth: '140px' }}>
+          <div>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               Buscar
             </label>
