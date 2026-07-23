@@ -63,8 +63,8 @@ const GROUPS: PlaceholderGroup[] = [
     category: 'Condicional',
     icon: <GitBranch size={13} />,
     items: [
-      { label: 'se marketplace', placeholder: '{? marketplace = shopee}\n  {texto_original}\n{:}\n  {texto_original}\n{/}', hint: 'Condicional por marketplace' },
-      { label: 'se source_group', placeholder: '{? source_group = Nome}\n  {texto_original}\n{/}', hint: 'Condicional por grupo origem' },
+      { label: 'se marketplace', placeholder: "{se marketplace for igual a 'shopee'}\n  {texto_original}\n{senão}\n  {texto_original}\n{fim}", hint: 'Condicional por marketplace' },
+      { label: 'se source_group', placeholder: "{se source_group for igual a 'Nome'}\n  {texto_original}\n{fim}", hint: 'Condicional por grupo origem' },
     ],
   },
 ];

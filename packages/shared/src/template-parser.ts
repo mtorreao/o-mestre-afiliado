@@ -1,7 +1,7 @@
 /**
  * Template Parser — Processa condicionais em templates de mensagem.
  *
- * Sintaxe:
+ * Sintaxe técnica:
  *   {? marketplace = shopee}
  *     Conteúdo para Shopee...
  *   {: marketplace = mercadolivre}
@@ -9,6 +9,18 @@
  *   {:}
  *     Conteúdo padrão (else)...
  *   {/}
+ *
+ * Sintaxe humanizada (traduzida automaticamente):
+ *   {se marketplace for igual a 'shopee'}
+ *     Conteúdo para Shopee...
+ *   {senão se marketplace for igual a 'mercadolivre'}
+ *     Conteúdo para ML...
+ *   {senão}
+ *     Conteúdo padrão...
+ *   {fim}
+ *
+ *   — inline (tudo na mesma linha):
+ *   {se marketplace for igual a 'shopee' então 🛒 senão 📦}
  *
  * Condicionais podem ser aninhadas.
  * Placeholders não reconhecidos em condições são avaliados como false.
@@ -253,4 +265,111 @@ export function buildEvalContext(
     source_group: sourceGroupName,
     target_group: targetGroupName,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SINTAXE HUMANIZADA (PORTUGUÊS)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Mapa de operadores em português para operadores internos.
+ * A ordem importa: padrões mais longos primeiro para evitar matches parciais.
+ */
+const CONDITION_PATTERNS = [
+  { regex: /for igual a\s*/i, replacement: '= ' },
+  { regex: /for diferente de\s*/i, replacement: '!= ' },
+  { regex: /for\s*/i, replacement: '= ' },
+] as const;
+
+/**
+ * Traduz uma condição em português para o formato interno.
+ *
+ * Exemplos:
+ *   "marketplace for igual a 'shopee'"  → "marketplace = shopee"
+ *   "marketplace for diferente de 'ml'" → "marketplace != ml"
+ *   "source_group for 'VIP'"            → "source_group = VIP"
+ */
+export function translateCondition(cond: string): string {
+  let result = cond.trim();
+
+  // Remove aspas simples ao redor de valores
+  result = result.replace(/^'|'$/g, '').trim();
+
+  // Aplica os padrões de operador
+  for (const { regex, replacement } of CONDITION_PATTERNS) {
+    const match = result.match(regex);
+    if (match) {
+      const field = result.slice(0, match.index).trim();
+      const value = result.slice(match.index! + match[0].length).trim().replace(/^'|'$/g, '');
+      return `${field} ${replacement}${value}`;
+    }
+  }
+
+  // Se não reconheceu operador, retorna como está (pode ser formato técnico)
+  return cond.trim();
+}
+
+/**
+ * Traduz blocos condicionais escritos em português para o formato técnico
+ * usado internamente pelo processConditionals.
+ *
+ * Formatos suportados:
+ *   Bloco:    {se condição}...{senão se condição}...{senão}...{fim}
+ *   Inline:   {se condição então A senão B}
+ *
+ * A tradução é feita por substituição de texto, sem parsing de aninhamento.
+ * Os blocos {se...} são convertidos para {?...} e seus correspondentes.
+ * O aninhamento é preservado porque a estrutura de chaves é a mesma.
+ *
+ * @param input Template com sintaxe humanizada
+ * @returns Template com sintaxe técnica ({?}, {:}, {/})
+ */
+export function translateHumanConditionals(input: string): string {
+  let result = input;
+
+  // ── 1. Processa blocos inline: {se X então A senão B} ──────────
+  // Regex: {se condição então conteúdo [senão conteúdo]}
+  // Captura o conteúdo inteiro entre {se e o } final
+  result = result.replace(
+    /\{se\s+(.+?)\s+então\s+(.+?)(?:\s+senão\s+(.+?))?\}/gi,
+    (_match, condition, trueContent, falseContent) => {
+      const cond = translateCondition(condition!);
+      const tc = trueContent?.trim() ?? '';
+      const fc = falseContent?.trim() ?? '';
+      if (fc) {
+        return `{? ${cond}}${tc}{:}${fc}{/}`;
+      }
+      return `{? ${cond}}${tc}{/}`;
+    },
+  );
+
+  // ── 2. Processa blocos multilinha: {se...} / {senão se...} / {senão} / {fim} ──
+  result = result.replace(/\{se\s+(.+?)\}/gi, (_match, condition) => {
+    return `{? ${translateCondition(condition!)}}`;
+  });
+
+  result = result.replace(/\{senão\s+se\s+(.+?)\}/gi, (_match, condition) => {
+    return `{: ${translateCondition(condition!)}}`;
+  });
+
+  result = result.replace(/\{senão\s+se\}/gi, '{:}'); // fallback
+  result = result.replace(/\{senão\}/gi, '{:}');
+  result = result.replace(/\{fim\}/gi, '{/}');
+
+  return result;
+}
+
+/**
+ * Processa condicionais no texto, aceitando tanto sintaxe técnica ({?})
+ * quanto humanizada ({se ...}).
+ *
+ * Primeiro converte a sintaxe humanizada para técnica, depois processa
+ * os blocos condicionais normalmente.
+ */
+export function processConditionalsHuman(
+  input: string,
+  ctx: TemplateEvalContext,
+): string {
+  const translated = translateHumanConditionals(input);
+  return processConditionals(translated, ctx);
 }

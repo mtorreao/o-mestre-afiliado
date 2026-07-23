@@ -4,7 +4,7 @@ import type { ExcludedGroup, Filters } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { convertShopeeUrlWithCredentials, convertAmazonUrlWithTrackingId } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
-import { detectMarketplace, resolvePlaceholders, processConditionals, buildEvalContext, findUnknownPlaceholders } from '@omestre/shared';
+import { detectMarketplace, resolvePlaceholders, processConditionalsHuman, buildEvalContext, findUnknownPlaceholders } from '@omestre/shared';
 import type { ConversionResult, TemplateContext } from '@omestre/shared';
 import { generateViaUrlParams } from '@omestre/converters';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
@@ -691,7 +691,7 @@ export const affiliateRoutes = new Elysia()
 
     // 1. Processa condicionais
     const evalCtx = buildEvalContext(mp, ctx.sourceGroupName, ctx.targetGroupName);
-    let preview = processConditionals(template, evalCtx);
+    let preview = processConditionalsHuman(template, evalCtx);
 
     // 2. Resolve placeholders
     preview = resolvePlaceholders(preview, ctx);
@@ -725,8 +725,8 @@ export const affiliateRoutes = new Elysia()
 
     const unknownPlaceholders = findUnknownPlaceholders(template || '');
 
-    // Verifica se contém condicionais
-    const containsConditional = /\{\?|\{\/\}|\{\:/i.test(template || '');
+    // Verifica se contém condicionais (técnica ou humanizada)
+    const containsConditional = /\{\?|\{\/\}|\{\:|\{se\s|\{senão|\{fim\}/i.test(template || '');
 
     // Verifica se contém pelo menos um placeholder de texto ou link
     const containsLinkOrText = /\{texto_original\}|\{link_convertido\}/i.test(template || '');
@@ -734,12 +734,20 @@ export const affiliateRoutes = new Elysia()
     // Verifica placeholders condicionais inválidos
     const conditionalErrors: string[] = [];
     if (containsConditional) {
-      // Verifica se há {? sem {/} correspondente
+      // Verifica se há {? sem {/} correspondente (sintaxe técnica)
       const openCount = (template!.match(/\{\?/g) || []).length;
       const closeCount = (template!.match(/\{\//g) || []).length;
       if (openCount !== closeCount) {
         conditionalErrors.push(
-          `Blocos condicionais desbalanceados: ${openCount} abertos, ${closeCount} fechados`,
+          `Blocos condicionais desbalanceados: ${openCount} abertos ({?}), ${closeCount} fechados ({/})`,
+        );
+      }
+      // Verifica se há {se sem {fim} correspondente (sintaxe humanizada)
+      const humanOpenCount = (template!.match(/\{se\s/gi) || []).length;
+      const humanCloseCount = (template!.match(/\{fim\}/gi) || []).length;
+      if (humanOpenCount !== humanCloseCount) {
+        conditionalErrors.push(
+          `Blocos condicionais desbalanceados: ${humanOpenCount} abertos ({se}), ${humanCloseCount} fechados ({fim})`,
         );
       }
     }

@@ -11,7 +11,7 @@
  */
 
 import type { MirrorMessageEvent, TemplateContext } from '@omestre/shared';
-import { detectMarketplace, resolvePlaceholders, processConditionals, buildEvalContext } from '@omestre/shared';
+import { detectMarketplace, resolvePlaceholders, processConditionalsHuman, buildEvalContext } from '@omestre/shared';
 import { convertShopeeUrlWithCredentials, generateViaUrlParams, generateShortAffiliateLink, convertAmazonUrlWithTrackingId } from '@omestre/converters';
 import { getDb, affiliates, mirrors, reflectedOffers, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository, MirrorRepository } from '@omestre/db';
 import {
@@ -819,7 +819,7 @@ function buildTemplateMessage(
       ctx.sourceGroupName,
       ctx.targetGroupName,
     );
-    let result = processConditionals(template, evalCtx);
+    let result = processConditionalsHuman(template, evalCtx);
 
     // 2. Resolve placeholders
     result = resolvePlaceholders(result, ctx);

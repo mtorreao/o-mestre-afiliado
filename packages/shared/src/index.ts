@@ -194,6 +194,9 @@ export {
   evaluateCondition,
   processConditionals,
   buildEvalContext,
+  translateCondition,
+  translateHumanConditionals,
+  processConditionalsHuman,
 } from './template-parser.ts';
 export type { TemplateEvalContext } from './template-parser.ts';
 

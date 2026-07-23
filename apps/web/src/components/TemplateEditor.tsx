@@ -2,14 +2,14 @@
  * TemplateEditor — Editor completo de template de mensagem.
  *
  * Combina:
- *   - PlaceholderPicker (botões de inserção)
+ *   - PlaceholderPicker (botões de inserção — sempre visíveis)
  *   - Textarea com placeholder legend
  *   - Validação inline (placeholders desconhecidos via API)
  *   - Caractere count
- *   - Preview simples (placeholders resolvidos com valores de exemplo)
+ *   - Ajuda de condicionais (collapsible)
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { AlertTriangle, CheckCircle, Type } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { AlertTriangle, CheckCircle, Type, HelpCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { PlaceholderPicker } from './PlaceholderPicker.tsx';
 import { fetchApi } from '../lib/api-client.ts';
 
@@ -68,7 +68,136 @@ const statusBarStyle: React.CSSProperties = {
   color: 'var(--color-text-muted)',
 };
 
-// ─── Component ───────────────────────────────────────────────────────
+// ─── Ajuda de Condicionais ───────────────────────────────────────────
+
+function ConditionalHelp() {
+  const [open, setOpen] = useState(false);
+
+  const toggleBtnStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    background: 'none',
+    border: 'none',
+    color: 'var(--color-primary)',
+    fontSize: 'var(--text-xs)',
+    fontWeight: 500,
+    cursor: 'pointer',
+    padding: '0.15rem 0',
+  };
+
+  const helpBoxStyle: React.CSSProperties = {
+    padding: '0.75rem',
+    background: 'var(--color-bg-secondary)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--color-border-light)',
+    fontSize: 'var(--text-xs)',
+    lineHeight: 1.7,
+    color: 'var(--color-text-secondary)',
+  };
+
+  const codeStyle: React.CSSProperties = {
+    color: 'var(--color-primary)',
+    background: 'var(--color-primary-subtle)',
+    padding: '0.1rem 0.3rem',
+    borderRadius: 'var(--radius-sm)',
+    fontFamily: 'var(--font-mono)',
+    wordBreak: 'break-all',
+  };
+
+  const exBoxStyle: React.CSSProperties = {
+    padding: '0.5rem 0.65rem',
+    background: 'var(--color-surface)',
+    borderRadius: 'var(--radius-sm)',
+    border: '1px solid var(--color-border-light)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 'var(--text-xs)',
+    whiteSpace: 'pre-wrap',
+    margin: '0.3rem 0',
+    lineHeight: 1.5,
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        style={toggleBtnStyle}
+        onClick={() => setOpen(!open)}
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <HelpCircle size={13} />
+        Como usar condicionais no template
+      </button>
+
+      {open && (
+        <div style={{ marginTop: '0.4rem' }}>
+          <div style={helpBoxStyle}>
+            <strong>📌 Sintaxe humanizada (recomendada):</strong>
+            <div style={exBoxStyle}>
+              {`{se marketplace for igual a 'shopee'}
+  🛒 Oferta da Shopee!
+{senão}
+  📦 Outro marketplace
+{fim}`}
+            </div>
+
+            <div style={{ marginTop: '0.5rem' }}>
+              <strong>📖 Regras:</strong>
+              <ul style={{ margin: '0.3rem 0', paddingLeft: '1.2rem' }}>
+                <li><code style={codeStyle}>{'{se condição}'}</code> — inicia um bloco condicional</li>
+                <li><code style={codeStyle}>{'{senão se condição}'}</code> — else-if (opcional)</li>
+                <li><code style={codeStyle}>{'{senão}'}</code> — else (opcional)</li>
+                <li><code style={codeStyle}>{'{fim}'}</code> — fecha o bloco condicional</li>
+                <li>Ou tudo <strong>inline</strong>: <code style={codeStyle}>{'{se X então A senão B}'}</code></li>
+                <li>Condicionais podem ser <strong>aninhadas</strong></li>
+                <li>Operadores: <code style={codeStyle}>for igual a</code> e <code style={codeStyle}>for diferente de</code></li>
+              </ul>
+            </div>
+
+            <div style={{ marginTop: '0.5rem' }}>
+              <strong>🎯 Campos disponíveis:</strong>
+              <ul style={{ margin: '0.3rem 0', paddingLeft: '1.2rem' }}>
+                <li><code style={codeStyle}>marketplace</code> — <code style={codeStyle}>shopee</code>, <code style={codeStyle}>mercadolivre</code>, <code style={codeStyle}>amazon</code></li>
+                <li><code style={codeStyle}>source_group</code> — nome do grupo de origem</li>
+                <li><code style={codeStyle}>target_group</code> — nome do grupo de destino</li>
+              </ul>
+            </div>
+
+            <div style={{ marginTop: '0.5rem' }}>
+              <strong>💡 Exemplos:</strong>
+            </div>
+
+            <div style={exBoxStyle}>
+              {`{se marketplace for igual a 'shopee' então 🛒{link_convertido} senão 📦{link_convertido}}`}
+            </div>
+
+            <div style={exBoxStyle}>
+              {`{se marketplace for igual a 'shopee'}
+🛒 {link_convertido}
+{senão se marketplace for igual a 'mercadolivre'}
+📦 {link_convertido}
+{senão}
+🔗 {link_convertido}
+{fim}
+📍 De {source_group} para {target_group}`}
+            </div>
+
+            <div style={exBoxStyle}>
+              {`{se marketplace for igual a 'shopee'}
+{se source_group for igual a 'VIP'}
+  🏆 Oferta VIP: {link_convertido}
+{fim}
+🛒 {link_convertido}
+{fim}`}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Component Principal ──────────────────────────────────────────────
 
 export function TemplateEditor({
   value,
@@ -122,12 +251,11 @@ export function TemplateEditor({
   const isNearLimit = charCount > charLimit * 0.85;
   const isOverLimit = charCount > charLimit;
 
-  // Placeholder legend
   const isDefault = !value.trim();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      {/* Legend */}
+      {/* Default hint (só quando vazio) */}
       {showDefaultHint && isDefault && (
         <div style={legendStyle}>
           💡 <strong>Template vazio</strong> — será usado o comportamento padrão:
@@ -135,30 +263,29 @@ export function TemplateEditor({
         </div>
       )}
 
-      {!isDefault && (
-        <div style={legendStyle}>
-          <strong>Placeholders disponíveis:</strong>
-          <br />
-          <code style={{ color: 'var(--color-primary)', background: 'var(--color-primary-subtle)', padding: '0.1rem 0.3rem', borderRadius: 'var(--radius-sm)' }}>{'{texto_original}'}</code>
-          {' — Texto com link convertido'}
-          <br />
-          <code style={{ color: 'var(--color-primary)', background: 'var(--color-primary-subtle)', padding: '0.1rem 0.3rem', borderRadius: 'var(--radius-sm)' }}>{'{link_convertido}'}</code>
-          {' — Apenas o link de afiliado'}
-          <br />
-          <span style={{ color: 'var(--color-text-muted)' }}>
-            Use os botões abaixo para inserir placeholders no cursor.
-          </span>
+      {/* Placeholder Picker — SEMPRE visível, mesmo com template vazio */}
+      <div>
+        <div style={{
+          fontSize: 'var(--text-xs)',
+          fontWeight: 600,
+          color: 'var(--color-text-secondary)',
+          marginBottom: '0.35rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.3rem',
+        }}>
+          <HelpCircle size={13} />
+          Clique para inserir um placeholder no cursor:
         </div>
-      )}
-
-      {/* Placeholder Picker */}
-      {!isDefault && (
         <PlaceholderPicker
           textareaRef={textareaRef}
           currentValue={value}
           onInsert={onChange}
         />
-      )}
+      </div>
+
+      {/* Ajuda de condicionais */}
+      <ConditionalHelp />
 
       {/* Textarea */}
       <textarea

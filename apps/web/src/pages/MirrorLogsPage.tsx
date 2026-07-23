@@ -157,7 +157,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
       {/* Filters */}
       <Card>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end' }}>
-          <div style={{ flex: '0 1 160px', minWidth: '140px' }}>
+          <div style={{ flex: '0 0 150px' }}>
             <Select
               label="Status"
               value={statusFilter}
@@ -172,7 +172,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             />
           </div>
 
-          <div style={{ flex: '0 1 160px', minWidth: '140px' }}>
+          <div style={{ flex: '0 0 150px' }}>
             <Select
               label="Marketplace"
               value={marketplaceFilter}
@@ -188,7 +188,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             />
           </div>
 
-          <div style={{ flex: '0 1 150px', minWidth: '130px' }}>
+          <div style={{ flex: '1 0 140px' }}>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               De
             </label>
@@ -210,7 +210,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             />
           </div>
 
-          <div style={{ flex: '0 1 150px', minWidth: '130px' }}>
+          <div style={{ flex: '1 0 140px' }}>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               Até
             </label>
@@ -232,7 +232,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             />
           </div>
 
-          <div style={{ flex: '1 1 200px', minWidth: '140px' }}>
+          <div style={{ flex: '2 0 200px' }}>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               Buscar
             </label>
