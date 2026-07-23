@@ -29,6 +29,7 @@ import {
 } from './notifier.ts';
 import { pushToDLQ } from './dead-letter-queue.ts';
 import { tryAcquireSlot, waitForSlot } from './rate-limiter.ts';
+import { resolveRedirectUrl, isRedirectorUrl } from './resolve-redirect.ts';
 
 // ─── Config ──────────────────────────────────────────────────────────
 
@@ -63,7 +64,9 @@ function evolutionHeaders(): Record<string, string> {
 
 /**
  * Extrai URLs que parecem ser de marketplace de um texto.
- * Retorna a primeira URL de marketplace encontrada.
+ * Retorna a primeira URL de marketplace encontrada,
+ * priorizando URLs diretas sobre redirectors (ex: go.promozone.ai)
+ * que não podem ser resolvidos sem headless browser.
  */
 function extractMarketplaceUrl(text: string): string | null {
   // Regex para capturar URLs
@@ -71,7 +74,19 @@ function extractMarketplaceUrl(text: string): string | null {
   const urls = text.match(urlRegex);
   if (!urls) return null;
 
-  // Retorna a primeira URL de marketplace válida
+  // Domínios de redirectors JS que não resolvem via HTTP redirect
+  const REDIRECTOR_DOMAINS = /go\.promozone\.ai/i;
+
+  // Passada 1: procura URL direta de marketplace (não redirector)
+  for (const url of urls) {
+    if (REDIRECTOR_DOMAINS.test(url)) continue;
+    const marketplace = detectMarketplace(url);
+    if (marketplace !== 'unknown') {
+      return url;
+    }
+  }
+
+  // Passada 2: fallback para redirectors se não achou direta
   for (const url of urls) {
     const marketplace = detectMarketplace(url);
     if (marketplace !== 'unknown') {
@@ -332,12 +347,35 @@ async function convertOfferUrl(
     return { convertedUrl: null, marketplace, success: false };
   }
 
+  // ── Resolve redirector URLs ─────────────────────────────────────────
+  // URLs como go.promozone.ai usam JS redirect e precisam ser resolvidas
+  // para a URL de destino real antes da conversão. Se a resolução falhar,
+  // continua com a URL original (a conversão falhará e a mensagem será
+  // bloqueada pelo safety check).
+  let resolvedUrl = await resolveRedirectUrl(originalUrl);
+  let effectiveMarketplace = marketplace;
+  if (resolvedUrl !== originalUrl) {
+    log('info', 'URL de redirector resolvida', {
+      original: originalUrl,
+      resolved: resolvedUrl,
+      marketplace,
+    });
+    // Re-detecta marketplace após resolução (ex: promozone → shopee direto)
+    const resolvedMp = detectMarketplace(resolvedUrl);
+    if (resolvedMp !== 'unknown') {
+      effectiveMarketplace = resolvedMp;
+    }
+    incrementCounter('mirror_redirector_resolved_total', {
+      marketplace: effectiveMarketplace,
+    });
+  }
+
   // ── Cache check ─────────────────────────────────────────────────────
   // Se a mesma URL já foi convertida recentemente, reaproveita o resultado
-  const cached = await getCachedConversion(originalUrl);
+  const cached = await getCachedConversion(resolvedUrl);
   if (cached) {
     log('info', 'Cache hit — URL já convertida recentemente', {
-      url: originalUrl,
+      url: resolvedUrl,
       marketplace: cached.marketplace,
       cachedAt: cached.timestamp,
     });
@@ -355,10 +393,10 @@ async function convertOfferUrl(
       log('warn', 'InstanceName não está no formato user-{userId}', { instanceName });
       // Fallback: tenta conversão global
       const { convertUrl } = await import('@omestre/converters');
-      const result = await convertUrl(originalUrl);
+      const result = await convertUrl(resolvedUrl);
       return {
         convertedUrl: result.affiliateUrl,
-        marketplace,
+        marketplace: effectiveMarketplace,
         success: result.success,
         error: result.error,
       };
@@ -366,35 +404,35 @@ async function convertOfferUrl(
 
     const userId = parseInt(userIdMatch[1]!, 10);
 
-    if (marketplace === 'shopee') {
-      return await convertShopeeForAffiliate(originalUrl, userId);
+    if (effectiveMarketplace === 'shopee') {
+      return await convertShopeeForAffiliate(resolvedUrl, userId);
     }
 
-    if (marketplace === 'mercadolivre') {
-      return await convertMlForAffiliate(originalUrl, userId);
+    if (effectiveMarketplace === 'mercadolivre') {
+      return await convertMlForAffiliate(resolvedUrl, userId);
     }
 
-    if (marketplace === 'amazon') {
-      return await convertAmazonForAffiliate(originalUrl, userId);
+    if (effectiveMarketplace === 'amazon') {
+      return await convertAmazonForAffiliate(resolvedUrl, userId);
     }
 
     // Para outros marketplaces: tenta conversão global como fallback
     const { convertUrl } = await import('@omestre/converters');
-    const result = await convertUrl(originalUrl);
+    const result = await convertUrl(resolvedUrl);
     return {
       convertedUrl: result.affiliateUrl,
-      marketplace,
+      marketplace: effectiveMarketplace,
       success: result.success,
       error: result.error,
     };
   } catch (err) {
     log('warn', 'Falha ao converter URL', {
-      url: originalUrl,
-      marketplace,
+      url: resolvedUrl,
+      marketplace: effectiveMarketplace,
       affiliateId,
       error: String(err),
     });
-    return { convertedUrl: null, marketplace, success: false, error: String(err) };
+    return { convertedUrl: null, marketplace: effectiveMarketplace, success: false, error: String(err) };
   }
 }
 

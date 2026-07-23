@@ -77,7 +77,14 @@ function extractMessageText(msg: WebhookMessage['message']): string | null {
   // Extended text
   if (msg.extendedTextMessage?.text) return msg.extendedTextMessage.text;
 
-  // Ephemeral messages (mensagens temporárias)
+  // Mídia com caption no primeiro nível (Evolution v2 envia imageMessage
+  // diretamente para mensagens de imagem sem ephemeral)
+  if (msg.imageMessage?.caption) return msg.imageMessage.caption;
+  if (msg.videoMessage?.caption) return msg.videoMessage.caption;
+  if (msg.documentMessage?.caption) return msg.documentMessage.caption;
+  if (msg.audioMessage?.caption) return msg.audioMessage?.caption ?? null;
+
+  // Ephemeral messages (mensagens temporárias/disappearing)
   const ephemeral = msg.ephemeralMessage;
   if (ephemeral?.message) {
     const inner = ephemeral.message;
@@ -212,6 +219,7 @@ async function handleMessagesUpsert(
  * 1. Array direto: [msg1, msg2, ...]
  * 2. Objeto com array: { messages: [msg1, msg2, ...] }
  * 3. Objeto paginado: { messages: { records: [msg1, msg2, ...] } }
+ * 4. Objeto único (Evolution v2.3.7+): { key: {...}, message: {...} }
  */
 function extractMessagesFromData(data: unknown): unknown[] {
   if (Array.isArray(data)) {
@@ -229,6 +237,13 @@ function extractMessagesFromData(data: unknown): unknown[] {
     // Formato com array direto: { messages: [...] }
     if (Array.isArray(obj.messages)) {
       return obj.messages as unknown[];
+    }
+
+    // Formato objeto único (Evolution v2.3.7+):
+    // messages.upsert envia data como { key: {...}, message: {...} }
+    // Detectamos pela presença de key.remoteJid
+    if (obj.key && typeof obj.key === 'object') {
+      return [data];
     }
   }
 
