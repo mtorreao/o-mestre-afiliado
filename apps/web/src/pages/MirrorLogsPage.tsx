@@ -183,9 +183,11 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />} style={{ flex: 1 }}>
               Limpar
             </Button>
-            <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>
-              Filtrar
-            </Button>
+            {isMobile && (
+              <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>
+                Filtrar
+              </Button>
+            )}
           </div>
         }
       >
