@@ -18,12 +18,16 @@
  *     </FilterBar.Item>
  *   </FilterBar>
  */
-import React, { useState } from 'react';
+import React from 'react';
 import { Filter } from 'lucide-react';
 import { Card } from './Card.tsx';
 import { Button } from './Button.tsx';
 import { BottomSheet } from './BottomSheet.tsx';
 import { useMediaQuery } from '../../hooks/useMediaQuery.ts';
+
+// ─── Context para modo mobile ──────────────────────────
+
+const FilterBarContext = React.createContext<{ isMobile: boolean }>({ isMobile: false });
 
 // ─── FilterBar (container) ─────────────────────────────
 
@@ -37,12 +41,12 @@ interface FilterBarProps {
 
 export function FilterBar({ children, collapsible = false, label = 'Filtros' }: FilterBarProps) {
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = React.useState(false);
 
   // Modo collapsível + mobile: renderiza apenas o trigger + BottomSheet
   if (collapsible && isMobile) {
     return (
-      <>
+      <FilterBarContext.Provider value={{ isMobile: true }}>
         <BottomSheet
           open={sheetOpen}
           onOpenChange={setSheetOpen}
@@ -62,13 +66,13 @@ export function FilterBar({ children, collapsible = false, label = 'Filtros' }: 
             style={{
               display: 'flex',
               flexDirection: 'column',
-              gap: '1rem',
+              gap: '0.75rem',
             }}
           >
             {children}
           </div>
         </BottomSheet>
-      </>
+      </FilterBarContext.Provider>
     );
   }
 
@@ -100,6 +104,14 @@ interface FilterBarItemProps {
 }
 
 function FilterBarItem({ children, width = '150px', grow = 0 }: FilterBarItemProps) {
+  const { isMobile } = React.useContext(FilterBarContext);
+
+  // Mobile: full width, sem restrições de altura
+  if (isMobile) {
+    return <div style={{ width: '100%' }}>{children}</div>;
+  }
+
+  // Desktop: flex item com as props de largura
   return (
     <div
       style={{
