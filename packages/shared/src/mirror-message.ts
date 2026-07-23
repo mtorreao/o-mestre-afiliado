@@ -19,6 +19,8 @@ export interface MirrorMessageEvent {
   sourceGroupName: string;
   /** ID do afiliado no banco */
   affiliateId: number;
+  /** ID do mirror (opcional). Se presente, o worker busca config no mirrors. */
+  mirrorId?: number;
   /** Texto extraído da mensagem */
   text: string;
   /** Timestamp da mensagem original (unix seconds) */

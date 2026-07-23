@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { WhatsAppInstanceRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import {
@@ -168,6 +168,8 @@ export const whatsAppRoutes = new Elysia()
           connected: instance.status === 'connected',
           status: instance.status,
           instanceId: instance.instanceId,
+          rateLimitMaxMsgs: instance.rateLimitMaxMsgs,
+          rateLimitWindowSec: instance.rateLimitWindowSec,
           cached: true,
         };
       }
@@ -194,6 +196,8 @@ export const whatsAppRoutes = new Elysia()
         connected: mappedStatus === 'connected',
         status: mappedStatus,
         instanceId: instance.instanceId,
+        rateLimitMaxMsgs: instance.rateLimitMaxMsgs,
+        rateLimitWindowSec: instance.rateLimitWindowSec,
       };
     },
     {
@@ -412,6 +416,72 @@ export const whatsAppRoutes = new Elysia()
           400: { description: 'Nenhuma instância encontrada' },
           401: { description: 'Não autenticado' },
         },
+      },
+    },
+  )
+
+  // ─── PATCH /api/whatsapp/instances/:id/rate-limit ──────────────
+  .patch(
+    '/api/whatsapp/instances/:id/rate-limit',
+    async ({ jwt, request, set, params, body }) => {
+      const auth = await getAuthUser(jwt, request.headers);
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: 'Não autenticado' };
+      }
+
+      const id = parseInt(params.id, 10);
+      if (isNaN(id)) {
+        set.status = 400;
+        return { success: false, error: 'ID inválido' };
+      }
+
+      const instance = await instanceRepo.findById(id);
+      if (!instance) {
+        set.status = 404;
+        return { success: false, error: 'Instância não encontrada' };
+      }
+
+      // Verifica se a instância pertence ao usuário
+      if (instance.userId !== auth.userId) {
+        set.status = 403;
+        return { success: false, error: 'Acesso negado a esta instância' };
+      }
+
+      const { maxMsgs, windowSec } = body as { maxMsgs: number; windowSec: number };
+
+      if (typeof maxMsgs !== 'number' || maxMsgs < 1 || maxMsgs > 1000) {
+        set.status = 400;
+        return { success: false, error: 'maxMsgs deve ser um número entre 1 e 1000' };
+      }
+
+      if (typeof windowSec !== 'number' || windowSec < 10 || windowSec > 3600) {
+        set.status = 400;
+        return { success: false, error: 'windowSec deve ser um número entre 10 e 3600' };
+      }
+
+      await instanceRepo.updateRateLimit(id, maxMsgs, windowSec);
+
+      return {
+        success: true,
+        message: 'Rate limit atualizado com sucesso',
+        instance: {
+          id: instance.id,
+          instanceId: instance.instanceId,
+          rateLimitMaxMsgs: maxMsgs,
+          rateLimitWindowSec: windowSec,
+        },
+      };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      body: t.Object({
+        maxMsgs: t.Number({ minimum: 1, maximum: 1000 }),
+        windowSec: t.Number({ minimum: 10, maximum: 3600 }),
+      }),
+      detail: {
+        summary: 'Configurar rate limit da instância',
+        description: 'Altera o limite de mensagens por janela de tempo para uma instância WhatsApp',
       },
     },
   );

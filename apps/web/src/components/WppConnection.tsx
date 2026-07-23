@@ -11,8 +11,8 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MessageCircle } from 'lucide-react';
-import { Card, Button, Badge, Loading } from './ui/index.ts';
+import { MessageCircle, Gauge } from 'lucide-react';
+import { Card, Button, Badge, Loading, Input } from './ui/index.ts';
 
 interface WppConnectionProps {
   token: string;
@@ -22,8 +22,8 @@ type WppState =
   | { status: 'loading' }
   | { status: 'disconnected' }
   | { status: 'connecting'; message?: string }
-  | { status: 'awaiting_scan'; qrcode: string }
-  | { status: 'connected'; phone: string | null }
+  | { status: 'awaiting_scan'; qrcode: string; instanceId?: string }
+  | { status: 'connected'; phone: string | null; instanceId?: number; rateLimitMaxMsgs?: number; rateLimitWindowSec?: number }
   | { status: 'error'; message: string };
 
 const POLL_INTERVAL = 5000; // 5 segundos
@@ -79,7 +79,13 @@ export function WppConnection({ token }: WppConnectionProps) {
               clearInterval(pollRef.current);
               pollRef.current = null;
             }
-            setState({ status: 'connected', phone: null });
+            setState({
+              status: 'connected',
+              phone: null,
+              instanceId: (data as any).instanceId,
+              rateLimitMaxMsgs: (data as any).rateLimitMaxMsgs ?? 15,
+              rateLimitWindowSec: (data as any).rateLimitWindowSec ?? 300,
+            });
           } else if (data.status === 'disconnected' || data.status === 'close') {
             // QR expirou — tentar auto-recovery 1x
             if (regeneratingRef.current) return;
@@ -346,6 +352,26 @@ export function WppConnection({ token }: WppConnectionProps) {
                 {state.phone}
               </p>
             )}
+
+            {/* Rate limit info */}
+            <div style={{
+              padding: '0.5rem 0.75rem',
+              background: 'var(--color-bg-secondary)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 'var(--text-xs)',
+              color: 'var(--color-text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              border: '1px solid var(--color-border-light)',
+            }}>
+              <Gauge size={16} style={{ color: 'var(--color-primary)' }} />
+              <span>
+                Limite de envio: <strong>{state.rateLimitMaxMsgs ?? 15}</strong> mensagens a cada{' '}
+                <strong>{state.rateLimitWindowSec ?? 300}</strong>s
+              </span>
+            </div>
+
             <Button variant="danger" onClick={handleDisconnect}>
               Desconectar WhatsApp
             </Button>

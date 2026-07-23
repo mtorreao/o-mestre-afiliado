@@ -1,14 +1,20 @@
 /**
- * Cache Redis para mapeamento sourceGroupJid → { affiliateId, groupName }.
+ * Cache Redis para mapeamento sourceGroupJid → { affiliateId, mirrorId?, groupName }.
  *
  * Evita consultar o PostgreSQL no hot path do webhook,
  * que recebe milhares de mensagens por dia.
  *
  * Estrutura no Redis:
- *   mirror:source-group:{jid} → { affiliateId: number, groupName: string }
+ *   mirror:source-group:{jid} → { affiliateId: number, mirrorId?: number, groupName: string }
  *
- * O webhook consulta este cache (O(1)), sem fallback ao DB.
- * A população acontece via API quando o usuário configura grupos.
+ * O campo mirrorId indica que o grupo pertence a um espelhamento (mirror).
+ * Quando presente, o worker busca targetGroups e configurações do mirror.
+ * Quando ausente, usa a configuração legada do affiliate (affiliates table).
+ *
+ * O cache é populado via:
+ *   - POST/GET /api/affiliate/groups-config (legado, sem mirrorId)
+ *   - POST/PUT /api/mirrors (com mirrorId)
+ *   - Limpeza via DELETE /api/mirrors/:id
  */
 
 import { getRedis, cacheDel } from './redis.ts';
@@ -22,6 +28,8 @@ const CACHE_TTL = 3600;
 /** Informação de cache para um sourceGroup. */
 export interface SourceGroupCacheEntry {
   affiliateId: number;
+  /** ID do mirror (opcional). Se presente, o worker usa a config do mirror. */
+  mirrorId?: number;
   groupName: string;
 }
 
@@ -79,6 +87,7 @@ export async function cacheSourceGroup(
   groupJid: string,
   affiliateId: number,
   groupName?: string,
+  mirrorId?: number,
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
@@ -87,7 +96,7 @@ export async function cacheSourceGroup(
     await r.setex(
       `${CACHE_PREFIX}${groupJid}`,
       CACHE_TTL,
-      JSON.stringify({ affiliateId, groupName: groupName ?? '' } as SourceGroupCacheEntry),
+      JSON.stringify({ affiliateId, mirrorId, groupName: groupName ?? '' } as SourceGroupCacheEntry),
     );
     // Mantém um set com todas as chaves para refresh bulk
     await r.sadd(CACHE_SET_KEY, groupJid);
@@ -133,7 +142,7 @@ export async function removeSourceGroups(jids: string[]): Promise<void> {
 }
 
 /**
- * Substitui completamente os sourceGroups de um afiliado no cache.
+ * Substitui completamente os sourceGroups de um afiliado ou mirror no cache.
  *
  * Estratégia:
  *   1. Busca todos os sourceGroups atuais deste afiliado no Redis
@@ -147,6 +156,7 @@ export async function replaceSourceGroups(
   oldGroups: { jid: string; name?: string }[],
   newGroups: { jid: string; name?: string }[],
   affiliateId: number,
+  mirrorId?: number,
 ): Promise<void> {
   const r = getRedis();
   if (!r) return;
@@ -168,7 +178,7 @@ export async function replaceSourceGroups(
       pipeline.setex(
         `${CACHE_PREFIX}${jid}`,
         CACHE_TTL,
-        JSON.stringify({ affiliateId, groupName: newGroup?.name ?? '' } as SourceGroupCacheEntry),
+        JSON.stringify({ affiliateId, mirrorId, groupName: newGroup?.name ?? '' } as SourceGroupCacheEntry),
       );
       pipeline.sadd(CACHE_SET_KEY, jid);
     }

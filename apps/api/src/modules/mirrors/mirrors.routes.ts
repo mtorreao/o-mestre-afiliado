@@ -12,10 +12,13 @@
  * Arquitetura: middleware (auth) → routes (validação + orquestração) → repository
  */
 import { Elysia, t } from 'elysia';
-import { MirrorRepository } from '@omestre/db';
+import { MirrorRepository, AffiliatesRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
+import { replaceSourceGroups, removeSourceGroups } from '../../services/group-cache.ts';
+import { instanceNameFromUserId } from '../../services/evolution.ts';
 
 const mirrorRepo = new MirrorRepository();
+const affiliatesRepo = new AffiliatesRepository();
 
 // ─── Schemas de validação (Zod via Elysia t) ─────────────────────────
 
@@ -30,6 +33,8 @@ const createBodySchema = t.Object({
   sourceGroups: t.Optional(t.Array(groupItemSchema)),
   targetGroups: t.Optional(t.Array(groupItemSchema)),
   messageTemplate: t.Optional(t.Nullable(t.String())),
+  subRateLimitMaxMsgs: t.Optional(t.Nullable(t.Number())),
+  subRateLimitWindowSec: t.Optional(t.Nullable(t.Number())),
 });
 
 const updateBodySchema = t.Object({
@@ -38,6 +43,8 @@ const updateBodySchema = t.Object({
   sourceGroups: t.Optional(t.Array(groupItemSchema)),
   targetGroups: t.Optional(t.Array(groupItemSchema)),
   messageTemplate: t.Optional(t.Nullable(t.String())),
+  subRateLimitMaxMsgs: t.Optional(t.Nullable(t.Number())),
+  subRateLimitWindowSec: t.Optional(t.Nullable(t.Number())),
 });
 
 const patchStatusBodySchema = t.Object({
@@ -132,7 +139,23 @@ export const mirrorRoutes = new Elysia()
         sourceGroups: body.sourceGroups ?? [],
         targetGroups: body.targetGroups ?? [],
         messageTemplate: body.messageTemplate ?? null,
+        subRateLimitMaxMsgs: body.subRateLimitMaxMsgs ?? null,
+        subRateLimitWindowSec: body.subRateLimitWindowSec ?? null,
       });
+
+      // Popula cache Redis com os sourceGroups do novo mirror
+      if (mirror.sourceGroups && (mirror.sourceGroups as { jid: string; name: string }[]).length > 0) {
+        const instanceName = instanceNameFromUserId(auth.userId);
+        const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
+        if (affiliate) {
+          await replaceSourceGroups(
+            [], // oldGroups: vazio (mirror novo)
+            mirror.sourceGroups as { jid: string; name: string }[],
+            affiliate.id,
+            mirror.id, // mirrorId — marca que este grupo pertence a um mirror
+          );
+        }
+      }
 
       return { success: true, mirror };
     },
@@ -163,11 +186,31 @@ export const mirrorRoutes = new Elysia()
       if (body.sourceGroups !== undefined) updateData.sourceGroups = body.sourceGroups;
       if (body.targetGroups !== undefined) updateData.targetGroups = body.targetGroups;
       if (body.messageTemplate !== undefined) updateData.messageTemplate = body.messageTemplate;
+      if (body.subRateLimitMaxMsgs !== undefined) updateData.subRateLimitMaxMsgs = body.subRateLimitMaxMsgs;
+      if (body.subRateLimitWindowSec !== undefined) updateData.subRateLimitWindowSec = body.subRateLimitWindowSec;
+
+      // Busca o mirror ANTES de atualizar para ter a lista antiga de sourceGroups
+      const currentMirror = await mirrorRepo.findById(id);
+      const oldSourceGroups = (currentMirror?.sourceGroups as { jid: string; name: string }[]) ?? [];
 
       const mirror = await mirrorRepo.update(id, updateData);
       if (!mirror) {
         set.status = 404;
         return { success: false, error: 'Espelhamento não encontrado' };
+      }
+
+      // Atualiza cache Redis se os sourceGroups mudaram
+      if (body.sourceGroups !== undefined) {
+        const instanceName = instanceNameFromUserId(auth.userId);
+        const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
+        if (affiliate) {
+          await replaceSourceGroups(
+            oldSourceGroups,
+            body.sourceGroups,
+            affiliate.id,
+            mirror.id, // mirrorId
+          );
+        }
       }
 
       return { success: true, mirror };
@@ -209,6 +252,30 @@ export const mirrorRoutes = new Elysia()
         return { success: false, error: 'Espelhamento não encontrado' };
       }
 
+      // Se desativou, remove sourceGroups do cache Redis
+      // Se ativou, adiciona de volta
+      if (body.status === 'inactive') {
+        const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
+        if (groups && groups.length > 0) {
+          await removeSourceGroups(groups.map((g) => g.jid));
+        }
+      } else if (body.status === 'active') {
+        // Re-popula cache ao reativar
+        const instanceName = instanceNameFromUserId(auth.userId);
+        const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
+        if (affiliate) {
+          const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
+          if (groups && groups.length > 0) {
+            await replaceSourceGroups(
+              [], // oldGroups: vazio (reativando)
+              groups,
+              affiliate.id,
+              mirror.id,
+            );
+          }
+        }
+      }
+
       return { success: true, mirror };
     },
     {
@@ -233,10 +300,23 @@ export const mirrorRoutes = new Elysia()
         return { success: false, error: 'ID inválido' };
       }
 
+      // Busca o mirror ANTES de deletar para ter os sourceGroups e limpar o cache
+      const existingMirror = await mirrorRepo.findById(id);
+      if (!existingMirror) {
+        set.status = 404;
+        return { success: false, error: 'Espelhamento não encontrado' };
+      }
+
       const deleted = await mirrorRepo.delete(id);
       if (!deleted) {
         set.status = 404;
         return { success: false, error: 'Espelhamento não encontrado' };
+      }
+
+      // Remove sourceGroups do cache Redis
+      const groups = existingMirror.sourceGroups as { jid: string; name: string }[] | null;
+      if (groups && groups.length > 0) {
+        await removeSourceGroups(groups.map((g) => g.jid));
       }
 
       return { success: true, message: 'Espelhamento excluído com sucesso' };

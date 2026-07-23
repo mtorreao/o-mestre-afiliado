@@ -18,7 +18,8 @@ import os from 'node:os';
 import Redis from 'ioredis';
 import { MIRROR_STREAM, MIRROR_CONSUMER_GROUP } from '@omestre/shared';
 import type { MirrorMessageEvent } from '@omestre/shared';
-import { getDb, AffiliatesRepository } from '@omestre/db';
+import { getDb, AffiliatesRepository, MirrorRepository, mirrors } from '@omestre/db';
+import { eq } from 'drizzle-orm';
 import { processMirrorMessage } from './mirror-pipeline.ts';
 import { runRevalidation, runRevalidationDaemon } from './revalidate.ts';
 import { startMetricsServer, setStatusMeta } from './metrics.ts';
@@ -171,35 +172,86 @@ async function processPendingMessages(redis: Redis): Promise<void> {
 async function populateSourceGroupCache(redis: Redis): Promise<void> {
   try {
     getDb(); // garante que a conexão com o banco está ativa
+    const pipeline = redis.pipeline();
+    let totalGroups = 0;
+    let totalMirrors = 0;
+
+    // ── 1. Carrega sourceGroups de afiliados (legado) ──────────────
     const repo = new AffiliatesRepository();
     const affiliates = await repo.findAllActiveWithSourceGroups();
 
-    if (affiliates.length === 0) {
-      log('info', 'Nenhum sourceGroup configurado no banco — cache vazio', {});
-      return;
+    if (affiliates.length > 0) {
+      log('info', `Populando cache Redis com sourceGroups de ${affiliates.length} afiliados`, {});
+
+      for (const aff of affiliates) {
+        const groups = aff.sourceGroups as { jid: string; name: string }[] | null;
+        if (!groups) continue;
+
+        for (const group of groups) {
+          pipeline.set(
+            `${CACHE_PREFIX}${group.jid}`,
+            JSON.stringify({ affiliateId: aff.id, groupName: group.name || '' }),
+          );
+          pipeline.sadd(CACHE_SET_KEY, group.jid);
+          totalGroups++;
+        }
+      }
     }
 
-    log('info', `Populando cache Redis com sourceGroups de ${affiliates.length} afiliados`, {});
+    // ── 2. Carrega sourceGroups de mirrors ativos ─────────────────
+    const db = getDb();
+    const activeMirrors = await db
+      .select({
+        id: mirrors.id,
+        userId: mirrors.userId,
+        sourceGroups: mirrors.sourceGroups,
+      })
+      .from(mirrors)
+      .where(eq(mirrors.status, 'active'));
 
-    const pipeline = redis.pipeline();
-    let totalGroups = 0;
+    if (activeMirrors.length > 0) {
+      log('info', `Populando cache Redis com sourceGroups de ${activeMirrors.length} mirrors ativos`, {});
 
-    for (const aff of affiliates) {
-      const groups = aff.sourceGroups as { jid: string; name: string }[] | null;
-      if (!groups) continue;
+      for (const mirror of activeMirrors) {
+        const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
+        if (!groups) continue;
 
-      for (const group of groups) {
-        pipeline.set(
-          `${CACHE_PREFIX}${group.jid}`,
-          JSON.stringify({ affiliateId: aff.id, groupName: group.name || '' }),
-        );
-        pipeline.sadd(CACHE_SET_KEY, group.jid);
-        totalGroups++;
+        // Resolve o affiliateId a partir do userId do mirror
+        // O affiliate tem evolutionInstanceId = "user-{userId}"
+        let mirrorAffiliateId = 0;
+        if (mirror.userId) {
+          try {
+            const aff = await repo.findByEvolutionInstanceId(`user-${mirror.userId}`);
+            if (aff) mirrorAffiliateId = aff.id;
+          } catch {
+            // Se não encontrar, deixa 0 (worker usa instanceName como fallback)
+          }
+        }
+
+        for (const group of groups) {
+          // Sobrescreve entradas legadas com o mirrorId
+          pipeline.set(
+            `${CACHE_PREFIX}${group.jid}`,
+            JSON.stringify({
+              affiliateId: mirrorAffiliateId,
+              mirrorId: mirror.id,
+              groupName: group.name || '',
+            }),
+          );
+          pipeline.sadd(CACHE_SET_KEY, group.jid);
+          totalGroups++;
+          totalMirrors++;
+        }
       }
     }
 
     await pipeline.exec();
-    log('info', `Cache populado com ${totalGroups} sourceGroups de ${affiliates.length} afiliados`, {});
+
+    if (totalGroups === 0) {
+      log('info', 'Nenhum sourceGroup configurado no banco — cache vazio', {});
+    } else {
+      log('info', `Cache populado com ${totalGroups} sourceGroups (${affiliates.length} afiliados + ${totalMirrors} mirrors ativos)`, {});
+    }
   } catch (err) {
     // Falha ao popular cache não é fatal — o webhook só vai ignorar
     // mensagens até alguém salvar via API, que popula o cache na hora.

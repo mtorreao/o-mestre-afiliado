@@ -8,6 +8,7 @@
  *          dados → tabela com colunas: nome, status, criado em, ações.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Button, Badge, LoadingSkeleton, Dialog } from '../components/ui/index.ts';
@@ -38,6 +39,8 @@ interface Mirror {
   sourceGroups: MirrorGroup[];
   targetGroups: MirrorGroup[];
   messageTemplate: string | null;
+  subRateLimitMaxMsgs: number | null;
+  subRateLimitWindowSec: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -67,6 +70,7 @@ function formatDate(iso: string): string {
 
 export function MirrorsPage({ token }: MirrorsPageProps) {
   const { addToast } = useToast();
+  const navigate = useNavigate();
 
   // Data
   const [data, setData] = useState<MirrorListResponse | null>(null);
@@ -207,6 +211,14 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
         }
         actions={
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => navigate('/mirror-form')}
+              icon={<Edit3 size={14} />}
+            >
+              Novo
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -444,13 +456,7 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
                         size="sm"
                         icon={<Edit3 size={14} />}
                         title="Editar"
-                        onClick={() =>
-                          addToast(
-                            'Editar',
-                            'Funcionalidade em breve.',
-                            'info',
-                          )
-                        }
+                        onClick={() => navigate(`/mirror-form/${mirror.id}`)}
                       />
                       <Button
                         variant="ghost"
@@ -578,14 +584,21 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
                         </div>
                       )}
 
+                      {/* Sub-rate limit */}
+                      {(mirror.subRateLimitMaxMsgs != null || mirror.subRateLimitWindowSec != null) ? (
+                        <div>
+                          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                            Limite por grupo destino:
+                          </span>
+                          <div style={{ marginTop: '0.2rem', color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)' }}>
+                            {mirror.subRateLimitMaxMsgs ?? 5} msg / {mirror.subRateLimitWindowSec ?? 300}s
+                          </div>
+                        </div>
+                      ) : null}
+
                       {/* Updated at */}
                       <div>
-                        <span
-                          style={{
-                            fontSize: 'var(--text-xs)',
-                            color: 'var(--color-text-muted)',
-                          }}
-                        >
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
                           Última atualização:{' '}
                           {formatDate(mirror.updatedAt)}
                         </span>
