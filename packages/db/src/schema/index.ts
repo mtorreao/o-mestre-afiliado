@@ -26,60 +26,12 @@ export const affiliates = omestre.table('affiliates', {
   // Evolution API: nome da instance (ex: "affiliate-1")
   evolutionInstanceId: text('evolution_instance_id').unique(),
 
-  // IDs dos grupos WhatsApp
-  sourceGroups: jsonb('source_groups').$type<{ jid: string; name: string }[]>().default([]),
-  targetGroups: jsonb('target_groups').$type<{ jid: string; name: string }[]>().default([]),
-
-  // Grupos excluídos por validação (feedback visual persistente)
-  excludedGroups: jsonb('excluded_groups')
-    .$type<{
-      groupJid: string;
-      groupName: string;
-      reason: string;
-      ratio: number;
-      totalMessages: number;
-      validOffers: number;
-    }[]>()
-    .default([]),
-
-  // Template personalizado da mensagem
-  // Placeholders: {texto_original} = texto com link convertido, {link_convertido} = link convertido isolado
-  // Default: "{texto_original}" (envia o texto original com o link trocado)
-  messageTemplate: text('message_template'),
-
-  // Filtros (blacklist, keywords, dedup)
-  filters: jsonb('filters')
-    .$type<{
-      blacklist: string[];
-      keywords: string[];
-      dedupHours: number;
-    }>()
-    .default({ blacklist: [], keywords: [], dedupHours: 24 }),
-
   // Credenciais criptografadas (AES-256-GCM)
   credentialsEncrypted: text('credentials_encrypted'),
 
   // Configuração de notificações proativas
   notificationChannel: text('notification_channel').notNull().default('disabled'),
   notificationJid: text('notification_jid'),
-
-  // Revalidação periódica
-  lastValidatedAt: timestamp('last_validated_at', { mode: 'date' }),
-  lastValidationPassed: boolean('last_validation_passed'),
-  lastValidationReport: jsonb('last_validation_report')
-    .$type<{
-      overallRatio: number;
-      totalMessages: number;
-      totalValidOffers: number;
-      groups: {
-        groupJid: string;
-        groupName: string;
-        totalMessages: number;
-        validOffers: number;
-        ratio: number;
-        passed: boolean;
-      }[];
-    }>(),
 
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at')

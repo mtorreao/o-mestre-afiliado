@@ -339,22 +339,12 @@ async function isDuplicate(
  * Busca os targetGroups de um afiliado.
  */
 async function getTargetGroups(
-  affiliateId: number,
+  _affiliateId: number,
 ): Promise<{ jid: string; name: string }[]> {
-  try {
-    const db = getDb();
-    const rows = await db
-      .select({ targetGroups: affiliates.targetGroups })
-      .from(affiliates)
-      .where(eq(affiliates.id, affiliateId))
-      .limit(1);
-
-    if (!rows[0]) return [];
-    return (rows[0].targetGroups as { jid: string; name: string }[]) ?? [];
-  } catch (err) {
-    log('error', 'Erro ao buscar targetGroups', { affiliateId, error: String(err) });
-    return [];
-  }
+  // Colunas removidas da tabela affiliates — dados estão em mirrors.
+  // Este fallback só é chamado quando não há mirrorId, o que não deve
+  // acontecer após a migração completa.
+  return [];
 }
 
 /**
@@ -362,21 +352,10 @@ async function getTargetGroups(
  * Retorna null se não configurado (usa o template padrão).
  */
 async function getMessageTemplate(
-  affiliateId: number,
+  _affiliateId: number,
 ): Promise<string | null> {
-  try {
-    const db = getDb();
-    const rows = await db
-      .select({ messageTemplate: affiliates.messageTemplate })
-      .from(affiliates)
-      .where(eq(affiliates.id, affiliateId))
-      .limit(1);
-
-    if (!rows[0]) return null;
-    return rows[0].messageTemplate ?? null;
-  } catch {
-    return null;
-  }
+  // Colunas removidas da tabela affiliates — dados estão em mirrors.
+  return null;
 }
 
 // ─── Mirror config helpers ───────────────────────────────────────────

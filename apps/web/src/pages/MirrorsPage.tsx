@@ -7,11 +7,11 @@
  * Estados: loading → LoadingSkeleton, empty → mensagem, error → retry,
  *          dados → tabela com colunas: nome, status, criado em, ações.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Card, Button, Badge, LoadingSkeleton, Dialog } from '../components/ui/index.ts';
+import { Card, Button, Badge, LoadingSkeleton, Dialog, FilterBar, MobileFilterBar } from '../components/ui/index.ts';
 import { useToast } from '../components/ui/Toast.tsx';
 import {
   Search,
@@ -23,6 +23,7 @@ import {
   Trash2,
   AlertTriangle,
 } from 'lucide-react';
+import { useMediaQuery } from '../hooks/useMediaQuery.ts';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -89,6 +90,10 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
   const [deleteTarget, setDeleteTarget] = useState<Mirror | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [fetchKey, setFetchKey] = useState(0);
+
   // ─── Fetch ──────────────────────────────────────────────────────
 
   const fetchMirrors = useCallback(
@@ -118,19 +123,35 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
     [token],
   );
 
+  // Desktop: auto-filtro com debounce (300ms)
+  useEffect(() => {
+    if (isMobile) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      setFetchKey(n => n + 1);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchText, isMobile]);
+
+  // Fetch na mudança de página ou fetchKey
   useEffect(() => {
     fetchMirrors(page, searchText);
-  }, [page, fetchMirrors]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, fetchKey]);
 
   function handleSearch() {
     setPage(1);
-    fetchMirrors(1, searchText);
+    setFetchKey(n => n + 1);
   }
 
   function handleReset() {
     setSearchText('');
     setPage(1);
-    fetchMirrors(1, '');
+    setFetchKey(n => n + 1);
   }
 
   // ─── Status toggle ─────────────────────────────────────────────
@@ -213,7 +234,7 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <Button
               variant="primary"
-              size="sm"
+              size="md"
               onClick={() => navigate('/mirror-form')}
               icon={<Edit3 size={14} />}
             >
@@ -221,49 +242,41 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
             </Button>
             <Button
               variant="ghost"
-              size="sm"
-              onClick={handleReset}
-              icon={<RotateCw size={14} />}
+              size="md"
+              onClick={() => fetchMirrors(page, searchText)}
+              disabled={loading}
+              icon={<RotateCw size={14} className={loading ? 'spin' : ''} />}
             >
-              Limpar
-            </Button>
-            <Button
-              onClick={handleSearch}
-              loading={loading}
-              icon={<Search size={14} />}
-              size="sm"
-            >
-              Buscar
+              Atualizar
             </Button>
           </div>
         }
       />
 
-      {/* Search filter */}
-      <Card>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end' }}>
-          <div style={{ flex: '1 1 280px' }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 'var(--text-xs)',
-                fontWeight: 500,
-                color: 'var(--color-text-secondary)',
-                marginBottom: '0.3rem',
-              }}
-            >
+      {/* Filters */}
+      {isMobile ? (
+        <MobileFilterBar
+          label="Filtros"
+          actions={
+            <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+              <Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />} style={{ flex: 1 }}>
+                Limpar
+              </Button>
+              <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>
+                Buscar
+              </Button>
+            </div>
+          }
+        >
+          <div style={{ width: '100%' }}>
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
               Buscar por nome
             </label>
             <input
               type="text"
               value={searchText}
-              onChange={(e) =>
-                setSearchText((e.target as HTMLInputElement).value)
-              }
-              onKeyDown={(e) => {
-                if ((e as unknown as { key: string }).key === 'Enter')
-                  handleSearch();
-              }}
+              onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }}
               placeholder="Digite o nome do espelhamento..."
               style={{
                 width: '100%',
@@ -278,8 +291,38 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
               }}
             />
           </div>
-        </div>
-      </Card>
+        </MobileFilterBar>
+      ) : (
+        <FilterBar title="Filtros" action={
+          <Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />}>
+            Limpar
+          </Button>
+        }>
+          <FilterBar.Item width="280px" grow={2}>
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
+              Buscar por nome
+            </label>
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }}
+              placeholder="Digite o nome do espelhamento..."
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.5rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--text-sm)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </FilterBar.Item>
+        </FilterBar>
+      )}
 
       {/* Table */}
       <Card>
