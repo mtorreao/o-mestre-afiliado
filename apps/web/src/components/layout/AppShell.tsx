@@ -13,6 +13,7 @@ import {
   Repeat2,
   Activity,
   Settings,
+  Users,
   LogOut,
   Menu,
   X,
@@ -40,7 +41,9 @@ const pageTitles: Record<NavItem, string> = {
   dashboard: 'Dashboard',
   settings: 'Configurações',
   groups: 'Grupos de Espelhamento',
+  mirrors: 'Espelhamentos',
   'mirror-logs': 'Logs de Espelhamento',
+  'mirror-form': 'Novo Espelhamento',
   'worker-status': 'Status do Worker',
 };
 
@@ -186,7 +189,7 @@ export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
 
           {/* Theme toggle */}
           <ThemeToggle />
-        </header>
+        </div>
 
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <Outlet />
@@ -204,7 +207,6 @@ export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
           }
         `}</style>
       </div>
-    </div>
     </div>
   );
 }

@@ -21,7 +21,6 @@ import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
 import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
 import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
 import { FiltersSection } from './sections/FiltersSection.tsx';
-import { WppConnection } from '../components/WppConnection.tsx';
 
 interface ProfileData {
   shopeeAppId: string | null;

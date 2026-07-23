@@ -242,7 +242,7 @@ test.describe('Affiliate - Test Conversion', () => {
     const { status } = await authPost(
       '/api/affiliate/test-conversion',
       token,
-      { url: 'https://amazon.com.br/product/123' },
+      { url: 'https://www.americanas.com.br/produto/123' },
     );
     expect(status).toBe(400);
   });

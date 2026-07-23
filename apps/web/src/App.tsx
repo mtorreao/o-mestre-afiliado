@@ -20,6 +20,9 @@ import { ThemeProvider } from './hooks/useTheme.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
+import { GroupsPage } from './pages/GroupsPage.tsx';
+import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
+import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { AppShellLayout } from './components/layout/AppShell.tsx';
 import { ToastProvider } from './components/ui/index.ts';
@@ -93,6 +96,7 @@ function App() {
   const navigate = useNavigate();
 
   return (
+    <ThemeProvider>
     <Routes>
       {/* Public routes — só visível quando deslogado */}
       <Route
@@ -152,13 +156,6 @@ function App() {
       {/* Catch-all → redirect to dashboard or login */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-  );
-}
-
-function App() {
-  return (
-    <ThemeProvider>
-      <AppContent />
     </ThemeProvider>
   );
 }

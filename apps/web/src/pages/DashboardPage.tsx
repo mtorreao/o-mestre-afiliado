@@ -358,7 +358,7 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
             icon={<PlusCircle size={20} />}
             label="Novo Espelhamento"
             description="Criar nova configuração de espelhamento de ofertas"
-            onClick={() => onNavigate?.('mirror-form')}
+            onClick={() => navigate('/mirror-form')}
           />
           <QuickActionCard
             icon={<Settings size={20} />}
