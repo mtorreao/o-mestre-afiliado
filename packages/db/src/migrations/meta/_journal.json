@@ -84,6 +84,13 @@
       "when": 1784756886860,
       "tag": "0009_chemical_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784820196986,
+      "tag": "0012_amusing_gauntlet",
+      "breakpoints": true
     }
   ]
 }

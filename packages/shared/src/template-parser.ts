@@ -310,12 +310,124 @@ export function translateCondition(cond: string): string {
 }
 
 /**
+ * Processa um bloco inline {se X então A senão B} com depth-aware parsing.
+ *
+ * Diferente da regex simples, esta função rastreia a profundidade de chaves
+ * ({...}) para que placeholders dentro do conteúdo (ex: {link_convertido})
+ * não fechem o bloco prematuramente.
+ *
+ * Retorna o índice após o } de fechamento, ou -1 se o bloco é inválido.
+ */
+function processOneInlineConditional(
+  input: string,
+  startIdx: number,
+): { endIdx: number; replacement: string } | null {
+  // startIdx aponta para o '{' de '{se'
+  if (input.slice(startIdx, startIdx + 3).toLowerCase() !== '{se') return null;
+
+  let i = startIdx + 3; // depois de '{se'
+  let depth = 0;
+  let stage: 'condition' | 'então' | 'senão' = 'condition';
+  let conditionStart = -1;
+  let conditionEnd = -1;
+  let trueStart = -1;
+  let trueEnd = -1;
+  let falseStart = -1;
+  let falseEnd = -1;
+
+  // Avança ignorando espaços após '{se'
+  while (i < input.length && input[i] === ' ') i++;
+
+  conditionStart = i;
+
+  while (i < input.length) {
+    const ch = input[i]!;
+
+    if (ch === '{') {
+      depth++;
+      i++;
+      // Se estamos na condição e encontramos 'então' sem estar dentro de { }
+      // Mas entao dentro de chaves não conta
+      continue;
+    }
+
+    if (ch === '}') {
+      if (depth > 0) {
+        depth--;
+        i++;
+        continue;
+      }
+      // depth === 0 → este } fecha o bloco {se ...}
+      // Se não encontramos 'então', não é um inline válido. Retorna null.
+      if (conditionEnd < 0) return null;
+
+      falseEnd = i;
+      break;
+    }
+
+    // Só processa texto em depth 0 (fora de { ... })
+    if (depth === 0) {
+      // Tenta encontrar 'então' no restante do texto (só em depth 0)
+      if (stage === 'condition' && input.slice(i, i + 5).toLowerCase() === 'então') {
+        conditionEnd = i;
+        stage = 'então';
+        i += 5; // pula 'então'
+        // Avança espaços
+        while (i < input.length && input[i] === ' ') i++;
+        trueStart = i;
+        continue;
+      }
+
+      // Tenta encontrar 'senão' no restante do texto (só em depth 0)
+      if (stage === 'então' && input.slice(i, i + 5).toLowerCase() === 'senão') {
+        trueEnd = i;
+        stage = 'senão';
+        i += 5; // pula 'senão'
+        // Avança espaços
+        while (i < input.length && input[i] === ' ') i++;
+        falseStart = i;
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  // Validação: precisa ter condição + trueContent
+  if (conditionEnd < 0) return null;
+  if (trueStart < 0) return null;
+
+  const condition = input.slice(conditionStart, conditionEnd).trim();
+  const trueContent = trueEnd > 0
+    ? input.slice(trueStart, trueEnd).trim()
+    : input.slice(trueStart, falseEnd > 0 ? falseEnd : i).trim();
+  const falseContent = falseStart > 0
+    ? input.slice(falseStart, falseEnd > 0 ? falseEnd : i).trim()
+    : '';
+
+  const cond = translateCondition(condition);
+  const tc = trueContent;
+  const fc = falseContent;
+
+  // endIdx: posição após o } de fechamento
+  const endIdx = falseEnd > 0 ? falseEnd + 1 : i + 1;
+
+  if (fc) {
+    return { endIdx, replacement: `{? ${cond}}${tc}{:}${fc}{/}` };
+  }
+  return { endIdx, replacement: `{? ${cond}}${tc}{/}` };
+}
+
+/**
  * Traduz blocos condicionais escritos em português para o formato técnico
  * usado internamente pelo processConditionals.
  *
  * Formatos suportados:
  *   Bloco:    {se condição}...{senão se condição}...{senão}...{fim}
  *   Inline:   {se condição então A senão B}
+ *
+ * O parsing inline é depth-aware: placeholders como {link_convertido}
+ * dentro do conteúdo não fecham o bloco prematuramente.
  *
  * A tradução é feita por substituição de texto, sem parsing de aninhamento.
  * Os blocos {se...} são convertidos para {?...} e seus correspondentes.
@@ -328,20 +440,40 @@ export function translateHumanConditionals(input: string): string {
   let result = input;
 
   // ── 1. Processa blocos inline: {se X então A senão B} ──────────
-  // Regex: {se condição então conteúdo [senão conteúdo]}
-  // Captura o conteúdo inteiro entre {se e o } final
-  result = result.replace(
-    /\{se\s+(.+?)\s+então\s+(.+?)(?:\s+senão\s+(.+?))?\}/gi,
-    (_match, condition, trueContent, falseContent) => {
-      const cond = translateCondition(condition!);
-      const tc = trueContent?.trim() ?? '';
-      const fc = falseContent?.trim() ?? '';
-      if (fc) {
-        return `{? ${cond}}${tc}{:}${fc}{/}`;
+  // Usa depth-aware parser em vez de regex simples para suportar
+  // placeholders {link_convertido} dentro do conteúdo.
+  {
+    let i = 0;
+    const parts: string[] = [];
+    while (i < result.length) {
+      // Procura '{se ' no texto
+      const seIdx = result.toLowerCase().indexOf('{se', i);
+      if (seIdx === -1) {
+        parts.push(result.slice(i));
+        break;
       }
-      return `{? ${cond}}${tc}{/}`;
-    },
-  );
+      // Texto antes do {se
+      parts.push(result.slice(i, seIdx));
+
+      // Tenta processar inline (que termina com '}')
+      const inlineResult = processOneInlineConditional(result, seIdx);
+      if (inlineResult) {
+        parts.push(inlineResult.replacement);
+        i = inlineResult.endIdx;
+      } else {
+        // Não é inline — pode ser bloco. Avança e deixa o passo 2 processar.
+        // Encontra o '}' fechando o {se ...}
+        const closeBrace = result.indexOf('}', seIdx + 3);
+        if (closeBrace === -1) {
+          parts.push(result.slice(seIdx));
+          break;
+        }
+        parts.push(result.slice(seIdx, closeBrace + 1));
+        i = closeBrace + 1;
+      }
+    }
+    result = parts.join('');
+  }
 
   // ── 2. Processa blocos multilinha: {se...} / {senão se...} / {senão} / {fim} ──
   result = result.replace(/\{se\s+(.+?)\}/gi, (_match, condition) => {

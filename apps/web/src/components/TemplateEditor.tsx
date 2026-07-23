@@ -68,10 +68,134 @@ const statusBarStyle: React.CSSProperties = {
   color: 'var(--color-text-muted)',
 };
 
+// ─── Tutorial Rápido ───────────────────────────────────────────────
+
+const tutorialCardStyle: React.CSSProperties = {
+  padding: '0.65rem 0.75rem',
+  background: 'var(--color-surface)',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid var(--color-border-light)',
+  cursor: 'pointer',
+  transition: 'all var(--transition-fast)',
+  fontSize: 'var(--text-xs)',
+  lineHeight: 1.6,
+  flex: '1 1 180px',
+  minWidth: '160px',
+};
+
+const tutorialCodeStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--text-xs)',
+  color: 'var(--color-primary)',
+  background: 'var(--color-primary-subtle)',
+  padding: '0.2rem 0.35rem',
+  borderRadius: 'var(--radius-sm)',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-all',
+  display: 'block',
+  marginTop: '0.25rem',
+  lineHeight: 1.5,
+};
+
+const TEMPLATE_PRESETS = [
+  {
+    title: '📝 Básico',
+    desc: 'Envia o texto original com link convertido',
+    template: '{texto_original}',
+  },
+  {
+    title: '🏷️ Com metadata',
+    desc: 'Inclui marketplace, data e link',
+    template: '{marketplace_nome} — {data}\n{link_convertido}',
+  },
+  {
+    title: '🔀 Com condicional',
+    desc: 'Mensagem diferente por marketplace',
+    template: "{se marketplace for igual a 'shopee'}🛒{senão}📦{fim} {link_convertido}",
+  },
+  {
+    title: '📦 Completo',
+    desc: 'Tudo junto: condicional + metadata + origem/destino',
+    template: [
+      "{se marketplace for igual a 'shopee'}",
+      '🛒',
+      '{senão se marketplace for igual a mercadolivre}',
+      '📦',
+      '{senão}',
+      '🔗',
+      '{fim}',
+      ' {link_convertido}',
+      '📍 {source_group} → {target_group}',
+    ].join('\n'),
+  },
+];
+
+function TemplateTutorial({ onApply, currentValue }: { onApply: (v: string) => void; currentValue: string }) {
+  const isActive = (tmpl: string) => currentValue.trim() === tmpl.trim();
+
+  return (
+    <div>
+      <div style={{
+        fontSize: 'var(--text-xs)',
+        fontWeight: 600,
+        color: 'var(--color-text-secondary)',
+        marginBottom: '0.35rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.3rem',
+      }}>
+        <HelpCircle size={13} />
+        Comece por um modelo (clique para aplicar):
+      </div>
+      <div style={{
+        display: 'flex',
+        gap: '0.5rem',
+        flexWrap: 'wrap',
+      }}>
+        {TEMPLATE_PRESETS.map((preset) => (
+          <div
+            key={preset.title}
+            style={{
+              ...tutorialCardStyle,
+              ...(isActive(preset.template) ? {
+                borderColor: 'var(--color-primary)',
+                background: 'var(--color-primary-subtle)',
+              } : {}),
+            }}
+            onClick={() => onApply(preset.template)}
+            onMouseEnter={(e) => {
+              if (!isActive(preset.template)) {
+                e.currentTarget.style.borderColor = 'var(--color-primary)';
+                e.currentTarget.style.background = 'var(--color-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isActive(preset.template)) {
+                e.currentTarget.style.borderColor = 'var(--color-border-light)';
+                e.currentTarget.style.background = 'var(--color-surface)';
+              }
+            }}
+          >
+            <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '0.15rem' }}>
+              {preset.title}
+            </div>
+            <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.3rem' }}>
+              {preset.desc}
+            </div>
+            <div style={tutorialCodeStyle}>
+              {preset.template}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Ajuda de Condicionais ───────────────────────────────────────────
 
 function ConditionalHelp() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true); // começa expandido
 
   const toggleBtnStyle: React.CSSProperties = {
     display: 'inline-flex',
@@ -283,6 +407,9 @@ export function TemplateEditor({
           onInsert={onChange}
         />
       </div>
+
+      {/* ─── Tutorial Rápido ──────────────────────────────────────── */}
+      <TemplateTutorial onApply={onChange} currentValue={value} />
 
       {/* Ajuda de condicionais */}
       <ConditionalHelp />

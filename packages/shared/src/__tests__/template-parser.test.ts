@@ -228,6 +228,36 @@ describe('translateHumanConditionals', () => {
     const input = "{se marketplace for igual a 'shopee' então 🛒}";
     expect(translateHumanConditionals(input)).toBe('{? marketplace = shopee}🛒{/}');
   });
+
+  it('processa inline com placeholder {link_convertido} no true content', () => {
+    const input = "{se marketplace for igual a 'shopee' então {link_convertido} senão 📦}";
+    const result = translateHumanConditionals(input);
+    expect(result).toBe('{? marketplace = shopee}{link_convertido}{:}📦{/}');
+  });
+
+  it('processa inline com placeholder {link_convertido} no false content', () => {
+    const input = "{se marketplace for igual a 'shopee' então 🛒 senão {link_convertido}}";
+    const result = translateHumanConditionals(input);
+    expect(result).toBe('{? marketplace = shopee}🛒{:}{link_convertido}{/}');
+  });
+
+  it('processa inline com placeholders em ambos os branches', () => {
+    const input = "{se marketplace for igual a 'shopee' então {texto_original} senão {link_convertido}}";
+    const result = translateHumanConditionals(input);
+    expect(result).toBe('{? marketplace = shopee}{texto_original}{:}{link_convertido}{/}');
+  });
+
+  it('processa inline com texto e placeholder misturados', () => {
+    const input = "{se marketplace for igual a 'shopee' então 🛒 {link_convertido} senão 📦 {texto_original}}";
+    const result = translateHumanConditionals(input);
+    expect(result).toBe('{? marketplace = shopee}🛒 {link_convertido}{:}📦 {texto_original}{/}');
+  });
+
+  it('não confunde entao dentro de placeholder com keyword então', () => {
+    const input = "{se marketplace for igual a 'shopee' então {algum_então_x} senão 📦}";
+    const result = translateHumanConditionals(input);
+    expect(result).toBe('{? marketplace = shopee}{algum_então_x}{:}📦{/}');
+  });
 });
 
 describe('processConditionalsHuman', () => {
@@ -261,5 +291,12 @@ describe('processConditionalsHuman', () => {
     expect(processConditionalsHuman(template, { marketplace: 'shopee' })).toBe('🛒 Shopee');
     expect(processConditionalsHuman(template, { marketplace: 'mercadolivre' })).toBe('📦 ML');
     expect(processConditionalsHuman(template, { marketplace: 'amazon' })).toBe('🔗 Outro');
+  });
+
+  it('processa inline com placeholder {link_convertido} e avalia condição', () => {
+    const template = "{se marketplace for igual a 'shopee' então 🛒 {link_convertido} senão 📦 {link_convertido}}";
+    // O placeholder não é resolvido aqui, apenas o condicional é processado
+    const ctx = { marketplace: 'shopee' };
+    expect(processConditionalsHuman(template, ctx)).toBe('🛒 {link_convertido}');
   });
 });
