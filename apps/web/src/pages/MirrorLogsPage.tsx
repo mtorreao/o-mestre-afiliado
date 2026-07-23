@@ -137,7 +137,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <Button
               variant="ghost"
-              size="sm"
+              size="md"
               onClick={() => fetchLogs(page)}
               disabled={loading}
               icon={<RotateCw size={14} className={loading ? 'spin' : ''} />}
@@ -153,10 +153,10 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
         collapsible
         actions={
           <>
-            <Button variant="ghost" size="sm" onClick={handleReset} icon={<X size={14} />}>
+            <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />}>
               Limpar
             </Button>
-            <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="sm">
+            <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md">
               Filtrar
             </Button>
           </>
