@@ -1,0 +1,218 @@
+/**
+ * TemplateEditor — Editor completo de template de mensagem.
+ *
+ * Combina:
+ *   - PlaceholderPicker (botões de inserção)
+ *   - Textarea com placeholder legend
+ *   - Validação inline (placeholders desconhecidos via API)
+ *   - Caractere count
+ *   - Preview simples (placeholders resolvidos com valores de exemplo)
+ */
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { AlertTriangle, CheckCircle, Type } from 'lucide-react';
+import { PlaceholderPicker } from './PlaceholderPicker.tsx';
+import { fetchApi } from '../lib/api-client.ts';
+
+interface TemplateEditorProps {
+  value: string;
+  onChange: (value: string) => void;
+  token: string;
+  /** Se true, mostra aviso sobre template padrão (vazio) */
+  showDefaultHint?: boolean;
+  /** Placeholder do textarea */
+  placeholder?: string;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  unknownPlaceholders: string[];
+  containsConditional: boolean;
+  containsLinkOrText: boolean;
+  conditionalErrors: string[];
+}
+
+// ─── Estilos compartilhados ──────────────────────────────────────────
+
+const textareaStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '0.625rem 0.75rem',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid var(--color-border)',
+  background: 'var(--color-surface)',
+  color: 'var(--color-text-primary)',
+  fontSize: 'var(--text-sm)',
+  fontFamily: 'var(--font-mono)',
+  outline: 'none',
+  resize: 'vertical',
+  lineHeight: 1.5,
+  boxSizing: 'border-box',
+  minHeight: '120px',
+};
+
+const legendStyle: React.CSSProperties = {
+  padding: '0.6rem 0.75rem',
+  background: 'var(--color-bg-secondary)',
+  borderRadius: 'var(--radius-md)',
+  fontSize: 'var(--text-xs)',
+  color: 'var(--color-text-secondary)',
+  border: '1px solid var(--color-border-light)',
+  lineHeight: 1.6,
+};
+
+const statusBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.75rem',
+  flexWrap: 'wrap',
+  fontSize: 'var(--text-xs)',
+  color: 'var(--color-text-muted)',
+};
+
+// ─── Component ───────────────────────────────────────────────────────
+
+export function TemplateEditor({
+  value,
+  onChange,
+  token,
+  showDefaultHint = true,
+  placeholder = '{texto_original}',
+}: TemplateEditorProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [validating, setValidating] = useState(false);
+
+  // Debounce da validação: 600ms após parar de digitar
+  useEffect(() => {
+    if (!value.trim()) {
+      setValidation(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setValidating(true);
+      try {
+        const res = await fetchApi<{ success: boolean } & ValidationResult>(
+          '/api/affiliate/validate-template',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ template: value }),
+          },
+        );
+        if (res.success && res.data) {
+          setValidation({
+            valid: res.data.valid,
+            unknownPlaceholders: res.data.unknownPlaceholders,
+            containsConditional: res.data.containsConditional,
+            containsLinkOrText: res.data.containsLinkOrText,
+            conditionalErrors: res.data.conditionalErrors,
+          });
+        }
+      } catch {
+        // Silencia erros de validação (não crítico)
+      }
+      setValidating(false);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [value, token]);
+
+  const charCount = value.length;
+  const charLimit = 4000;
+  const isNearLimit = charCount > charLimit * 0.85;
+  const isOverLimit = charCount > charLimit;
+
+  // Placeholder legend
+  const isDefault = !value.trim();
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      {/* Legend */}
+      {showDefaultHint && isDefault && (
+        <div style={legendStyle}>
+          💡 <strong>Template vazio</strong> — será usado o comportamento padrão:
+          enviar o texto original com o link convertido.
+        </div>
+      )}
+
+      {!isDefault && (
+        <div style={legendStyle}>
+          <strong>Placeholders disponíveis:</strong>
+          <br />
+          <code style={{ color: 'var(--color-primary)', background: 'var(--color-primary-subtle)', padding: '0.1rem 0.3rem', borderRadius: 'var(--radius-sm)' }}>{'{texto_original}'}</code>
+          {' — Texto com link convertido'}
+          <br />
+          <code style={{ color: 'var(--color-primary)', background: 'var(--color-primary-subtle)', padding: '0.1rem 0.3rem', borderRadius: 'var(--radius-sm)' }}>{'{link_convertido}'}</code>
+          {' — Apenas o link de afiliado'}
+          <br />
+          <span style={{ color: 'var(--color-text-muted)' }}>
+            Use os botões abaixo para inserir placeholders no cursor.
+          </span>
+        </div>
+      )}
+
+      {/* Placeholder Picker */}
+      {!isDefault && (
+        <PlaceholderPicker
+          textareaRef={textareaRef}
+          currentValue={value}
+          onInsert={onChange}
+        />
+      )}
+
+      {/* Textarea */}
+      <textarea
+        ref={textareaRef}
+        value={value}
+        onChange={(e) => onChange((e.target as HTMLTextAreaElement).value)}
+        placeholder={placeholder}
+        rows={5}
+        style={{
+          ...textareaStyle,
+          ...(validation && !validation.valid ? { borderColor: 'var(--color-warning)' } : {}),
+          ...(isOverLimit ? { borderColor: 'var(--color-error)' } : {}),
+        }}
+      />
+
+      {/* Status bar */}
+      <div style={statusBarStyle}>
+        {/* Char count */}
+        <span style={{ color: isOverLimit ? 'var(--color-error)' : isNearLimit ? 'var(--color-warning)' : undefined }}>
+          <Type size={12} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+          {charCount}/{charLimit}
+        </span>
+
+        {/* Validation status */}
+        {validating && <span style={{ color: 'var(--color-text-muted)' }}>Validando...</span>}
+
+        {validation && !validating && (
+          <>
+            {validation.valid ? (
+              <span style={{ color: 'var(--color-success)' }}>
+                <CheckCircle size={12} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+                Válido
+              </span>
+            ) : (
+              <span style={{ color: 'var(--color-warning)' }}>
+                <AlertTriangle size={12} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+                {validation.unknownPlaceholders.length > 0 && (
+                  <>Placeholders desconhecidos: {validation.unknownPlaceholders.join(', ')}</>
+                )}
+                {validation.conditionalErrors.length > 0 && (
+                  <>{validation.conditionalErrors[0]}</>
+                )}
+              </span>
+            )}
+          </>
+        )}
+
+        {validation && !validation.containsLinkOrText && !validating && value.trim() && (
+          <span style={{ color: 'var(--color-warning)' }}>
+            <AlertTriangle size={12} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+            Sem {'{texto_original}'} nem {'{link_convertido}'} — mensagem pode ficar vazia
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}

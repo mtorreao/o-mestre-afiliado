@@ -13,6 +13,8 @@ import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Button, Input } from '../components/ui/index.ts';
 import { GroupOfferAutocomplete } from '../components/GroupOfferAutocomplete.tsx';
 import { GroupDestAutocomplete } from '../components/GroupDestAutocomplete.tsx';
+import { TemplateEditor } from '../components/TemplateEditor.tsx';
+import { TemplatePreview } from '../components/TemplatePreview.tsx';
 import { AlertTriangle, Save, ArrowLeft, Loader2 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────
@@ -341,70 +343,25 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           )}
         </Card>
 
-        <Card title="💬 Template da Mensagem">
+        <Card title="💬 Template da Mensagem" style={{ marginBottom: '1.5rem' }}>
           <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: '0.75rem' }}>
-            Personalize a mensagem enviada para o grupo de destino. Use {'{texto_original}'} para incluir o texto com link convertido, ou {'{link_convertido}'} para apenas o link.
+            Personalize a mensagem enviada para o grupo de destino.
           </p>
 
-          <div
-            style={{
-              padding: '0.75rem',
-              background: 'var(--color-bg-secondary)',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 'var(--text-xs)',
-              color: 'var(--color-text-secondary)',
-              border: '1px solid var(--color-border-light)',
-              lineHeight: 1.6,
-              marginBottom: '0.75rem',
-            }}
-          >
-            <code style={{ color: 'var(--color-primary)', background: 'var(--color-primary-subtle)', padding: '0.1rem 0.3rem', borderRadius: 'var(--radius-sm)' }}>{'{texto_original}'}</code>
-            {' — '}Texto original com link convertido
-            <br />
-            <code style={{ color: 'var(--color-primary)', background: 'var(--color-primary-subtle)', padding: '0.1rem 0.3rem', borderRadius: 'var(--radius-sm)' }}>{'{link_convertido}'}</code>
-            {' — '}Apenas o link de afiliado
-          </div>
-
-          <textarea
+          <TemplateEditor
             value={messageTemplate}
-            onChange={(e) => setMessageTemplate((e.target as HTMLTextAreaElement).value)}
-            placeholder='{texto_original}'
-            rows={5}
-            style={{
-              width: '100%',
-              padding: '0.625rem 0.75rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-surface)',
-              color: 'var(--color-text-primary)',
-              fontSize: 'var(--text-sm)',
-              fontFamily: 'var(--font-mono)',
-              outline: 'none',
-              resize: 'vertical',
-              lineHeight: 1.5,
-              boxSizing: 'border-box',
-            }}
+            onChange={setMessageTemplate}
+            token={token}
+            showDefaultHint={true}
+            placeholder="{texto_original}"
           />
 
-          {messageTemplate.trim() && (
-            <div
-              style={{
-                padding: '0.75rem',
-                background: 'var(--color-bg-secondary)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border-light)',
-                fontSize: 'var(--text-xs)',
-                marginTop: '0.75rem',
-              }}
-            >
-              <div style={{ marginBottom: '0.25rem', color: 'var(--color-text-muted)' }}>Pré-visualização:</div>
-              <div style={{ color: 'var(--color-text-primary)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                {messageTemplate
-                  .replace('{texto_original}', '🔗 Confira esta oferta: https://exemplo.com/produto')
-                  .replace('{link_convertido}', 'https://exemplo.com/produto')}
-              </div>
-            </div>
-          )}
+          <TemplatePreview
+            token={token}
+            template={messageTemplate}
+            sourceGroupName={sourceGroups[0]?.name}
+            targetGroupName={targetGroups[0]?.name}
+          />
         </Card>
 
         {/* ─── Rate Limit Info Banner ─────────────────────────────── */}

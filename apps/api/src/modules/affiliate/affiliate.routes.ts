@@ -4,8 +4,8 @@ import type { ExcludedGroup, Filters } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { convertShopeeUrlWithCredentials, convertAmazonUrlWithTrackingId } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
-import { detectMarketplace } from '@omestre/shared';
-import type { ConversionResult } from '@omestre/shared';
+import { detectMarketplace, resolvePlaceholders, processConditionals, buildEvalContext, findUnknownPlaceholders } from '@omestre/shared';
+import type { ConversionResult, TemplateContext } from '@omestre/shared';
 import { generateViaUrlParams } from '@omestre/converters';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
 import { fetchGroupMessages } from '../../services/evolution.ts';
@@ -608,11 +608,112 @@ export const affiliateRoutes = new Elysia()
         error: err instanceof Error ? err.message : 'Erro ao buscar logs',
       };
     }
-  });
+  })
 
-/**
- * Converte URL da Shopee usando as credenciais do usuário.
- */
+  // ─── POST /api/affiliate/preview-template ──────────────────────────
+  .post('/api/affiliate/preview-template', async ({ jwt, request, set, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const {
+      template,
+      testUrl,
+      convertedUrl,
+      marketplace,
+      sourceGroupName,
+      targetGroupName,
+    } = body as {
+      template?: string;
+      testUrl?: string;
+      convertedUrl?: string | null;
+      marketplace?: string;
+      sourceGroupName?: string;
+      targetGroupName?: string;
+    };
+
+    if (!template) {
+      set.status = 400;
+      return { success: false, error: 'template é obrigatório' };
+    }
+
+    const mp = marketplace || 'unknown';
+    const ctx: TemplateContext = {
+      originalText: testUrl || 'URL de teste: https://exemplo.com/produto',
+      originalUrl: testUrl || 'https://exemplo.com/produto',
+      convertedUrl: convertedUrl ?? null,
+      marketplace: mp,
+      sourceGroupName: sourceGroupName || 'Grupo de Origem',
+      targetGroupName: targetGroupName || 'Grupo de Destino',
+      timestamp: new Date(),
+    };
+
+    // 1. Processa condicionais
+    const evalCtx = buildEvalContext(mp, ctx.sourceGroupName, ctx.targetGroupName);
+    let preview = processConditionals(template, evalCtx);
+
+    // 2. Resolve placeholders
+    preview = resolvePlaceholders(preview, ctx);
+
+    // 3. Detecta placeholders desconhecidos
+    const unknownPlaceholders = findUnknownPlaceholders(template);
+
+    return {
+      success: true,
+      preview,
+      unknownPlaceholders,
+      isEmpty: preview.trim().length === 0,
+      length: preview.length,
+    };
+  })
+
+  // ─── POST /api/affiliate/validate-template ──────────────────────────
+  .post('/api/affiliate/validate-template', async ({ jwt, request, set, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const { template } = body as { template?: string };
+
+    if (template === undefined) {
+      set.status = 400;
+      return { success: false, error: 'template é obrigatório' };
+    }
+
+    const unknownPlaceholders = findUnknownPlaceholders(template || '');
+
+    // Verifica se contém condicionais
+    const containsConditional = /\{\?|\{\/\}|\{\:/i.test(template || '');
+
+    // Verifica se contém pelo menos um placeholder de texto ou link
+    const containsLinkOrText = /\{texto_original\}|\{link_convertido\}/i.test(template || '');
+
+    // Verifica placeholders condicionais inválidos
+    const conditionalErrors: string[] = [];
+    if (containsConditional) {
+      // Verifica se há {? sem {/} correspondente
+      const openCount = (template!.match(/\{\?/g) || []).length;
+      const closeCount = (template!.match(/\{\//g) || []).length;
+      if (openCount !== closeCount) {
+        conditionalErrors.push(
+          `Blocos condicionais desbalanceados: ${openCount} abertos, ${closeCount} fechados`,
+        );
+      }
+    }
+
+    return {
+      success: true,
+      valid: unknownPlaceholders.length === 0 && conditionalErrors.length === 0,
+      unknownPlaceholders,
+      containsConditional,
+      containsLinkOrText,
+      conditionalErrors,
+    };
+  });
 async function handleShopeeConversion(
   userId: number,
   url: string,

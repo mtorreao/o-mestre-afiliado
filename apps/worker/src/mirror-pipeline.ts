@@ -10,8 +10,8 @@
  *   6. Registra em reflected_offers
  */
 
-import type { MirrorMessageEvent } from '@omestre/shared';
-import { detectMarketplace } from '@omestre/shared';
+import type { MirrorMessageEvent, TemplateContext } from '@omestre/shared';
+import { detectMarketplace, resolvePlaceholders, processConditionals, buildEvalContext } from '@omestre/shared';
 import { convertShopeeUrlWithCredentials, generateViaUrlParams, generateShortAffiliateLink, convertAmazonUrlWithTrackingId } from '@omestre/converters';
 import { getDb, affiliates, mirrors, reflectedOffers, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository, MirrorRepository } from '@omestre/db';
 import {
@@ -799,31 +799,32 @@ async function logReflectedOffer(params: {
 /**
  * Monta o template da mensagem formatada para o grupo de destino.
  *
- * Suporta placeholders:
- *   {texto_original}   — texto original com o link convertido
- *   {link_convertido}  — apenas o link convertido (sem contexto)
+ * Fluxo de processamento:
+ *   1. Processa condicionais ({? ...} {: ...} {/}) usando o eval context
+ *   2. Resolve placeholders ({texto_original}, {link_convertido}, etc.)
+ *   3. Trunca se exceder 4000 caracteres
  *
- * Se template for null/vazio, usa o comportamento padrão (texto com link trocado).
+ * Placeholders não reconhecidos viram texto literal.
+ * Se template for null/vazio, usa o comportamento padrão
+ * (texto original com link trocado).
  */
 function buildTemplateMessage(
-  originalText: string,
-  originalUrl: string,
-  convertedUrl: string | null,
+  ctx: TemplateContext,
   template: string | null,
 ): string {
-  // Substitui a URL original pela convertida no texto
-  let textWithConvertedLink = originalText;
-  if (convertedUrl) {
-    textWithConvertedLink = textWithConvertedLink.replace(originalUrl, convertedUrl);
-  }
-
   if (template) {
-    // Usa o template personalizado com placeholders
-    let result = template
-      .replace(/\{texto_original\}/g, textWithConvertedLink)
-      .replace(/\{link_convertido\}/g, convertedUrl ?? originalUrl);
+    // 1. Processa condicionais usando contexto de avaliação
+    const evalCtx = buildEvalContext(
+      ctx.marketplace,
+      ctx.sourceGroupName,
+      ctx.targetGroupName,
+    );
+    let result = processConditionals(template, evalCtx);
 
-    // Se o resultado for muito longo, trunca
+    // 2. Resolve placeholders
+    result = resolvePlaceholders(result, ctx);
+
+    // 3. Trunca se muito longo
     const maxLen = 4000;
     if (result.length > maxLen) {
       result = result.slice(0, maxLen - 50) + '...';
@@ -833,9 +834,12 @@ function buildTemplateMessage(
   }
 
   // Comportamento padrão: texto original com link trocado
-  let text = textWithConvertedLink;
+  let text = ctx.originalText;
+  if (ctx.convertedUrl) {
+    text = text.replace(ctx.originalUrl, ctx.convertedUrl);
+  }
 
-  // Se o texto for muito longo, trunca
+  // Trunca se muito longo
   const maxLen = 4000;
   if (text.length > maxLen) {
     text = text.slice(0, maxLen - 50) + '...';
@@ -1296,16 +1300,9 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
     return false;
   }
 
-  // ── 6. Monta template (mirror ou fallback affiliate) ──────────────
+  // ── 6. Busca template ──────────────────────────────────────────────
   const messageTemplate = await getMirrorMessageTemplate(affiliateId, event.mirrorId);
   const hasCustomTemplate = !!messageTemplate;
-  const template = buildTemplateMessage(text, originalUrl, convertedUrl, messageTemplate);
-  log('info', 'Template montado', {
-    messageId,
-    templateLength: template.length,
-    hasConvertedUrl: !!convertedUrl,
-    hasCustomTemplate,
-  });
 
   // ── 7. Envia para cada grupo de destino ──────────────────────────
   let anySent = false;
@@ -1316,6 +1313,26 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
   const { maxMsgs: subRateMaxMsgs, windowSec: subRateWindowSec } = await getMirrorSubRateLimit(event.mirrorId);
 
   for (const target of targetGroups) {
+    // Monta template com contexto do grupo destino
+    const ctx: TemplateContext = {
+      originalText: text,
+      originalUrl,
+      convertedUrl,
+      marketplace,
+      sourceGroupName: sourceGroupName || '(desconhecido)',
+      targetGroupName: target.name,
+      timestamp: new Date(),
+    };
+    const template = buildTemplateMessage(ctx, messageTemplate);
+
+    log('info', 'Template montado', {
+      messageId,
+      targetGroupName: target.name,
+      templateLength: template.length,
+      hasConvertedUrl: !!convertedUrl,
+      hasCustomTemplate,
+    });
+
     const sent = await sendToGroup(
       instanceName,
       target.jid,

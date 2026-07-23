@@ -67,6 +67,136 @@ export function detectMarketplace(url: string): Marketplace {
   return 'unknown';
 }
 
+// ─── Template de Mensagem ───────────────────────────────────────────────
+
+/** Contexto disponível para resolução de placeholders no template de mensagem */
+export interface TemplateContext {
+  /** Texto original completo da mensagem recebida */
+  originalText: string;
+  /** URL de marketplace detectada na mensagem original */
+  originalUrl: string;
+  /** URL convertida para link de afiliado (ou null se falhou) */
+  convertedUrl: string | null;
+  /** Marketplace detectado (shopee, mercadolivre, amazon, unknown) */
+  marketplace: string;
+  /** Nome do grupo de origem */
+  sourceGroupName: string;
+  /** Nome do grupo de destino (alvo do envio) */
+  targetGroupName: string;
+  /** Timestamp do processamento */
+  timestamp: Date;
+}
+
+/** Mapa de marketplace → nome amigável em português */
+export const MARKETPLACE_NAMES: Record<string, string> = {
+  shopee: 'Shopee',
+  mercadolivre: 'Mercado Livre',
+  amazon: 'Amazon',
+  magalu: 'Magalu',
+  unknown: 'Desconhecido',
+};
+
+/** Lista de placeholders reconhecidos (para validação) */
+export const KNOWN_PLACEHOLDERS = new Set([
+  'texto_original',
+  'link_convertido',
+  'link_original',
+  'marketplace',
+  'marketplace_nome',
+  'source_group',
+  'target_group',
+  'data',
+  'hora',
+  'data_hora',
+]);
+
+/**
+ * Resolve placeholders simples em um template usando o contexto fornecido.
+ *
+ * Placeholders suportados:
+ *   {texto_original}   — texto com link convertido
+ *   {link_convertido}  — apenas o link de afiliado
+ *   {link_original}    — URL original extraída
+ *   {marketplace}      — identificador do marketplace (shopee, etc.)
+ *   {marketplace_nome} — nome amigável (Shopee, Mercado Livre, etc.)
+ *   {source_group}     — nome do grupo de origem
+ *   {target_group}     — nome do grupo de destino
+ *   {data}             — data atual (dd/MM/yyyy)
+ *   {hora}             — hora atual (HH:mm)
+ *   {data_hora}        — data e hora completas
+ *
+ * Placeholders não reconhecidos são mantidos como texto literal.
+ * Placeholders condicionais ({?...}, {/}) são passados sem modificação.
+ */
+export function resolvePlaceholders(
+  input: string,
+  ctx: TemplateContext,
+): string {
+  let result = input;
+
+  // Prepara o texto com link convertido
+  let textWithConvertedLink = ctx.originalText;
+  if (ctx.convertedUrl) {
+    textWithConvertedLink = textWithConvertedLink.replace(ctx.originalUrl, ctx.convertedUrl);
+  }
+
+  const marketplaceNome = MARKETPLACE_NAMES[ctx.marketplace] ?? ctx.marketplace;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const data = `${pad(ctx.timestamp.getDate())}/${pad(ctx.timestamp.getMonth() + 1)}/${ctx.timestamp.getFullYear()}`;
+  const hora = `${pad(ctx.timestamp.getHours())}:${pad(ctx.timestamp.getMinutes())}`;
+  const dataHora = `${data} ${hora}`;
+
+  // Substitui placeholders conhecidos
+  result = result
+    .replace(/\{texto_original\}/g, textWithConvertedLink)
+    .replace(/\{link_convertido\}/g, ctx.convertedUrl ?? ctx.originalUrl)
+    .replace(/\{link_original\}/g, ctx.originalUrl)
+    .replace(/\{marketplace\}/g, ctx.marketplace)
+    .replace(/\{marketplace_nome\}/g, marketplaceNome)
+    .replace(/\{source_group\}/g, ctx.sourceGroupName)
+    .replace(/\{target_group\}/g, ctx.targetGroupName)
+    .replace(/\{data\}/g, data)
+    .replace(/\{hora\}/g, hora)
+    .replace(/\{data_hora\}/g, dataHora);
+
+  return result;
+}
+
+/**
+ * Extrai placeholders não reconhecidos de um template.
+ * Ignora placeholders condicionais ({?...}, {:...}, {/}).
+ * Retorna os placeholders desconhecidos encontrados (sem as chaves).
+ */
+export function findUnknownPlaceholders(template: string): string[] {
+  const unknown: string[] = [];
+  const placeholderRegex = /\{([a-z_]+)\}/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = placeholderRegex.exec(template)) !== null) {
+    const name = match[1]!;
+    // Ignora condicionais (começam com ?, :, /) e placeholders conhecidos
+    if (
+      name.startsWith('?') ||
+      name.startsWith(':') ||
+      name.startsWith('/')
+    ) continue;
+    if (!KNOWN_PLACEHOLDERS.has(name)) {
+      unknown.push(name);
+    }
+  }
+
+  return unknown;
+}
+
+// ─── Parser de Condicionais ─────────────────────────────────────────────
+
+export {
+  evaluateCondition,
+  processConditionals,
+  buildEvalContext,
+} from './template-parser.ts';
+export type { TemplateEvalContext } from './template-parser.ts';
+
 // ─── Tipos do pipeline de espelhamento ──────────────────────────────────
 
 export type { MirrorMessageEvent } from './mirror-message.ts';
