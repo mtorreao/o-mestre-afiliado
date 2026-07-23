@@ -10,4 +10,5 @@ export { Loading, LoadingSkeleton } from './Loading.tsx';
 export { ToastProvider, useToast } from './Toast.tsx';
 export { Checkbox } from './Checkbox.tsx';
 export { Switch } from './Switch.tsx';
+export { BottomSheet } from './BottomSheet.tsx';
 export { FilterBar } from './FilterBar.tsx';

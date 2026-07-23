@@ -155,7 +155,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
       />
 
       {/* Filters */}
-      <FilterBar>
+      <FilterBar collapsible>
         <FilterBar.Item width="150px">
           <Select
             label="Status"

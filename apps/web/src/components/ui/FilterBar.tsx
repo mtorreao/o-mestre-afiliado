@@ -4,32 +4,75 @@
  * Layout flex com wrapping, gap padronizado e items que não encolhem.
  * Cada filtro deve ser envolvido em <FilterBar.Item> com as props de largura.
  *
- * Uso:
+ * Uso básico (sempre visível):
  *   <FilterBar>
  *     <FilterBar.Item width="150px">
  *       <Select label="Status" ... />
  *     </FilterBar.Item>
+ *   </FilterBar>
+ *
+ * Uso collapsível (recolhe em mobile, abre BottomSheet):
+ *   <FilterBar collapsible>
  *     <FilterBar.Item width="150px">
- *       <Select label="Marketplace" ... />
- *     </FilterBar.Item>
- *     <FilterBar.Item width="140px" grow={1}>
- *       <input type="date" ... />
- *     </FilterBar.Item>
- *     <FilterBar.Item width="200px" grow={2}>
- *       <input type="text" placeholder="Buscar..." />
+ *       <Select ... />
  *     </FilterBar.Item>
  *   </FilterBar>
  */
-import React from 'react';
+import React, { useState } from 'react';
+import { Filter } from 'lucide-react';
 import { Card } from './Card.tsx';
+import { Button } from './Button.tsx';
+import { BottomSheet } from './BottomSheet.tsx';
+import { useMediaQuery } from '../../hooks/useMediaQuery.ts';
 
 // ─── FilterBar (container) ─────────────────────────────
 
 interface FilterBarProps {
   children: React.ReactNode;
+  /** Quando true, recolhe em mobile (<768px) e abre via BottomSheet */
+  collapsible?: boolean;
+  /** Rótulo do botão de abrir filtros em modo collapsible */
+  label?: string;
 }
 
-export function FilterBar({ children }: FilterBarProps) {
+export function FilterBar({ children, collapsible = false, label = 'Filtros' }: FilterBarProps) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Modo collapsível + mobile: renderiza apenas o trigger + BottomSheet
+  if (collapsible && isMobile) {
+    return (
+      <>
+        <BottomSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          title={label}
+          trigger={
+            <Button
+              variant="outline"
+              onClick={() => setSheetOpen(true)}
+              icon={<Filter size={14} />}
+              style={{ width: '100%' }}
+            >
+              {label}
+            </Button>
+          }
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+            }}
+          >
+            {children}
+          </div>
+        </BottomSheet>
+      </>
+    );
+  }
+
+  // Desktop ou não collapsível: render normal com Card
   return (
     <Card>
       <div
