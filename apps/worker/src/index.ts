@@ -3,25 +3,19 @@
  *
  * Modo:
  *   mirror (default) — Lê do Redis Stream (com consumer group) e processa espelhamento de ofertas
- *   revalidate       — Uma rodada de revalidação de grupos
- *   revalidate-daemon— Daemon de revalidação periódica
  *
  * O Redis Stream persiste mensagens e garante entrega via consumer group + ACK explícito.
  *
  * Uso:
  *   bun apps/worker/src/index.ts                     # modo mirror (default)
- *   bun apps/worker/src/index.ts --revalidate         # modo revalidate
- *   bun apps/worker/src/index.ts --revalidate-daemon  # modo revalidate-daemon
  */
 
 import os from 'node:os';
 import Redis from 'ioredis';
 import { MIRROR_STREAM, MIRROR_CONSUMER_GROUP } from '@omestre/shared';
 import type { MirrorMessageEvent } from '@omestre/shared';
-import { getDb, AffiliatesRepository, MirrorRepository, mirrors } from '@omestre/db';
-import { eq } from 'drizzle-orm';
+import { getDb, MirrorRepository } from '@omestre/db';
 import { processMirrorMessage } from './mirror-pipeline.ts';
-import { runRevalidation, runRevalidationDaemon } from './revalidate.ts';
 import { startMetricsServer, setStatusMeta } from './metrics.ts';
 import { pushToDLQ, purgeOldDLQItems } from './dead-letter-queue.ts';
 
@@ -422,65 +416,11 @@ async function runMirror(): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MODO REVALIDATION — Revalidação periódica de grupos
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function runRevalidateOnce(): Promise<void> {
-  log('info', 'Worker iniciado em modo revalidate (once)');
-  const result = await runRevalidation();
-  console.log('');
-  console.log('═══════════════════════════════════════════════');
-  console.log('RESUMO DA REVALIDAÇÃO:');
-  console.log(`  Afiliados totais: ${result.totalAffiliates}`);
-  console.log(`  Validados:        ${result.validatedAffiliates}`);
-  console.log(`  Com falha nova:   ${result.failedAffiliates}`);
-  console.log('═══════════════════════════════════════════════');
-  for (const r of result.results) {
-    const icon = r.overallPassed ? '✅' : '❌';
-    const changed = r.statusChanged ? ' (⚠️ mudou de status!)' : '';
-    console.log(`  ${icon} Afiliado #${r.affiliateId} (${r.evolutionInstanceId})${changed}`);
-    for (const g of r.groups) {
-      const gIcon = g.passed ? '✅' : '❌';
-      console.log(`     ${gIcon} ${g.groupName}: ${Math.round(g.ratio * 100)}% ofertas (${g.validOffers}/${g.totalMessages})`);
-    }
-  }
-}
-
-async function runRevalidateDaemon(): Promise<void> {
-  log('info', 'Worker iniciado em modo revalidate-daemon');
-  // Inicia servidor HTTP com /metrics e /health para healthcheck de orquestrador
-  startMetricsServer();
-  setStatusMeta({ mode: 'revalidate-daemon' });
-  await runRevalidationDaemon();
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════════════════
 
-type WorkerMode = 'mirror' | 'revalidate' | 'revalidate-daemon';
-
-function detectMode(): WorkerMode {
-  if (process.argv.includes('--revalidate-daemon')) return 'revalidate-daemon';
-  if (process.argv.includes('--revalidate')) return 'revalidate';
-  return 'mirror'; // default
-}
-
 async function main() {
-  const mode = detectMode();
-
-  switch (mode) {
-    case 'mirror':
-      await runMirror();
-      break;
-    case 'revalidate':
-      await runRevalidateOnce();
-      process.exit(0);
-      break;
-    case 'revalidate-daemon':
-      await runRevalidateDaemon();
-      break;
-  }
+  await runMirror();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,6 +1,5 @@
 import { Elysia } from 'elysia';
-import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository, MirrorLogRepository } from '@omestre/db';
-import type { ExcludedGroup, Filters } from '@omestre/db';
+import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, MirrorLogRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { convertShopeeUrlWithCredentials, convertAmazonUrlWithTrackingId } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
@@ -9,13 +8,10 @@ import type { ConversionResult, TemplateContext } from '@omestre/shared';
 import { generateViaUrlParams } from '@omestre/converters';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
 import { fetchGroupMessages } from '../../services/evolution.ts';
-import { validateOfferGroups, validateGroup } from '@omestre/shared';
-import { replaceSourceGroups, cacheSourceGroup, removeSourceGroup } from '../../services/group-cache.ts';
 
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
 const mlRepo = new MlAffiliateRepository();
-const affiliatesRepo = new AffiliatesRepository();
 const mirrorLogRepo = new MirrorLogRepository();
 
 export const affiliateRoutes = new Elysia()
@@ -36,10 +32,6 @@ export const affiliateRoutes = new Elysia()
 
     const creds = await credentialsRepo.findByUserId(auth.userId);
     const mlAffiliate = await mlRepo.findByPlatformUserId(auth.userId);
-
-    // Busca configuração de grupos salva (espelhamento)
-    const evolutionInstanceId = instanceNameFromUserId(auth.userId);
-    const affiliate = await affiliatesRepo.findByEvolutionInstanceId(evolutionInstanceId);
 
     const mlInfo = mlAffiliate
       ? {
@@ -64,18 +56,11 @@ export const affiliateRoutes = new Elysia()
         amazonConfigured: !!(creds?.amazonTrackingId),
         amazonTrackingId: creds?.amazonTrackingId || null,
         mercadoLivre: mlInfo,
-        // Grupos de espelhamento configurados
-        sourceGroups: affiliate?.sourceGroups || [],
-        targetGroups: affiliate?.targetGroups || [],
-        // Grupos excluídos por validação (persistentes)
-        excludedGroups: (affiliate?.excludedGroups as ExcludedGroup[]) || [],
-        // Template personalizado de mensagem
-        messageTemplate: affiliate?.messageTemplate || null,
-        // Filtros de conteúdo (blacklist, keywords, dedup)
-        filters: affiliate?.filters || { blacklist: [], keywords: [], dedupHours: 24 },
         // Configuração de notificações proativas
-        notificationChannel: affiliate?.notificationChannel || 'disabled',
-        notificationJid: affiliate?.notificationJid || null,
+        notificationConfig: {
+          channel: null,
+          jid: null,
+        },
       },
     };
   })
@@ -88,11 +73,10 @@ export const affiliateRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const { shopeeAppId, shopeeAppSecret, amazonTrackingId, filters } = body as {
+    const { shopeeAppId, shopeeAppSecret, amazonTrackingId } = body as {
       shopeeAppId?: string;
       shopeeAppSecret?: string;
       amazonTrackingId?: string;
-      filters?: Filters;
     };
 
     await credentialsRepo.upsert(auth.userId, {
@@ -101,53 +85,7 @@ export const affiliateRoutes = new Elysia()
       amazonTrackingId: amazonTrackingId ?? undefined,
     });
 
-    // Se filters foi enviado, salva no affiliate
-    if (filters) {
-      const evolutionInstanceId = `user-${auth.userId}`;
-      await affiliatesRepo.updateFilters(evolutionInstanceId, {
-        blacklist: filters.blacklist ?? [],
-        keywords: filters.keywords ?? [],
-        dedupHours: typeof filters.dedupHours === 'number' ? filters.dedupHours : 24,
-      });
-    }
-
     return { success: true, message: 'Perfil atualizado' };
-  })
-
-  // ─── PUT /api/affiliate/notification-config ─────────────────────────
-  .put('/api/affiliate/notification-config', async ({ jwt, request, set, body }) => {
-    const auth = await getAuthUser(jwt, request.headers);
-    if (!auth) {
-      set.status = 401;
-      return { success: false, error: 'Não autenticado' };
-    }
-
-    const { channel, jid } = body as {
-      channel?: string;
-      jid?: string | null;
-    };
-
-    if (!channel || !['whatsapp', 'telegram', 'disabled'].includes(channel)) {
-      set.status = 400;
-      return { success: false, error: 'Canal inválido. Use: whatsapp, telegram ou disabled.' };
-    }
-
-    if (channel !== 'disabled' && !jid) {
-      set.status = 400;
-      return { success: false, error: 'JID/chat ID é obrigatório quando o canal não é disabled.' };
-    }
-
-    const evolutionInstanceId = `user-${auth.userId}`;
-    const ok = await affiliatesRepo.updateNotificationConfig(evolutionInstanceId, {
-      channel,
-      jid: jid ?? null,
-    });
-
-    if (!ok) {
-      return { success: false, error: 'Afiliado não encontrado. Configure os grupos de espelhamento primeiro.' };
-    }
-
-    return { success: true, message: 'Configuração de notificações salva.' };
   })
 
   // ─── POST /api/affiliate/test-conversion ──────────────────────────

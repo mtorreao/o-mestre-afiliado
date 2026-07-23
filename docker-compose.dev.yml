@@ -268,38 +268,6 @@ services:
       - omestre-dev-net
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # REVALIDATION WORKER — Revalidação periódica de grupos
-  # ═══════════════════════════════════════════════════════════════════════════
-  revalidate:
-    build:
-      context: .
-      dockerfile: apps/worker/Dockerfile
-    container_name: omestre_dev_revalidate
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: ["bun", "run", "dist/index.js", "--revalidate-daemon"]
-    env_file:
-      - .env
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_USERNAME: evolution
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
-      POSTGRES_DATABASE: omestre_db
-      POSTGRES_SCHEMA: omestre
-      EVOLUTION_API_URL: http://evolution-api:8080
-      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
-      REDIS_URL: redis://redis:6379
-      REVALIDATION_INTERVAL_DAYS: ${REVALIDATION_INTERVAL_DAYS:-7}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-    networks:
-      - omestre-dev-net
-
-  # ═══════════════════════════════════════════════════════════════════════════
   # OPTIONAL: Cloudflare Tunnel
   # ═══════════════════════════════════════════════════════════════════════════
   # Ativar com:  --profile tunnel
