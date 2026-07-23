@@ -23,7 +23,7 @@ export function Card({ children, title, subtitle, action, className, style }: Ca
   };
 
   const headerStyle: React.CSSProperties = {
-    padding: '1rem 1.25rem',
+    padding: '0.625rem 1rem',
     borderBottom: '1px solid var(--color-border-light)',
     display: 'flex',
     justifyContent: 'space-between',
@@ -33,7 +33,7 @@ export function Card({ children, title, subtitle, action, className, style }: Ca
   };
 
   const bodyStyle: React.CSSProperties = {
-    padding: '1.25rem',
+    padding: '1rem',
   };
 
   return (

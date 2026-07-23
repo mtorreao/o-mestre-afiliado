@@ -6,7 +6,7 @@
 import type { InferSelectModel } from 'drizzle-orm';
 import { and, eq, gte, lte, ilike, or, sql, desc, count, inArray } from 'drizzle-orm';
 import { getDb } from '../db.ts';
-import { reflectedOffers, affiliates, mirrors } from '../schema/index.ts';
+import { reflectedOffers, mirrors } from '../schema/index.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
@@ -176,50 +176,49 @@ export class MirrorLogRepository {
       .limit(pageSize)
       .offset(offset);
 
-    // Busca nomes dos grupos a partir do JSONB affiliates.sourceGroups e targetGroups
-    // Como os JIDs estão em campos separados, precisamos buscar o affiliate e extrair os nomes
+    // Busca nomes dos grupos a partir do JSONB mirrors.sourceGroups e targetGroups
+    // Como os JIDs estão em campos separados, precisamos buscar os mirrors e extrair os nomes
     const affiliateIds = [...new Set(rows.map((r) => r.affiliateId))];
     const sourceJids = [...new Set(rows.map((r) => r.sourceGroupJid))];
     const targetJids = [...new Set(rows.map((r) => r.targetGroupJid))];
 
-    // Busca todos os affiliates relevantes para obter os nomes dos grupos
-    const affiliatesRows = affiliateIds.length > 0
-      ? await db
+    // Busca todos os mirrors para obter os nomes dos grupos
+    const groupNames = new Map<string, string>();
+
+    if (affiliateIds.length > 0) {
+      try {
+        const mirrorRows = await db
           .select({
-            id: affiliates.id,
-            sourceGroups: affiliates.sourceGroups,
-            targetGroups: affiliates.targetGroups,
+            id: mirrors.id,
+            sourceGroups: mirrors.sourceGroups,
+            targetGroups: mirrors.targetGroups,
           })
-          .from(affiliates)
-          .where(
-            sql`${affiliates.id} IN (${sql.join(affiliateIds, sql`, `)})`,
-          )
-      : [];
+          .from(mirrors);
 
-    // Cria mapas JID → nome a partir dos JSONB dos affiliates
-    const sourceGroupNames = new Map<string, string>();
-    const targetGroupNames = new Map<string, string>();
-
-    for (const aff of affiliatesRows) {
-      const srcGroups = aff.sourceGroups as { jid: string; name: string }[] | null;
-      if (srcGroups) {
-        for (const g of srcGroups) {
-          sourceGroupNames.set(g.jid, g.name);
+        for (const m of mirrorRows) {
+          const srcGroups = m.sourceGroups as { jid: string; name: string }[] | null;
+          if (srcGroups) {
+            for (const g of srcGroups) {
+              groupNames.set(g.jid, g.name);
+            }
+          }
+          const tgtGroups = m.targetGroups as { jid: string; name: string }[] | null;
+          if (tgtGroups) {
+            for (const g of tgtGroups) {
+              groupNames.set(g.jid, g.name);
+            }
+          }
         }
-      }
-      const tgtGroups = aff.targetGroups as { jid: string; name: string }[] | null;
-      if (tgtGroups) {
-        for (const g of tgtGroups) {
-          targetGroupNames.set(g.jid, g.name);
-        }
+      } catch {
+        // Se falhar, prossegue sem nomes de grupos
       }
     }
 
     // Monta resultado com nomes dos grupos
     const result: MirrorLogRow[] = rows.map((r) => ({
       ...r,
-      sourceGroupName: sourceGroupNames.get(r.sourceGroupJid) ?? null,
-      targetGroupName: targetGroupNames.get(r.targetGroupJid) ?? null,
+      sourceGroupName: groupNames.get(r.sourceGroupJid) ?? null,
+      targetGroupName: groupNames.get(r.targetGroupJid) ?? null,
     }));
 
     return {
