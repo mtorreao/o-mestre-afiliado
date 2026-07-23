@@ -17,7 +17,7 @@ import { Elysia } from 'elysia';
 import { WhatsAppInstanceRepository } from '@omestre/db';
 import { MIRROR_STREAM } from '@omestre/shared';
 import type { MirrorMessageEvent } from '@omestre/shared';
-import { streamAdd } from '../../services/redis.ts';
+import { streamAdd, cacheDel } from '../../services/redis.ts';
 import { getSourceGroupInfo, cacheSourceGroup } from '../../services/group-cache.ts';
 import { fetchGroupInfo } from '../../services/evolution.ts';
 
@@ -294,6 +294,11 @@ export const webhookRoutes = new Elysia()
 
         case 'groups.upsert': {
           console.log(`👥 Grupo(s) atualizado(s) em ${instanceName}`);
+          // Invalida cache da listagem de grupos para forçar recarga
+          if (instanceName) {
+            await cacheDel(`whatsapp:groups:${instanceName}`);
+            console.log(`🔄 Cache de grupos invalidado para ${instanceName} (groups.upsert)`);
+          }
           break;
         }
 

@@ -205,6 +205,24 @@ export class AffiliatesRepository {
   }
 
   /**
+   * Deleta um afiliado pelo evolutionInstanceId.
+   * Retorna o registro deletado ou null se não existir.
+   * Antes de chamar esta função, o caller deve limpar o cache
+   * de sourceGroups via removeSourceGroups().
+   */
+  async deleteByEvolutionInstanceId(evolutionInstanceId: string): Promise<Affiliate | null> {
+    const db = getDb();
+    const existing = await this.findByEvolutionInstanceId(evolutionInstanceId);
+    if (!existing) return null;
+
+    const [row] = await db
+      .delete(affiliates)
+      .where(eq(affiliates.id, existing.id))
+      .returning();
+    return row ?? null;
+  }
+
+  /**
    * Busca a configuração completa de template de um afiliado pelo ID.
    */
   async findTemplateConfigById(
