@@ -85,6 +85,7 @@ export function FilterBar({ children, collapsible = false, label = 'Filtros', ac
                 marginTop: '0.5rem',
                 borderTop: '1px solid var(--color-border-light)',
               }}
+              onClick={() => setSheetOpen(false)}
             >
               {actions}
             </div>
