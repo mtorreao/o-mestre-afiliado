@@ -1,4 +1,6 @@
-[
-  "compra garantida",
-  "frete grátis completo"
-]
+{
+  "terms": [
+    "compra garantida",
+    "frete grátis completo"
+  ]
+}

@@ -42,34 +42,43 @@ import { readFileSync, existsSync } from 'fs';
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:5444';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
-// ─── Blacklist global ────────────────────────────────────────────────
+// ─── Arquivos de termos globais (blacklist / whitelist) ──────────────
 
-interface BlacklistConfig {
+interface TermsFile {
   terms: string[];
 }
 
-let globalBlacklist: string[] | null = null;
-
-function loadBlacklist(): string[] {
-  if (globalBlacklist !== null) return globalBlacklist;
-
-  const blacklistPath = process.env.BLACKLIST_PATH || '../../blacklist.json';
-  try {
-    if (existsSync(blacklistPath)) {
-      const raw = readFileSync(blacklistPath, 'utf-8');
-      const config = JSON.parse(raw) as BlacklistConfig;
-      globalBlacklist = config.terms ?? [];
-      log('info', `Blacklist carregada: ${globalBlacklist.length} termo(s) de ${blacklistPath}`);
-    } else {
-      globalBlacklist = [];
-      log('info', 'Arquivo blacklist.json não encontrado, blacklist vazia');
-    }
-  } catch (err) {
-    globalBlacklist = [];
-    log('warn', 'Erro ao carregar blacklist', { path: blacklistPath, error: String(err) });
+function loadTermsList(envPath: string, defaultPath: string, label: string): string[] {
+  const cacheKey = `_cache_${label}` as keyof typeof globalThis;
+  if ((globalThis as Record<string, unknown>)[cacheKey] !== undefined) {
+    return (globalThis as Record<string, string[]>)[cacheKey] as string[];
   }
 
-  return globalBlacklist;
+  const filePath = process.env[envPath] || defaultPath;
+  try {
+    if (existsSync(filePath)) {
+      const raw = readFileSync(filePath, 'utf-8');
+      const config = JSON.parse(raw) as TermsFile;
+      const terms = config.terms ?? [];
+      (globalThis as Record<string, unknown>)[cacheKey] = terms;
+      log('info', `${label} carregada: ${terms.length} termo(s) de ${filePath}`);
+      return terms;
+    }
+    log('info', `Arquivo ${filePath} não encontrado, ${label.toLowerCase()} vazia`);
+  } catch (err) {
+    log('warn', `Erro ao carregar ${label.toLowerCase()}`, { path: filePath, error: String(err) });
+  }
+
+  (globalThis as Record<string, unknown>)[cacheKey] = [];
+  return [];
+}
+
+function loadBlacklist(): string[] {
+  return loadTermsList('BLACKLIST_PATH', '../../blacklist.json', 'Blacklist');
+}
+
+function loadWhitelist(): string[] {
+  return loadTermsList('WHITELIST_PATH', '../../whitelist.json', 'Whitelist');
 }
 
 // ─── Logging ─────────────────────────────────────────────────────────
@@ -1142,6 +1151,29 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
         });
         return false;
       }
+    }
+  }
+
+  // ── 2b. Whitelist global ──────────────────────────────────────────
+  const whitelistTerms = loadWhitelist();
+  if (whitelistTerms.length > 0) {
+    const textLower = text.toLowerCase();
+    const hasMatch = whitelistTerms.some((term) => textLower.includes(term.toLowerCase()));
+    if (!hasMatch) {
+      log('info', 'Mensagem filtrada pela whitelist global — nenhum termo encontrado', { messageId, whitelistTerms });
+      incrementCounter('mirror_messages_blocked_total', { reason: 'global_whitelist' });
+      await logReflectedOffer({
+        affiliateId,
+        sourceGroupJid,
+        targetGroupJid: '',
+        originalLink: originalUrl,
+        convertedLink: null,
+        marketplace,
+        messagePreview: text.slice(0, 300),
+        status: 'blocked',
+        failureReason: `global_whitelist: mensagem não contém nenhum termo da lista [${whitelistTerms.join(', ')}]`,
+      });
+      return false;
     }
   }
 

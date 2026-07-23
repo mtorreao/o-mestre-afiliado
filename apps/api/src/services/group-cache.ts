@@ -67,19 +67,26 @@ export async function getAffiliateIdBySourceGroup(
     }
   }
 
-  // ── 2. Fallback: PostgreSQL ─────────────────────────────────────────
+  // ── 2. Fallback: busca na tabela mirrors ─────────────────────────────
   try {
-    const affiliate = await affiliatesRepo.findBySourceGroupJid(groupJid);
-    if (affiliate) {
-      // Encontrou no DB — popula o cache para evitar nova consulta DB
-      const groups = affiliate.sourceGroups as { jid: string; name: string }[] | null;
-      const groupName = groups?.find((g) => g.jid === groupJid)?.name ?? '';
-      await cacheSourceGroup(groupJid, affiliate.id, groupName);
-      console.log(
-        `[group-cache] Fallback DB: sourceGroup ${groupJid} carregado para ` +
-        `affiliateId=${affiliate.id} (cache foi populado)`,
-      );
-      return affiliate.id;
+    const mirrorRepo = new MirrorRepository();
+    const allMirrors = await mirrorRepo.list({ status: 'active', pageSize: 1000 });
+    for (const mirror of allMirrors.rows) {
+      const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
+      const found = groups?.find((g) => g.jid === groupJid);
+      if (found) {
+        // Encontrou no mirror — popula o cache
+        const instanceName = `user-${mirror.userId}`;
+        const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
+        if (affiliate) {
+          await cacheSourceGroup(groupJid, affiliate.id, found.name, mirror.id);
+          console.log(
+            `[group-cache] Fallback mirror: sourceGroup ${groupJid} carregado ` +
+            `para affiliateId=${affiliate.id} mirrorId=${mirror.id}`,
+          );
+          return affiliate.id;
+        }
+      }
     }
   } catch {
     // silencia falha de DB
@@ -114,19 +121,26 @@ export async function getSourceGroupInfo(
     }
   }
 
-  // ── 2. Fallback: PostgreSQL ─────────────────────────────────────────
+  // ── 2. Fallback: busca na tabela mirrors ─────────────────────────────
   try {
-    const affiliate = await affiliatesRepo.findBySourceGroupJid(groupJid);
-    if (affiliate) {
-      const groups = affiliate.sourceGroups as { jid: string; name: string }[] | null;
-      const groupName = groups?.find((g) => g.jid === groupJid)?.name ?? '';
-      const entry: SourceGroupCacheEntry = { affiliateId: affiliate.id, groupName };
-      await cacheSourceGroup(groupJid, affiliate.id, groupName);
-      console.log(
-        `[group-cache] Fallback DB: sourceGroup ${groupJid} info carregada para ` +
-        `affiliateId=${affiliate.id} (cache foi populado)`,
-      );
-      return entry;
+    const mirrorRepo = new MirrorRepository();
+    const allMirrors = await mirrorRepo.list({ status: 'active', pageSize: 1000 });
+    for (const mirror of allMirrors.rows) {
+      const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
+      const found = groups?.find((g) => g.jid === groupJid);
+      if (found) {
+        const instanceName = `user-${mirror.userId}`;
+        const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
+        if (affiliate) {
+          const entry: SourceGroupCacheEntry = { affiliateId: affiliate.id, mirrorId: mirror.id, groupName: found.name };
+          await cacheSourceGroup(groupJid, affiliate.id, found.name, mirror.id);
+          console.log(
+            `[group-cache] Fallback mirror: sourceGroup ${groupJid} info carregada ` +
+            `para affiliateId=${affiliate.id} mirrorId=${mirror.id}`,
+          );
+          return entry;
+        }
+      }
     }
   } catch {
     // silencia falha de DB
@@ -278,25 +292,10 @@ export async function clearSourceGroupCache(): Promise<void> {
  */
 export async function warmSourceGroupCache(): Promise<void> {
   try {
-    // 1. Carrega sourceGroups de affiliates (legado)
-    const all = await affiliatesRepo.findAllActiveWithSourceGroups();
-    let totalGroups = 0;
-    let affiliateCount = all.length;
-
-    for (const affiliate of all) {
-      const groups = affiliate.sourceGroups as { jid: string; name: string }[] | null;
-      if (!groups || groups.length === 0) continue;
-
-      for (const group of groups) {
-        await cacheSourceGroup(group.jid, affiliate.id, group.name);
-        totalGroups++;
-      }
-    }
-
-    // 2. Carrega sourceGroups de mirrors (novo CRUD)
+    // Carrega sourceGroups de mirrors (CRUD atual)
     const mirrorRepo = new MirrorRepository();
     const mirrorResult = await mirrorRepo.list({ status: 'active', pageSize: 1000 });
-    let mirrorCount = mirrorResult.rows.length;
+    let totalGroups = 0;
 
     for (const mirror of mirrorResult.rows) {
       const srcGroups = mirror.sourceGroups as { jid: string; name: string }[] | null;
@@ -314,8 +313,7 @@ export async function warmSourceGroupCache(): Promise<void> {
     }
 
     console.log(
-      `🔥 Cache de sourceGroups warmado: ${totalGroups} grupo(s) carregado(s) ` +
-      `de ${affiliateCount} afiliado(s) + ${mirrorCount} mirror(es)`,
+      `🔥 Cache de sourceGroups warmado: ${totalGroups} grupo(s) carregado(s) do mirrors table`,
     );
   } catch (error) {
     console.error('[group-cache] Erro ao warmar cache de sourceGroups:', error);

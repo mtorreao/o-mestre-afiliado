@@ -243,8 +243,10 @@ services:
       METRICS_API_KEY: ${METRICS_API_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       BLACKLIST_PATH: /app/blacklist.json
+      WHITELIST_PATH: /app/whitelist.json
     volumes:
       - ./blacklist.json:/app/blacklist.json:ro
+      - ./whitelist.json:/app/whitelist.json:ro
     networks:
       - omestre-dev-net
 

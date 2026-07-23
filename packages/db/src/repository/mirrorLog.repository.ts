@@ -4,9 +4,9 @@
  * Fornece paginação, filtros e busca textual na tabela reflected_offers.
  */
 import type { InferSelectModel } from 'drizzle-orm';
-import { and, eq, gte, lte, ilike, or, sql, desc, count } from 'drizzle-orm';
+import { and, eq, gte, lte, ilike, or, sql, desc, count, inArray } from 'drizzle-orm';
 import { getDb } from '../db.ts';
-import { reflectedOffers, affiliates } from '../schema/index.ts';
+import { reflectedOffers, affiliates, mirrors } from '../schema/index.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
@@ -92,13 +92,57 @@ export class MirrorLogRepository {
     }
     if (filters.search) {
       const term = `%${filters.search}%`;
-      conditions.push(
-        or(
-          ilike(reflectedOffers.originalLink, term),
-          ilike(reflectedOffers.convertedLink, term),
-          ilike(reflectedOffers.messagePreview, term),
-        )!,
-      );
+
+      // Busca JIDs de grupos cujo nome corresponde ao termo (tabela mirrors)
+      const matchingSourceJids: string[] = [];
+      const matchingTargetJids: string[] = [];
+      try {
+        const mirrorRows = await db
+          .select({
+            id: mirrors.id,
+            sourceGroups: mirrors.sourceGroups,
+            targetGroups: mirrors.targetGroups,
+          })
+          .from(mirrors);
+        const lowerTerm = filters.search.toLowerCase();
+        for (const m of mirrorRows) {
+          const srcGroups = m.sourceGroups;
+          if (srcGroups) {
+            for (const g of srcGroups) {
+              if (g.name.toLowerCase().includes(lowerTerm)) {
+                matchingSourceJids.push(g.jid);
+              }
+            }
+          }
+          const tgtGroups = m.targetGroups;
+          if (tgtGroups) {
+            for (const g of tgtGroups) {
+              if (g.name.toLowerCase().includes(lowerTerm)) {
+                matchingTargetJids.push(g.jid);
+              }
+            }
+          }
+        }
+      } catch {
+        // Se falhar, prossegue sem busca por nome de grupo
+      }
+
+      const searchConditions: ReturnType<typeof ilike>[] = [
+        ilike(reflectedOffers.originalLink, term),
+        ilike(reflectedOffers.convertedLink, term),
+        ilike(reflectedOffers.messagePreview, term),
+      ];
+
+      const orParts: (ReturnType<typeof ilike> | ReturnType<typeof inArray>)[] = searchConditions;
+
+      if (matchingSourceJids.length > 0) {
+        orParts.push(inArray(reflectedOffers.sourceGroupJid, matchingSourceJids));
+      }
+      if (matchingTargetJids.length > 0) {
+        orParts.push(inArray(reflectedOffers.targetGroupJid, matchingTargetJids));
+      }
+
+      conditions.push(or(...orParts)!);
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
