@@ -4,7 +4,7 @@
  * Tabela com filtros por status, marketplace, período e busca textual.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Button, Select, Badge, FilterBar, MobileFilterBar } from '../components/ui/index.ts';
+import { Button, Input, Select, Badge, FilterBar, MobileFilterBar } from '../components/ui/index.ts';
 import { DataPage } from '../components/layout/DataPage.tsx';
 import { Filter, Search, X, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { useMediaQuery } from '../hooks/useMediaQuery.ts';
@@ -168,28 +168,18 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             </div>
           }
         >
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>Buscar</label>
-            <input type="text" value={searchText} onChange={(e) => setSearchText((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }} placeholder="Link ou texto..." style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
-          </div>
+          <Input label="Buscar" placeholder="Link ou texto..." value={searchText} onChange={(e) => setSearchText(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }} />
           <Select label="Status" value={statusFilter} onValueChange={setStatusFilter} placeholder="Todos" options={[{ value: '', label: 'Todos' }, { value: 'sent', label: 'Enviada' }, { value: 'blocked', label: 'Bloqueada' }, { value: 'failed', label: 'Falha' }]} />
           <Select label="Marketplace" value={marketplaceFilter} onValueChange={setMarketplaceFilter} placeholder="Todos" options={[{ value: '', label: 'Todos' }, { value: 'shopee', label: 'Shopee' }, { value: 'mercadolivre', label: 'Mercado Livre' }, { value: 'amazon', label: 'Amazon' }, { value: 'unknown', label: 'Desconhecido' }]} />
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>De</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom((e.target as HTMLInputElement).value)} style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>Até</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo((e.target as HTMLInputElement).value)} style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
-          </div>
+          <Input label="De" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.currentTarget.value)} />
+          <Input label="Até" type="date" value={dateTo} onChange={(e) => setDateTo(e.currentTarget.value)} />
         </MobileFilterBar>
       </DataPage.Mobile>
 
       <DataPage.Desktop>
         <FilterBar title="Filtros" action={<Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />}>Limpar</Button>}>
           <FilterBar.Item width="200px" grow={2}>
-            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>Buscar</label>
-            <input type="text" value={searchText} onChange={(e) => setSearchText((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }} placeholder="Link ou texto..." style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
+            <Input label="Buscar" placeholder="Link ou texto..." value={searchText} onChange={(e) => setSearchText(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }} />
           </FilterBar.Item>
           <FilterBar.Item width="150px">
             <Select label="Status" value={statusFilter} onValueChange={setStatusFilter} placeholder="Todos" options={[{ value: '', label: 'Todos' }, { value: 'sent', label: 'Enviada' }, { value: 'blocked', label: 'Bloqueada' }, { value: 'failed', label: 'Falha' }]} />
@@ -198,12 +188,10 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             <Select label="Marketplace" value={marketplaceFilter} onValueChange={setMarketplaceFilter} placeholder="Todos" options={[{ value: '', label: 'Todos' }, { value: 'shopee', label: 'Shopee' }, { value: 'mercadolivre', label: 'Mercado Livre' }, { value: 'amazon', label: 'Amazon' }, { value: 'unknown', label: 'Desconhecido' }]} />
           </FilterBar.Item>
           <FilterBar.Item width="140px" grow={1}>
-            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>De</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom((e.target as HTMLInputElement).value)} style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
+            <Input label="De" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.currentTarget.value)} />
           </FilterBar.Item>
           <FilterBar.Item width="140px" grow={1}>
-            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>Até</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo((e.target as HTMLInputElement).value)} style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
+            <Input label="Até" type="date" value={dateTo} onChange={(e) => setDateTo(e.currentTarget.value)} />
           </FilterBar.Item>
         </FilterBar>
       </DataPage.Desktop>

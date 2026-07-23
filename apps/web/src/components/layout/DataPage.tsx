@@ -7,7 +7,8 @@
  * Subcomponentes:
  *   DataPage.Desktop — conteúdo exclusivo para desktop (>768px)
  *   DataPage.Mobile  — conteúdo exclusivo para mobile (≤768px)
- *   DataPage.Table   — tabela padronizada com colunas, linhas expansíveis e ações
+ *   DataPage.Table   — tabela padronizada com colunas, linhas expansíveis e ações.
+ *                      Em mobile (≤768px) renderiza cada linha como um card automaticamente.
  *   DataPage.Content — wrapper para conteúdo customizado
  *
  * Uso com tabela:
@@ -31,6 +32,10 @@
  *       renderExpanded={(r) => <Details .../>}
  *     />
  *   </DataPage>
+ *
+ * Nota sobre mobile: DataPage.Table renderiza cards automaticamente em mobile.
+ * A primeira coluna vira o título do card, colunas do meio viram linhas
+ * rotuladas, e colunas com align='right' viram actions no rodapé do card.
  */
 import React from 'react';
 import { RotateCw } from 'lucide-react';
@@ -65,14 +70,14 @@ interface DataPageProps {
 
 // ─── Table types ───────────────────────────────────────────────────
 
-interface TableColumn<T> {
+export interface TableColumn<T> {
   label: string;
   width: string;       // CSS grid value, e.g. '1fr', '100px'
   render: (row: T) => React.ReactNode;
   align?: 'left' | 'right' | 'center';
 }
 
-interface TableProps<T extends { id: number | string }> {
+export interface TableProps<T extends { id: number | string }> {
   columns: TableColumn<T>[];
   data?: T[];
   keyExtractor: (row: T) => string | number;
@@ -170,11 +175,11 @@ export function DataPage({
         )}
 
         {pagination && pagination.totalPages > 1 && (
-          <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--color-border-light)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
-            <Button variant="ghost" size="sm" disabled={pagination.page <= 1} onClick={() => pagination.onPageChange(Math.max(1, pagination.page - 1))}>← Anterior</Button>
-            <span style={{ color: 'var(--color-text-muted)', padding: '0 0.5rem' }}>Página {pagination.page} de {pagination.totalPages}</span>
-            <Button variant="ghost" size="sm" disabled={pagination.page >= pagination.totalPages} onClick={() => pagination.onPageChange(pagination.page + 1)}>Próxima →</Button>
-          </div>
+          <PaginationControls
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            onPageChange={pagination.onPageChange}
+          />
         )}
       </Card>
     </PageLayout>
@@ -191,7 +196,19 @@ function TableComponent<T extends { id: number | string }>({
   expandedRow,
   renderExpanded,
 }: TableProps<T>) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
   if (!data || data.length === 0) return null;
+
+  if (isMobile) {
+    return <MobileCardView
+      columns={columns}
+      data={data}
+      keyExtractor={keyExtractor}
+      onRowClick={onRowClick}
+      expandedRow={expandedRow}
+      renderExpanded={renderExpanded}
+    />;
+  }
 
   const gridTemplateColumns = columns.map((c) => c.width).join(' ');
 
@@ -232,6 +249,132 @@ function TableComponent<T extends { id: number | string }>({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─── MobileCardView — tabela em formato de cards (mobile) ─────────
+
+function MobileCardView<T extends { id: number | string }>({
+  columns,
+  data,
+  keyExtractor,
+  onRowClick,
+  expandedRow,
+  renderExpanded,
+}: TableProps<T>) {
+  // Separa a primeira coluna (título), colunas do meio (info) e últimas align='right' (actions)
+  const titleCol = columns[0];
+  const actionCols = columns.filter((c) => c.align === 'right');
+  const infoCols = columns.filter((c) => c !== titleCol && c.align !== 'right');
+
+  if (!data || data.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0.5rem 0' }}>
+      {data.map((row) => {
+        const key = keyExtractor(row);
+        const isExpanded = expandedRow != null && expandedRow === key;
+
+        return (
+          <div key={key} style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: 'var(--shadow-sm)',
+            overflow: 'hidden',
+            transition: 'box-shadow var(--transition-fast)',
+            cursor: onRowClick ? 'pointer' : undefined,
+          }}>
+            {/* Card header — clickable if onRowClick */}
+            <div onClick={() => onRowClick?.(row)} style={{ padding: '0.75rem 0.875rem' }}>
+              {/* Title row */}
+              {titleCol && (
+                <div style={{ marginBottom: '0.5rem' }}>
+                  {titleCol.render(row)}
+                </div>
+              )}
+
+              {/* Info rows */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                {infoCols.map((col, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', fontWeight: 500, minWidth: '70px', flexShrink: 0 }}>{col.label}</span>
+                    {col.render(row)}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Expanded detail */}
+            {isExpanded && renderExpanded && (
+              <div style={{ padding: '0 0.875rem 0.75rem', borderTop: '1px solid var(--color-border-light)', background: 'var(--color-bg-secondary)', fontSize: 'var(--text-sm)' }}>
+                <div style={{ paddingTop: '0.75rem' }}>
+                  {renderExpanded(row)}
+                </div>
+              </div>
+            )}
+
+            {/* Actions footer */}
+            {actionCols.length > 0 && (
+              <div style={{
+                display: 'flex',
+                gap: '0.25rem',
+                justifyContent: 'flex-end',
+                padding: '0.5rem 0.875rem',
+                borderTop: '1px solid var(--color-border-light)',
+                background: 'var(--color-bg)',
+              }} onClick={(e) => e.stopPropagation()}>
+                {actionCols.map((col, i) => (
+                  <div key={i}>{col.render(row)}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── PaginationControls — navegação responsiva (mobile/desktop) ────
+
+function PaginationControls({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (p: number) => void }) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const btnVariant = isMobile ? 'secondary' : 'ghost';
+  const btnSize = isMobile ? 'md' : 'sm';
+
+  return (
+    <div style={{
+      padding: isMobile ? '0.875rem 1rem' : '0.75rem 1rem',
+      borderTop: '1px solid var(--color-border-light)',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: isMobile ? '0.75rem' : '0.5rem',
+      fontSize: 'var(--text-sm)',
+    }}>
+      <Button
+        variant={btnVariant}
+        size={btnSize}
+        disabled={page <= 1}
+        onClick={() => onPageChange(Math.max(1, page - 1))}
+        style={isMobile ? { flex: 1 } : undefined}
+      >
+        ← Anterior
+      </Button>
+      <span style={{ color: 'var(--color-text-muted)', padding: '0 0.5rem', whiteSpace: 'nowrap' }}>
+        {page} / {totalPages}
+      </span>
+      <Button
+        variant={btnVariant}
+        size={btnSize}
+        disabled={page >= totalPages}
+        onClick={() => onPageChange(page + 1)}
+        style={isMobile ? { flex: 1 } : undefined}
+      >
+        Próxima →
+      </Button>
     </div>
   );
 }
