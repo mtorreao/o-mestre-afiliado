@@ -111,18 +111,13 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
     setLoading(false);
   }, [token, statusFilter, marketplaceFilter, searchText, dateFrom, dateTo]);
 
-  // Initial fetch on mount
-  useEffect(() => {
-    fetchLogs(1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Desktop: auto-filtro com debounce (300ms) quando qualquer filtro muda
   useEffect(() => {
     if (isMobile) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setPage(1);
+      setFetchKey(n => n + 1);
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -130,7 +125,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, marketplaceFilter, searchText, dateFrom, dateTo, isMobile]);
 
-  // Fetch na mudança de página (paginação) ou fetchKey (reset/search)
+  // Fetch na mudança de página (paginação) ou fetchKey (auto-filtro, reset, search)
   useEffect(() => {
     fetchLogs(page);
   // eslint-disable-next-line react-hooks/exhaustive-deps

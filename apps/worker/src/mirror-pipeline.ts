@@ -35,11 +35,42 @@ import {
   waitForGroupSlot,
 } from './rate-limiter.ts';
 import { resolveRedirectUrl, isRedirectorUrl } from './resolve-redirect.ts';
+import { readFileSync, existsSync } from 'fs';
 
 // ─── Config ──────────────────────────────────────────────────────────
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:5444';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
+
+// ─── Blacklist global ────────────────────────────────────────────────
+
+interface BlacklistConfig {
+  terms: string[];
+}
+
+let globalBlacklist: string[] | null = null;
+
+function loadBlacklist(): string[] {
+  if (globalBlacklist !== null) return globalBlacklist;
+
+  const blacklistPath = process.env.BLACKLIST_PATH || '../../blacklist.json';
+  try {
+    if (existsSync(blacklistPath)) {
+      const raw = readFileSync(blacklistPath, 'utf-8');
+      const config = JSON.parse(raw) as BlacklistConfig;
+      globalBlacklist = config.terms ?? [];
+      log('info', `Blacklist carregada: ${globalBlacklist.length} termo(s) de ${blacklistPath}`);
+    } else {
+      globalBlacklist = [];
+      log('info', 'Arquivo blacklist.json não encontrado, blacklist vazia');
+    }
+  } catch (err) {
+    globalBlacklist = [];
+    log('warn', 'Erro ao carregar blacklist', { path: blacklistPath, error: String(err) });
+  }
+
+  return globalBlacklist;
+}
 
 // ─── Logging ─────────────────────────────────────────────────────────
 
@@ -314,27 +345,6 @@ async function getTargetGroups(
   } catch (err) {
     log('error', 'Erro ao buscar targetGroups', { affiliateId, error: String(err) });
     return [];
-  }
-}
-
-/**
- * Busca as configurações de filtro do afiliado.
- */
-async function getFilters(
-  affiliateId: number,
-): Promise<{ blacklist: string[]; keywords: string[]; dedupHours: number } | null> {
-  try {
-    const db = getDb();
-    const rows = await db
-      .select({ filters: affiliates.filters })
-      .from(affiliates)
-      .where(eq(affiliates.id, affiliateId))
-      .limit(1);
-
-    if (!rows[0]) return null;
-    return (rows[0].filters as { blacklist: string[]; keywords: string[]; dedupHours: number }) ?? null;
-  } catch {
-    return null;
   }
 }
 
@@ -1111,13 +1121,14 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
   const marketplace = detectMarketplace(originalUrl);
   log('info', 'URL de marketplace detectada', { messageId, originalUrl, marketplace });
 
-  // ── 2. Filtros (blacklist) ────────────────────────────────────────
-  const filters = await getFilters(affiliateId);
-  if (filters?.blacklist?.length) {
-    for (const term of filters.blacklist) {
-      if (text.toLowerCase().includes(term.toLowerCase())) {
-        log('info', 'Mensagem filtrada por blacklist', { messageId, term });
-        incrementCounter('mirror_messages_blocked_total', { reason: 'blacklist' });
+  // ── 2. Blacklist global ───────────────────────────────────────────
+  const blacklistTerms = loadBlacklist();
+  if (blacklistTerms.length > 0) {
+    const textLower = text.toLowerCase();
+    for (const term of blacklistTerms) {
+      if (textLower.includes(term.toLowerCase())) {
+        log('info', 'Mensagem filtrada pela blacklist global', { messageId, term });
+        incrementCounter('mirror_messages_blocked_total', { reason: 'global_blacklist' });
         await logReflectedOffer({
           affiliateId,
           sourceGroupJid,
@@ -1127,37 +1138,15 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
           marketplace,
           messagePreview: text.slice(0, 300),
           status: 'blocked',
-          failureReason: `blacklist: termo "${term}" encontrado na mensagem`,
+          failureReason: `global_blacklist: termo "${term}" encontrado na mensagem`,
         });
         return false;
       }
     }
   }
 
-  // ── 2b. Filtro por keywords (whitelist) ──────────────────────────
-  if (filters?.keywords?.length) {
-    const textLower = text.toLowerCase();
-    const hasKeyword = filters.keywords.some(kw => textLower.includes(kw.toLowerCase()));
-    if (!hasKeyword) {
-      log('info', 'Mensagem filtrada por keywords — nenhuma keyword encontrada', { messageId, keywords: filters.keywords });
-      incrementCounter('mirror_messages_blocked_total', { reason: 'no_keyword_match' });
-      await logReflectedOffer({
-        affiliateId,
-        sourceGroupJid,
-        targetGroupJid: '',
-        originalLink: originalUrl,
-        convertedLink: null,
-        marketplace,
-        messagePreview: text.slice(0, 300),
-        status: 'blocked',
-        failureReason: `keywords: mensagem não contém nenhuma keyword da lista [${filters.keywords.join(', ')}]`,
-      });
-      return false;
-    }
-  }
-
   // ── 3. Dedup ──────────────────────────────────────────────────────
-  const dedupHours = filters?.dedupHours ?? 24;
+  const dedupHours = 24;
   const duplicate = await isDuplicate(affiliateId, originalUrl, dedupHours);
   if (duplicate) {
     log('info', 'Oferta duplicada — ignorada', { messageId, originalUrl, dedupHours });

@@ -242,6 +242,9 @@ services:
       REDIS_URL: redis://redis:6379
       METRICS_API_KEY: ${METRICS_API_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      BLACKLIST_PATH: /app/blacklist.json
+    volumes:
+      - ./blacklist.json:/app/blacklist.json:ro
     networks:
       - omestre-dev-net
 
