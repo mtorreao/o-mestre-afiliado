@@ -3,7 +3,7 @@
  *
  * Combina: grupos de ofertas, grupos de destino, validação e confirmação.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, Button, Badge } from '../../components/ui/index.ts';
 import { Search, Check, AlertTriangle, RefreshCw } from 'lucide-react';
 import { GroupOfferAutocomplete } from '../../components/GroupOfferAutocomplete.tsx';
@@ -27,17 +27,28 @@ interface ValidationReport {
 interface MirrorConfigSectionProps {
   token: string;
   onUpdate: () => void;
+  initialOfferGroups?: { jid: string; name: string }[];
+  initialDestGroups?: { jid: string; name: string }[];
 }
 
-export function MirrorConfigSection({ token, onUpdate }: MirrorConfigSectionProps) {
-  const [offerGroups, setOfferGroups] = useState<{ jid: string; name: string }[]>([]);
-  const [destGroups, setDestGroups] = useState<{ jid: string; name: string }[]>([]);
+export function MirrorConfigSection({ token, onUpdate, initialOfferGroups = [], initialDestGroups = [] }: MirrorConfigSectionProps) {
+  const [offerGroups, setOfferGroups] = useState<{ jid: string; name: string }[]>(initialOfferGroups);
+  const [destGroups, setDestGroups] = useState<{ jid: string; name: string }[]>(initialDestGroups);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validationResult, setValidationResult] = useState<{ validated: boolean; report: ValidationReport } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Sincroniza estado local quando os dados persistidos são recarregados
+  useEffect(() => {
+    setOfferGroups(initialOfferGroups);
+  }, [initialOfferGroups]);
+
+  useEffect(() => {
+    setDestGroups(initialDestGroups);
+  }, [initialDestGroups]);
 
   function handleRefresh() {
     setRefreshKey((k) => k + 1);

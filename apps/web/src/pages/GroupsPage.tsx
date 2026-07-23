@@ -70,7 +70,12 @@ export function GroupsPage({ token }: GroupsPageProps) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
         {/* Mirror Config — loading independente */}
-        <MirrorConfigSection token={token} onUpdate={loadProfile} />
+        <MirrorConfigSection
+          token={token}
+          onUpdate={loadProfile}
+          initialOfferGroups={profile?.sourceGroups || []}
+          initialDestGroups={profile?.targetGroups || []}
+        />
 
         {/* Message Template */}
         {loading ? (
