@@ -12,3 +12,4 @@ export { Checkbox } from './Checkbox.tsx';
 export { Switch } from './Switch.tsx';
 export { BottomSheet } from './BottomSheet.tsx';
 export { FilterBar } from './FilterBar.tsx';
+export { MobileFilterBar } from './MobileFilterBar.tsx';

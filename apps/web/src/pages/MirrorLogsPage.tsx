@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Card, Button, Select, Badge, Loading, LoadingSkeleton, FilterBar } from '../components/ui/index.ts';
+import { Card, Button, Select, Badge, Loading, LoadingSkeleton, FilterBar, MobileFilterBar } from '../components/ui/index.ts';
 import { fetchApi } from '../lib/api-client.ts';
 import { Filter, RotateCw, Search, X, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { useMediaQuery } from '../hooks/useMediaQuery.ts';
@@ -176,22 +176,43 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
       />
 
       {/* Filters */}
-      <FilterBar
-        collapsible
-        actions={
-          <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
-            <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />} style={{ flex: 1 }}>
-              Limpar
-            </Button>
-            {isMobile && (
+      {isMobile ? (
+        <MobileFilterBar
+          label="Filtros"
+          actions={
+            <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+              <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />} style={{ flex: 1 }}>
+                Limpar
+              </Button>
               <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>
                 Filtrar
               </Button>
-            )}
+            </div>
+          }
+        >
+          <div style={{ width: '100%' }}>
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
+              Buscar
+            </label>
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }}
+              placeholder="Link ou texto..."
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.5rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--text-sm)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
           </div>
-        }
-      >
-        <FilterBar.Item width="150px">
           <Select
             label="Status"
             value={statusFilter}
@@ -204,9 +225,6 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
               { value: 'failed', label: 'Falha' },
             ]}
           />
-        </FilterBar.Item>
-
-        <FilterBar.Item width="150px">
           <Select
             label="Marketplace"
             value={marketplaceFilter}
@@ -220,76 +238,151 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
               { value: 'unknown', label: 'Desconhecido' },
             ]}
           />
-        </FilterBar.Item>
-
-        <FilterBar.Item width="140px" grow={1}>
-          <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
-            De
-          </label>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom((e.target as HTMLInputElement).value)}
-            style={{
-              width: '100%',
-              padding: '0.4rem 0.5rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-surface)',
-              color: 'var(--color-text-primary)',
-              fontSize: 'var(--text-sm)',
-              outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
-        </FilterBar.Item>
-
-        <FilterBar.Item width="140px" grow={1}>
-          <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
-            Até
-          </label>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo((e.target as HTMLInputElement).value)}
-            style={{
-              width: '100%',
-              padding: '0.4rem 0.5rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-surface)',
-              color: 'var(--color-text-primary)',
-              fontSize: 'var(--text-sm)',
-              outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
-        </FilterBar.Item>
-
-        <FilterBar.Item width="200px" grow={2}>
-          <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
-            Buscar
-          </label>
-          <input
-            type="text"
-            value={searchText}
-            onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
-            onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }}
-            placeholder="Link ou texto..."
-            style={{
-              width: '100%',
-              padding: '0.4rem 0.5rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-surface)',
-              color: 'var(--color-text-primary)',
-              fontSize: 'var(--text-sm)',
-              outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
-        </FilterBar.Item>
-      </FilterBar>
+          <div style={{ width: '100%' }}>
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
+              De
+            </label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom((e.target as HTMLInputElement).value)}
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.5rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--text-sm)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ width: '100%' }}>
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
+              Até
+            </label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo((e.target as HTMLInputElement).value)}
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.5rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--text-sm)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        </MobileFilterBar>
+      ) : (
+        <FilterBar title="Filtros" actions={
+          <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />}>
+            Limpar
+          </Button>
+        }>
+          <FilterBar.Item width="200px" grow={2}>
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
+              Buscar
+            </label>
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }}
+              placeholder="Link ou texto..."
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.5rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--text-sm)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </FilterBar.Item>
+          <FilterBar.Item width="150px">
+            <Select
+              label="Status"
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              placeholder="Todos"
+              options={[
+                { value: '', label: 'Todos' },
+                { value: 'sent', label: 'Enviada' },
+                { value: 'blocked', label: 'Bloqueada' },
+                { value: 'failed', label: 'Falha' },
+              ]}
+            />
+          </FilterBar.Item>
+          <FilterBar.Item width="150px">
+            <Select
+              label="Marketplace"
+              value={marketplaceFilter}
+              onValueChange={setMarketplaceFilter}
+              placeholder="Todos"
+              options={[
+                { value: '', label: 'Todos' },
+                { value: 'shopee', label: 'Shopee' },
+                { value: 'mercadolivre', label: 'Mercado Livre' },
+                { value: 'amazon', label: 'Amazon' },
+                { value: 'unknown', label: 'Desconhecido' },
+              ]}
+            />
+          </FilterBar.Item>
+          <FilterBar.Item width="140px" grow={1}>
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
+              De
+            </label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom((e.target as HTMLInputElement).value)}
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.5rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--text-sm)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </FilterBar.Item>
+          <FilterBar.Item width="140px" grow={1}>
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
+              Até
+            </label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo((e.target as HTMLInputElement).value)}
+              style={{
+                width: '100%',
+                padding: '0.4rem 0.5rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--text-sm)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </FilterBar.Item>
+        </FilterBar>
+      )}
 
       {/* Table */}
       <Card>
