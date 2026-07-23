@@ -16,7 +16,7 @@ export interface MirrorLogFilters {
   sourceGroupJid?: string;
   targetGroupJid?: string;
   status?: 'sent' | 'failed' | 'blocked';
-  marketplace?: string;
+  marketplace?: 'shopee' | 'mercadolivre' | 'amazon' | 'unknown';
   dateFrom?: string; // ISO string
   dateTo?: string;   // ISO string
   search?: string;   // busca textual em originalLink, convertedLink, messagePreview
