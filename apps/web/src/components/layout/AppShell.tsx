@@ -13,7 +13,6 @@ import {
   Repeat2,
   Activity,
   Settings,
-  Users,
   LogOut,
   Menu,
   X,
@@ -21,7 +20,7 @@ import {
   GitFork,
 } from 'lucide-react';
 
-export type NavItem = 'dashboard' | 'settings' | 'groups' | 'mirrors' | 'mirror-logs' | 'mirror-form' | 'worker-status';
+export type NavItem = 'dashboard' | 'settings' | 'mirrors' | 'mirror-logs' | 'mirror-form' | 'worker-status';
 
 interface AppShellLayoutProps {
   userName: string;
@@ -31,7 +30,7 @@ interface AppShellLayoutProps {
 /** Mapeia o pathname atual para um NavItem */
 function pathToNav(pathname: string): NavItem {
   const path = pathname.replace(/^\//, '') || 'dashboard';
-  if (['dashboard', 'settings', 'groups', 'mirrors', 'mirror-form', 'mirror-logs', 'worker-status'].includes(path)) {
+  if (['dashboard', 'settings', 'mirrors', 'mirror-form', 'mirror-logs', 'worker-status'].includes(path)) {
     return path as NavItem;
   }
   // Se for mirror-form/:id, também reconhece
@@ -42,7 +41,6 @@ function pathToNav(pathname: string): NavItem {
 const pageTitles: Record<NavItem, string> = {
   dashboard: 'Dashboard',
   settings: 'Configurações',
-  groups: 'Grupos de Espelhamento',
   mirrors: 'Espelhamentos',
   'mirror-logs': 'Logs de Espelhamento',
   'mirror-form': 'Novo Espelhamento',
@@ -59,7 +57,6 @@ export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { id: 'mirrors', label: 'Espelhamentos', icon: <GitFork size={18} /> },
     { id: 'settings', label: 'Configurações', icon: <Settings size={18} /> },
-    { id: 'groups', label: 'Grupos', icon: <Users size={18} /> },
     { id: 'mirror-logs', label: 'Logs de espelhamento', icon: <Repeat2 size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];

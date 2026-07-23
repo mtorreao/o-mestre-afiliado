@@ -17,10 +17,6 @@ import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
 import { MlConfigSection } from './sections/MlConfigSection.tsx';
 import { AmazonConfigSection } from './sections/AmazonConfigSection.tsx';
 import { TestConversionSection } from './sections/TestConversionSection.tsx';
-import { MirrorConfigSection } from './sections/MirrorConfigSection.tsx';
-import { MessageTemplateSection } from './sections/MessageTemplateSection.tsx';
-import { ExcludedGroupsSection } from './sections/ExcludedGroupsSection.tsx';
-import { FiltersSection } from './sections/FiltersSection.tsx';
 
 interface ProfileData {
   shopeeAppId: string | null;

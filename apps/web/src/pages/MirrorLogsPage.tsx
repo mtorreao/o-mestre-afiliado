@@ -87,6 +87,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
 
   const isMobile = useMediaQuery('(max-width: 768px)');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [fetchKey, setFetchKey] = useState(0);
 
   const fetchLogs = useCallback(async (p: number) => {
     setLoading(true);
@@ -129,15 +130,15 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, marketplaceFilter, searchText, dateFrom, dateTo, isMobile]);
 
-  // Fetch na mudança de página (paginação ou auto-filtro setar page=1)
+  // Fetch na mudança de página (paginação) ou fetchKey (reset/search)
   useEffect(() => {
     fetchLogs(page);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, fetchKey]);
 
   function handleSearch() {
     setPage(1);
-    fetchLogs(1);
+    setFetchKey(n => n + 1);
   }
 
   function handleReset() {
@@ -147,6 +148,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
     setDateFrom('');
     setDateTo('');
     setPage(1);
+    setFetchKey(n => n + 1);
   }
 
   function copyToClipboard(text: string) {

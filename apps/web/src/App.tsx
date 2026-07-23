@@ -9,7 +9,6 @@
  *   /register       → RegisterPage
  *   /               → DashboardPage (protegida)
  *   /settings       → SettingsPage (protegida)
- *   /groups         → GroupsPage (protegida)
  *   /mirror-logs    → MirrorLogsPage (protegida)
  *   /worker-status  → WorkerStatusPage (protegida)
  */
@@ -20,7 +19,6 @@ import { ThemeProvider } from './hooks/useTheme.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
-import { GroupsPage } from './pages/GroupsPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
@@ -150,7 +148,7 @@ function App() {
       >
         <Route index element={<DashboardPage user={user!} token={token!} />} />
         <Route path="settings" element={<SettingsPage user={user!} token={token!} />} />
-        <Route path="groups" element={<GroupsPage token={token!} />} />
+        <Route path="groups" element={<Navigate to="/mirrors" replace />} />
         <Route path="mirror-logs" element={<MirrorLogsPage token={token!} />} />
         <Route path="worker-status" element={<WorkerStatusPage />} />
         <Route path="mirrors" element={<MirrorsPage token={token!} />} />
