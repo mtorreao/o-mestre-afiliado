@@ -157,17 +157,14 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
       empty={!!data && data.rows.length === 0}
       emptyMessage="Nenhum registro encontrado"
       pagination={data ? { page: data.page, totalPages: data.totalPages, onPageChange: (p) => setPage(p) } : null}
-      mobileFilters={
+    >
+      <DataPage.Mobile>
         <MobileFilterBar
           label="Filtros"
           actions={
             <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
-              <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />} style={{ flex: 1 }}>
-                Limpar
-              </Button>
-              <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>
-                Filtrar
-              </Button>
+              <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />} style={{ flex: 1 }}>Limpar</Button>
+              <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>Filtrar</Button>
             </div>
           }
         >
@@ -186,8 +183,9 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             <input type="date" value={dateTo} onChange={(e) => setDateTo((e.target as HTMLInputElement).value)} style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
           </div>
         </MobileFilterBar>
-      }
-      filters={
+      </DataPage.Mobile>
+
+      <DataPage.Desktop>
         <FilterBar title="Filtros" action={<Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />}>Limpar</Button>}>
           <FilterBar.Item width="200px" grow={2}>
             <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>Buscar</label>
@@ -208,61 +206,63 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             <input type="date" value={dateTo} onChange={(e) => setDateTo((e.target as HTMLInputElement).value)} style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
           </FilterBar.Item>
         </FilterBar>
-      }
-    >
-      {data?.rows.map((row) => {
-        const st = statusBadge(row.status);
-        const isExpanded = expandedId === row.id;
-        return (
-          <div key={row.id} onClick={() => setExpandedId(isExpanded ? null : row.id)} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--color-border-light)', cursor: 'pointer', background: isExpanded ? 'var(--color-bg-secondary)' : 'transparent', transition: 'background var(--transition-fast)' }} onMouseEnter={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface-hover)'; }} onMouseLeave={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <Badge variant={st.variant}>{st.label}</Badge>
-              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{marketplaceLabel(row.marketplace)}</span>
-              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)' }}>
-                {row.sourceGroupName || row.sourceGroupJid.slice(0, 20)}
-                <span style={{ color: 'var(--color-text-muted)', margin: '0 0.25rem' }}>→</span>
-                {row.targetGroupName || row.targetGroupJid.slice(0, 20) || '(—)'}
-              </span>
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                {formatDate(row.reflectedAt)}
-                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </span>
-            </div>
-            {isExpanded && (
-              <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <div>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Link original:</span>
-                  <div style={{ marginTop: '0.15rem', padding: '0.4rem 0.5rem', background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', wordBreak: 'break-all', color: 'var(--color-text-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ flex: 1, minWidth: 0 }}>{row.originalLink}</span>
-                    <button onClick={(e) => { e.stopPropagation(); copyToClipboard(row.originalLink); }} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '0.2rem', flexShrink: 0 }}><Copy size={12} /></button>
-                  </div>
-                </div>
-                {row.convertedLink && row.convertedLink !== row.originalLink && (
+      </DataPage.Desktop>
+
+      <DataPage.Content>
+        {data?.rows.map((row) => {
+          const st = statusBadge(row.status);
+          const isExpanded = expandedId === row.id;
+          return (
+            <div key={row.id} onClick={() => setExpandedId(isExpanded ? null : row.id)} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--color-border-light)', cursor: 'pointer', background: isExpanded ? 'var(--color-bg-secondary)' : 'transparent', transition: 'background var(--transition-fast)' }} onMouseEnter={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface-hover)'; }} onMouseLeave={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <Badge variant={st.variant}>{st.label}</Badge>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{marketplaceLabel(row.marketplace)}</span>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)' }}>
+                  {row.sourceGroupName || row.sourceGroupJid.slice(0, 20)}
+                  <span style={{ color: 'var(--color-text-muted)', margin: '0 0.25rem' }}>→</span>
+                  {row.targetGroupName || row.targetGroupJid.slice(0, 20) || '(—)'}
+                </span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  {formatDate(row.reflectedAt)}
+                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </span>
+              </div>
+              {isExpanded && (
+                <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Link convertido:</span>
-                    <div style={{ marginTop: '0.15rem', padding: '0.4rem 0.5rem', background: 'var(--color-success-subtle)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-success-light)', wordBreak: 'break-all', color: 'var(--color-success)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ flex: 1, minWidth: 0 }}>{row.convertedLink}</span>
-                      <button onClick={(e) => { e.stopPropagation(); copyToClipboard(row.convertedLink); }} style={{ background: 'none', border: 'none', color: 'var(--color-success)', cursor: 'pointer', padding: '0.2rem', flexShrink: 0 }}><Copy size={12} /></button>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Link original:</span>
+                    <div style={{ marginTop: '0.15rem', padding: '0.4rem 0.5rem', background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', wordBreak: 'break-all', color: 'var(--color-text-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ flex: 1, minWidth: 0 }}>{row.originalLink}</span>
+                      <button onClick={(e) => { e.stopPropagation(); copyToClipboard(row.originalLink); }} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '0.2rem', flexShrink: 0 }}><Copy size={12} /></button>
                     </div>
                   </div>
-                )}
-                {row.failureReason && (
-                  <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-error)' }}>Motivo:</span>
-                    <div style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)', marginTop: '0.15rem' }}>{row.failureReason}</div>
-                  </div>
-                )}
-                {row.messagePreview && (
-                  <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Preview:</span>
-                    <div style={{ color: 'var(--color-text-primary)', fontSize: 'var(--text-xs)', marginTop: '0.15rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '100px', overflow: 'hidden' }}>{row.messagePreview.slice(0, 300)}</div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+                  {row.convertedLink && row.convertedLink !== row.originalLink && (
+                    <div>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Link convertido:</span>
+                      <div style={{ marginTop: '0.15rem', padding: '0.4rem 0.5rem', background: 'var(--color-success-subtle)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-success-light)', wordBreak: 'break-all', color: 'var(--color-success)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ flex: 1, minWidth: 0 }}>{row.convertedLink}</span>
+                        <button onClick={(e) => { e.stopPropagation(); copyToClipboard(row.convertedLink); }} style={{ background: 'none', border: 'none', color: 'var(--color-success)', cursor: 'pointer', padding: '0.2rem', flexShrink: 0 }}><Copy size={12} /></button>
+                      </div>
+                    </div>
+                  )}
+                  {row.failureReason && (
+                    <div>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-error)' }}>Motivo:</span>
+                      <div style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)', marginTop: '0.15rem' }}>{row.failureReason}</div>
+                    </div>
+                  )}
+                  {row.messagePreview && (
+                    <div>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Preview:</span>
+                      <div style={{ color: 'var(--color-text-primary)', fontSize: 'var(--text-xs)', marginTop: '0.15rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '100px', overflow: 'hidden' }}>{row.messagePreview.slice(0, 300)}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </DataPage.Content>
     </DataPage>
   );
 }

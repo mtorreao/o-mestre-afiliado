@@ -1,28 +1,42 @@
 /**
  * DataPage — Template padronizado para páginas de listagem com dados
  *
- * Encapsula PageLayout, PageHeader, área de filtros, tabela com
- * loading/empty/erro, e paginação — padronizando o layout e evitando
- * repetição entre páginas como MirrorLogsPage e MirrorsPage.
+ * Encapsula PageLayout, PageHeader, filtros responsivos, tabela com
+ * loading/empty/erro, e paginação.
  *
- * Uso:
- *   <DataPage
- *     title="📋 Meus Registros"
- *     total={data?.total}
- *     loading={loading}
- *     error={error}
- *     onRefresh={() => fetchData(page)}
- *     onRetry={handleRetry}
- *     empty={data && data.rows.length === 0}
- *     emptyMessage="Nenhum registro encontrado"
- *     filters={<FilterBar title="Filtros" action={...}>... </FilterBar>}
- *     mobileFilters={<MobileFilterBar ...>...</MobileFilterBar>}
- *     pagination={data ? { page: data.page, totalPages: data.totalPages, onPageChange: setPage } : undefined}
- *     headerActions={<Button>Novo</Button>}
- *   >
- *     {data?.rows.map(row => (
- *       <div key={row.id}>conteúdo da linha</div>
- *     ))}
+ * Subcomponentes:
+ *   DataPage.Desktop  — conteúdo exclusivo para desktop
+ *   DataPage.Mobile   — conteúdo exclusivo para mobile
+ *   DataPage.Table    — wrapper para tabela HTML padronizada
+ *   DataPage.Content  — wrapper para conteúdo customizado (ex: linhas expansíveis)
+ *
+ * Uso com filtros + conteúdo compartilhado:
+ *   <DataPage title="📋 Meus Registros" total={data?.total} loading={loading}
+ *             onRefresh={handleRefresh} pagination={...}>
+ *     <DataPage.Desktop>
+ *       <FilterBar title="Filtros" action={...}>...</FilterBar>
+ *     </DataPage.Desktop>
+ *     <DataPage.Mobile>
+ *       <MobileFilterBar label="Filtros" actions={...}>...</MobileFilterBar>
+ *     </DataPage.Mobile>
+ *
+ *     <DataPage.Table>
+ *       {data?.rows.map(row => <tr key={row.id}>...</tr>)}
+ *     </DataPage.Table>
+ *   </DataPage>
+ *
+ * Uso com conteúdo customizado (ex: MirrorLogsPage):
+ *   <DataPage title="📋 Logs" ...>
+ *     <DataPage.Desktop>
+ *       <FilterBar ...>...</FilterBar>
+ *     </DataPage.Desktop>
+ *     <DataPage.Mobile>
+ *       <MobileFilterBar ...>...</MobileFilterBar>
+ *     </DataPage.Mobile>
+ *
+ *     <DataPage.Content>
+ *       {data?.rows.map(row => <div key={row.id}>...</div>)}
+ *     </DataPage.Content>
  *   </DataPage>
  */
 import React from 'react';
@@ -30,6 +44,9 @@ import { RotateCw } from 'lucide-react';
 import { PageLayout } from './PageLayout.tsx';
 import { PageHeader } from './PageHeader.tsx';
 import { Card, Button, LoadingSkeleton } from '../ui/index.ts';
+import { useMediaQuery } from '../../hooks/useMediaQuery.ts';
+
+// ─── Tipos ─────────────────────────────────────────────────────────
 
 interface PaginationInfo {
   page: number;
@@ -38,37 +55,48 @@ interface PaginationInfo {
 }
 
 interface DataPageProps {
-  /** Título da página (no PageHeader) */
   title: string;
-  /** Subtítulo opcional */
   subtitle?: string;
-  /** Total de registros (exibido ao lado do título) */
   total?: number;
-  /** Estado de carregamento */
   loading?: boolean;
-  /** Mensagem de erro (exibe estado de erro com retry) */
   error?: string | null;
-  /** Callback de refresh (botão Atualizar) */
   onRefresh?: () => void;
-  /** Callback de retry (estado de erro) */
   onRetry?: () => void;
-  /** Se true, exibe mensagem de vazio */
   empty?: boolean;
-  /** Mensagem de lista vazia */
   emptyMessage?: string;
-  /** Filtros para desktop (renderizados inline) */
-  filters?: React.ReactNode;
-  /** Filtros para mobile (renderizados como botão + BottomSheet) */
-  mobileFilters?: React.ReactNode;
-  /** Botões extras no PageHeader (ex: Novo) */
   headerActions?: React.ReactNode;
-  /** Configuração de paginação */
   pagination?: PaginationInfo | null;
-  /** Quantidade de linhas do esqueleto de loading */
   loadingSkeletonLines?: number;
-  /** Conteúdo da lista/tabela */
   children: React.ReactNode;
 }
+
+// ─── Marker components ────────────────────────────────────────────
+
+interface SlotProps {
+  children: React.ReactNode;
+}
+
+function DesktopSlot({ children }: SlotProps) {
+  const isDesktop = !useMediaQuery('(max-width: 768px)');
+  if (!isDesktop) return null;
+  return <>{children}</>;
+}
+
+function MobileSlot({ children }: SlotProps) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  if (!isMobile) return null;
+  return <>{children}</>;
+}
+
+function TableSlot({ children }: SlotProps) {
+  return <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse' }}>{children}</table></div>;
+}
+
+function ContentSlot({ children }: SlotProps) {
+  return <div>{children}</div>;
+}
+
+// ─── DataPage principal ───────────────────────────────────────────
 
 export function DataPage({
   title,
@@ -80,13 +108,32 @@ export function DataPage({
   onRetry,
   empty,
   emptyMessage = 'Nenhum registro encontrado',
-  filters,
-  mobileFilters,
   headerActions,
   pagination,
   loadingSkeletonLines = 6,
   children,
 }: DataPageProps) {
+  // Separa os children por tipo: Desktop, Mobile e conteúdo
+  const desktopElements: React.ReactNode[] = [];
+  const mobileElements: React.ReactNode[] = [];
+  const contentElements: React.ReactNode[] = [];
+
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) {
+      contentElements.push(child);
+      return;
+    }
+    const type = child.type as React.ComponentType | undefined;
+    if (type === DesktopSlot) {
+      // Extrai o conteúdo do slot (o que estava dentro de <DataPage.Desktop>)
+      React.Children.forEach(child.props.children, (c) => desktopElements.push(c));
+    } else if (type === MobileSlot) {
+      React.Children.forEach(child.props.children, (c) => mobileElements.push(c));
+    } else {
+      contentElements.push(child);
+    }
+  });
+
   return (
     <PageLayout maxWidth="960px">
       {/* ── Header ────────────────────────────────────── */}
@@ -119,26 +166,17 @@ export function DataPage({
         }
       />
 
-      {/* ── Filtros ────────────────────────────────────── */}
-      {mobileFilters}
-      {filters}
+      {/* ── Filtros responsivos ────────────────────────── */}
+      {mobileElements.length > 0 && <MobileSlotWrapper>{mobileElements}</MobileSlotWrapper>}
+      {desktopElements.length > 0 && <DesktopSlotWrapper>{desktopElements}</DesktopSlotWrapper>}
 
       {/* ── Tabela / Lista ─────────────────────────────── */}
       <Card>
         {loading && !error ? (
           <LoadingSkeleton lines={loadingSkeletonLines} />
         ) : error ? (
-          <div
-            style={{
-              padding: '2rem',
-              textAlign: 'center',
-              color: 'var(--color-text-muted)',
-              fontSize: 'var(--text-sm)',
-            }}
-          >
-            <p style={{ color: 'var(--color-error)', marginBottom: '0.75rem' }}>
-              {error}
-            </p>
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+            <p style={{ color: 'var(--color-error)', marginBottom: '0.75rem' }}>{error}</p>
             {onRetry && (
               <Button variant="outline" size="sm" onClick={onRetry}>
                 Tentar novamente
@@ -146,52 +184,23 @@ export function DataPage({
             )}
           </div>
         ) : empty ? (
-          <div
-            style={{
-              padding: '2rem',
-              textAlign: 'center',
-              color: 'var(--color-text-muted)',
-              fontSize: 'var(--text-sm)',
-            }}
-          >
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
             {emptyMessage}
           </div>
         ) : (
-          <div>
-            {children}
-          </div>
+          <div>{contentElements}</div>
         )}
 
         {/* ── Paginação ──────────────────────────────────── */}
         {pagination && pagination.totalPages > 1 && (
-          <div
-            style={{
-              padding: '0.75rem 1rem',
-              borderTop: '1px solid var(--color-border-light)',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: '0.5rem',
-              fontSize: 'var(--text-sm)',
-            }}
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pagination.page <= 1}
-              onClick={() => pagination.onPageChange(Math.max(1, pagination.page - 1))}
-            >
+          <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--color-border-light)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
+            <Button variant="ghost" size="sm" disabled={pagination.page <= 1} onClick={() => pagination.onPageChange(Math.max(1, pagination.page - 1))}>
               ← Anterior
             </Button>
             <span style={{ color: 'var(--color-text-muted)', padding: '0 0.5rem' }}>
               Página {pagination.page} de {pagination.totalPages}
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => pagination.onPageChange(pagination.page + 1)}
-            >
+            <Button variant="ghost" size="sm" disabled={pagination.page >= pagination.totalPages} onClick={() => pagination.onPageChange(pagination.page + 1)}>
               Próxima →
             </Button>
           </div>
@@ -200,3 +209,24 @@ export function DataPage({
     </PageLayout>
   );
 }
+
+// ─── Wrappers responsivos (com useMediaQuery interno) ────────────
+
+function MobileSlotWrapper({ children }: { children: React.ReactNode }) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  if (!isMobile) return null;
+  return <>{children}</>;
+}
+
+function DesktopSlotWrapper({ children }: { children: React.ReactNode }) {
+  const isDesktop = !useMediaQuery('(max-width: 768px)');
+  if (!isDesktop) return null;
+  return <>{children}</>;
+}
+
+// ─── Subcomponentes públicos ──────────────────────────────────────
+
+DataPage.Desktop = DesktopSlot;
+DataPage.Mobile = MobileSlot;
+DataPage.Table = TableSlot;
+DataPage.Content = ContentSlot;
