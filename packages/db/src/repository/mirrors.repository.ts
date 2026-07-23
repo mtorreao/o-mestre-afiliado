@@ -36,6 +36,8 @@ export interface MirrorUpdateData {
   sourceGroups?: { jid: string; name: string }[];
   targetGroups?: { jid: string; name: string }[];
   messageTemplate?: string | null;
+  subRateLimitMaxMsgs?: number | null;
+  subRateLimitWindowSec?: number | null;
   userId?: number | null;
 }
 

@@ -31,9 +31,11 @@ interface AppShellLayoutProps {
 /** Mapeia o pathname atual para um NavItem */
 function pathToNav(pathname: string): NavItem {
   const path = pathname.replace(/^\//, '') || 'dashboard';
-  if (['dashboard', 'settings', 'groups', 'mirror-logs', 'worker-status'].includes(path)) {
+  if (['dashboard', 'settings', 'groups', 'mirrors', 'mirror-form', 'mirror-logs', 'worker-status'].includes(path)) {
     return path as NavItem;
   }
+  // Se for mirror-form/:id, também reconhece
+  if (path.startsWith('mirror-form/')) return 'mirror-form';
   return 'dashboard';
 }
 

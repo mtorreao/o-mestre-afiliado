@@ -7,6 +7,7 @@
  * Redireciona para listagem após sucesso.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Button, Input } from '../components/ui/index.ts';
@@ -24,19 +25,22 @@ interface MirrorData {
   sourceGroups: { jid: string; name: string }[];
   targetGroups: { jid: string; name: string }[];
   messageTemplate: string | null;
+  subRateLimitMaxMsgs: number | null;
+  subRateLimitWindowSec: number | null;
   createdAt: string;
   updatedAt: string;
 }
 
 interface MirrorFormPageProps {
   token: string;
-  mirrorId?: number | null;
   onBack: () => void;
 }
 
 // ─── Component ──────────────────────────────────────
 
-export function MirrorFormPage({ token, mirrorId, onBack }: MirrorFormPageProps) {
+export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
+  const { id } = useParams<{ id: string }>();
+  const mirrorId = id ? parseInt(id, 10) : null;
   const isEdit = Boolean(mirrorId);
 
   // ─── Form state ─────────────────────────────────
@@ -44,6 +48,8 @@ export function MirrorFormPage({ token, mirrorId, onBack }: MirrorFormPageProps)
   const [sourceGroups, setSourceGroups] = useState<{ jid: string; name: string }[]>([]);
   const [targetGroups, setTargetGroups] = useState<{ jid: string; name: string }[]>([]);
   const [messageTemplate, setMessageTemplate] = useState('');
+  const [subRateMaxMsgs, setSubRateMaxMsgs] = useState<number | null>(null);
+  const [subRateWindowSec, setSubRateWindowSec] = useState<number | null>(null);
 
   // ─── UI state ───────────────────────────────────
   const [loading, setLoading] = useState(false);
@@ -76,6 +82,8 @@ export function MirrorFormPage({ token, mirrorId, onBack }: MirrorFormPageProps)
         setSourceGroups(data.mirror.sourceGroups ?? []);
         setTargetGroups(data.mirror.targetGroups ?? []);
         setMessageTemplate(data.mirror.messageTemplate ?? '');
+        setSubRateMaxMsgs(data.mirror.subRateLimitMaxMsgs ?? null);
+        setSubRateWindowSec(data.mirror.subRateLimitWindowSec ?? null);
       } else {
         setFetchError(data.error || 'Erro ao carregar espelhamento');
       }
@@ -136,6 +144,8 @@ export function MirrorFormPage({ token, mirrorId, onBack }: MirrorFormPageProps)
       sourceGroups,
       targetGroups,
       messageTemplate: messageTemplate.trim() || null,
+      subRateLimitMaxMsgs: subRateMaxMsgs ?? null,
+      subRateLimitWindowSec: subRateWindowSec ?? null,
     };
 
     try {
@@ -395,6 +405,78 @@ export function MirrorFormPage({ token, mirrorId, onBack }: MirrorFormPageProps)
               </div>
             </div>
           )}
+        </Card>
+
+        {/* ─── Rate Limit Info Banner ─────────────────────────────── */}
+        <Card
+          title="⚠️ Limites de Envio (Rate Limit)"
+          style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--color-warning)' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: 'var(--text-sm)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+              <span style={{ color: 'var(--color-warning)', fontSize: '1.1rem', flexShrink: 0 }}>1</span>
+              <div>
+                <strong>Por instância WhatsApp:</strong>{' '}
+                Sua instância WhatsApp tem um limite de <strong>15 mensagens a cada 5 minutos</strong>.
+                Todos os espelhamentos ativos compartilham esse limite.
+                <span style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.2rem' }}>
+                  ⏱ Se exceder, as mensagens são enfileiradas automaticamente — nenhuma oferta é perdida, apenas atrasada.
+                </span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+              <span style={{ color: 'var(--color-primary)', fontSize: '1.1rem', flexShrink: 0 }}>2</span>
+              <div>
+                <strong>Por grupo de destino (sub-rate):</strong>{' '}
+                Abaixo você pode definir um limite específico para o(s) grupo(s) de destino
+                deste espelhamento. Útil para evitar flooding em grupos muito ativos.
+                <span style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.2rem' }}>
+                  💡 Configure abaixo. Deixe em branco para usar o valor padrão (5 msg / 5 min).
+                </span>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* ─── Sub-Rate Limit ─────────────────────────────────────── */}
+        <Card title="📊 Limite por Grupo de Destino" style={{ marginBottom: '1.5rem' }}>
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: '0.75rem' }}>
+            Define quantas mensagens este espelhamento pode enviar para cada grupo de destino
+            em uma janela de tempo. Isso é independente do limite geral da instância.
+          </p>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 200px' }}>
+              <Input
+                label="Máx. mensagens por janela"
+                type="number"
+                placeholder="5"
+                value={subRateMaxMsgs === null ? '' : String(subRateMaxMsgs)}
+                onChange={(e) => {
+                  const val = (e.target as HTMLInputElement).value;
+                  setSubRateMaxMsgs(val === '' ? null : parseInt(val, 10));
+                }}
+                min={1}
+                max={100}
+                hint="Deixe em branco para usar o padrão (5)"
+              />
+            </div>
+            <div style={{ flex: '1 1 200px' }}>
+              <Input
+                label="Janela (segundos)"
+                type="number"
+                placeholder="300"
+                value={subRateWindowSec === null ? '' : String(subRateWindowSec)}
+                onChange={(e) => {
+                  const val = (e.target as HTMLInputElement).value;
+                  setSubRateWindowSec(val === '' ? null : parseInt(val, 10));
+                }}
+                min={10}
+                max={3600}
+                step={10}
+                hint="300s = 5 minutos. Mín: 10s, Máx: 3600s"
+              />
+            </div>
+          </div>
         </Card>
 
         {/* Submit Error */}

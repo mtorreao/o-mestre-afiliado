@@ -1,5 +1,5 @@
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { userWhatsAppInstances } from '../schema/index.ts';
 
@@ -26,6 +26,9 @@ export interface WhatsAppInstancePublic {
   id: number;
   userId: number;
   instanceId: string;
+  channelType: string;
+  rateLimitMaxMsgs: number;
+  rateLimitWindowSec: number;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -39,6 +42,9 @@ function toPublic(row: WhatsAppInstance): WhatsAppInstancePublic {
     id: row.id,
     userId: row.userId,
     instanceId: row.instanceId,
+    channelType: row.channelType,
+    rateLimitMaxMsgs: row.rateLimitMaxMsgs,
+    rateLimitWindowSec: row.rateLimitWindowSec,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -77,6 +83,21 @@ export class WhatsAppInstanceRepository {
   }
 
   /**
+   * Busca instância pelo instanceId (Evolution API instance name).
+   * Sinônimo de findByInstanceId — o instanceName no formato "user-{userId}".
+   */
+  async findByInstanceName(instanceName: string): Promise<WhatsAppInstance | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(userWhatsAppInstances)
+      .where(eq(userWhatsAppInstances.instanceId, instanceName))
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
+  /**
    * Busca a instância WhatsApp de um usuário.
    * Assume 1 instância por usuário (pode ser expandido para múltiplas).
    */
@@ -108,6 +129,24 @@ export class WhatsAppInstanceRepository {
     const [row] = ensureArray(await db
       .update(userWhatsAppInstances)
       .set({ status })
+      .where(eq(userWhatsAppInstances.id, id))
+      .returning());
+
+    return row ?? null;
+  }
+
+  /**
+   * Atualiza as configurações de rate limit de uma instância.
+   */
+  async updateRateLimit(
+    id: number,
+    maxMsgs: number,
+    windowSec: number,
+  ): Promise<WhatsAppInstance | null> {
+    const db = getDb();
+    const [row] = ensureArray(await db
+      .update(userWhatsAppInstances)
+      .set({ rateLimitMaxMsgs: maxMsgs, rateLimitWindowSec: windowSec })
       .where(eq(userWhatsAppInstances.id, id))
       .returning());
 

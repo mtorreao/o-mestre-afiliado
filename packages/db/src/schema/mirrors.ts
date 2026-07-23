@@ -44,6 +44,11 @@ export const mirrors = omestre.table('mirrors', {
   // Placeholders: {texto_original} = texto com link convertido, {link_convertido} = link convertido isolado
   messageTemplate: text('message_template'),
 
+  // Sub-rate limit: controle por grupo de destino
+  // (além do rate limit geral da instância, cada grupo destino tem seu próprio limite)
+  subRateLimitMaxMsgs: integer('sub_rate_limit_max_msgs').default(5),
+  subRateLimitWindowSec: integer('sub_rate_limit_window_sec').default(300),
+
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at')
     .notNull()

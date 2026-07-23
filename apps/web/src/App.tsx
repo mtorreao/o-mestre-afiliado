@@ -24,6 +24,8 @@ import { GroupsPage } from './pages/GroupsPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
 import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
+import { MirrorsPage } from './pages/MirrorsPage.tsx';
+import { MirrorFormPage } from './pages/MirrorFormPage.tsx';
 import { AppShellLayout } from './components/layout/AppShell.tsx';
 import { ToastProvider } from './components/ui/index.ts';
 import { ThemeToggle } from './components/ui/ThemeToggle.tsx';
@@ -151,9 +153,18 @@ function App() {
         <Route path="groups" element={<GroupsPage token={token!} />} />
         <Route path="mirror-logs" element={<MirrorLogsPage token={token!} />} />
         <Route path="worker-status" element={<WorkerStatusPage />} />
+        <Route path="mirrors" element={<MirrorsPage token={token!} />} />
+        <Route
+          path="mirror-form"
+          element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
+        />
+        <Route
+          path="mirror-form/:id"
+          element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
+        />
       </Route>
 
-      {/* Catch-all → redirect to dashboard or login */}
+      {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </ThemeProvider>

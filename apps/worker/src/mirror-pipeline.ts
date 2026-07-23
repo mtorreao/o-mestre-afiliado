@@ -13,7 +13,7 @@
 import type { MirrorMessageEvent } from '@omestre/shared';
 import { detectMarketplace } from '@omestre/shared';
 import { convertShopeeUrlWithCredentials, generateViaUrlParams, generateShortAffiliateLink, convertAmazonUrlWithTrackingId } from '@omestre/converters';
-import { getDb, affiliates, reflectedOffers, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository } from '@omestre/db';
+import { getDb, affiliates, mirrors, reflectedOffers, UserCredentialsRepository, MlAffiliateRepository, AffiliatesRepository, MirrorRepository } from '@omestre/db';
 import {
   getCachedConversion,
   setCachedConversion,
@@ -28,7 +28,12 @@ import {
   classifyConversionError,
 } from './notifier.ts';
 import { pushToDLQ } from './dead-letter-queue.ts';
-import { tryAcquireSlot, waitForSlot } from './rate-limiter.ts';
+import {
+  tryAcquireSlot,
+  waitForSlot,
+  tryAcquireGroupSlot,
+  waitForGroupSlot,
+} from './rate-limiter.ts';
 
 // ─── Config ──────────────────────────────────────────────────────────
 
@@ -89,27 +94,33 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /**
  * Envia mensagem de texto para um grupo via Evolution API com retry.
  *
- * Antes de cada tentativa, verifica o rate limit (Redis) para a instância.
- * Se o limite por janela for excedido, aguarda até o reset e tenta
+ * Antes de cada tentativa, verifica:
+ *   1. Rate limit da instância (Redis) — bucket geral por instanceName
+ *   2. Sub-rate limit do grupo destino (Redis) — bucket por targetGroupJid
+ *
+ * Se algum limite for excedido, aguarda até o reset da janela e tenta
  * novamente — nenhuma mensagem é descartada, apenas atrasada.
  *
  * Retry: 3 tentativas com backoff exponencial (2s, 4s, 8s).
+ *
+ * @param subRateMaxMsgs  Limite de mensagens por janela para este grupo (0 = sem limite)
+ * @param subRateWindowSec Janela em segundos para o sub-rate
  */
 async function sendToGroup(
   instanceName: string,
   groupJid: string,
   text: string,
+  subRateMaxMsgs: number = 0,
+  subRateWindowSec: number = 300,
 ): Promise<boolean> {
   const maxAttempts = 3;
   const delays: number[] = [2_000, 4_000, 8_000]; // ms
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // ── Rate limit check ──────────────────────────────────────────
-    // Tenta adquirir slot antes de enviar. Se excedeu o limite da
-    // janela, espera até o próximo ciclo (sem descartar mensagem).
+    // ── Rate limit check (nível 1: instância) ──────────────────────
     const { acquired, waitMs } = await tryAcquireSlot(instanceName);
     if (!acquired) {
-      log('info', 'Rate limit atingido — aguardando reset da janela', {
+      log('info', 'Rate limit da instância atingido — aguardando reset da janela', {
         instanceName,
         waitMs,
         attempt,
@@ -119,13 +130,42 @@ async function sendToGroup(
 
       const gotSlot = await waitForSlot(instanceName);
       if (!gotSlot) {
-        log('error', 'Rate limit — timeout ao aguardar slot disponível', {
+        log('error', 'Rate limit da instância — timeout ao aguardar slot disponível', {
           instanceName,
           groupJid,
           attempt,
         });
         incrementCounter('mirror_failures_total', { type: 'rate_limited', marketplace: 'unknown' });
         return false;
+      }
+    }
+
+    // ── Sub-rate limit check (nível 2: grupo destino) ─────────────
+    if (subRateMaxMsgs > 0) {
+      const { acquired: subAcquired, waitMs: subWaitMs } = await tryAcquireGroupSlot(
+        groupJid,
+        subRateMaxMsgs,
+        subRateWindowSec,
+      );
+      if (!subAcquired) {
+        log('info', 'Sub-rate limit do grupo destino atingido — aguardando reset', {
+          groupJid,
+          maxMsgs: subRateMaxMsgs,
+          windowSec: subRateWindowSec,
+          waitMs: subWaitMs,
+          attempt,
+        });
+        incrementCounter('mirror_rate_limited_total', { group_jid: groupJid });
+
+        const gotSlot = await waitForGroupSlot(groupJid, subRateMaxMsgs, subRateWindowSec);
+        if (!gotSlot) {
+          log('error', 'Sub-rate limit do grupo — timeout ao aguardar slot disponível', {
+            groupJid,
+            attempt,
+          });
+          incrementCounter('mirror_failures_total', { type: 'group_rate_limited', marketplace: 'unknown' });
+          return false;
+        }
       }
     }
 
@@ -303,6 +343,100 @@ async function getMessageTemplate(
   } catch {
     return null;
   }
+}
+
+// ─── Mirror config helpers ───────────────────────────────────────────
+
+/**
+ * Busca a configuração completa de um mirror pelo ID.
+ * Retorna targetGroups, messageTemplate e sub-rate limit.
+ * Retorna null se o mirror não existir ou estiver inativo.
+ */
+interface MirrorConfig {
+  targetGroups: { jid: string; name: string }[];
+  messageTemplate: string | null;
+  subRateMaxMsgs: number;
+  subRateWindowSec: number;
+}
+
+async function getMirrorConfig(mirrorId: number): Promise<MirrorConfig | null> {
+  try {
+    const db = getDb();
+    const rows = await db
+      .select({
+        status: mirrors.status,
+        targetGroups: mirrors.targetGroups,
+        messageTemplate: mirrors.messageTemplate,
+        subRateLimitMaxMsgs: mirrors.subRateLimitMaxMsgs,
+        subRateLimitWindowSec: mirrors.subRateLimitWindowSec,
+      })
+      .from(mirrors)
+      .where(eq(mirrors.id, mirrorId))
+      .limit(1);
+
+    if (!rows[0]) return null;
+
+    const m = rows[0];
+
+    // Se o mirror está inativo, retorna null (não processar)
+    if (m.status === 'inactive') return null;
+
+    return {
+      targetGroups: (m.targetGroups as { jid: string; name: string }[]) ?? [],
+      messageTemplate: m.messageTemplate ?? null,
+      subRateMaxMsgs: m.subRateLimitMaxMsgs ?? 0,
+      subRateWindowSec: m.subRateLimitWindowSec ?? 300,
+    };
+  } catch (err) {
+    log('error', 'Erro ao buscar configuração do mirror', { mirrorId, error: String(err) });
+    return null;
+  }
+}
+
+/** Busca targetGroups de um mirror. Fallback para affiliate. */
+async function getMirrorTargetGroups(
+  affiliateId: number,
+  mirrorId?: number,
+): Promise<{ jid: string; name: string }[]> {
+  if (mirrorId) {
+    const config = await getMirrorConfig(mirrorId);
+    if (config && config.targetGroups.length > 0) {
+      return config.targetGroups;
+    }
+  }
+  // Fallback: busca do affiliate (legado)
+  return getTargetGroups(affiliateId);
+}
+
+/** Busca messageTemplate de um mirror. Fallback para affiliate. */
+async function getMirrorMessageTemplate(
+  affiliateId: number,
+  mirrorId?: number,
+): Promise<string | null> {
+  if (mirrorId) {
+    const config = await getMirrorConfig(mirrorId);
+    if (config) {
+      return config.messageTemplate;
+    }
+  }
+  // Fallback: busca do affiliate (legado)
+  return getMessageTemplate(affiliateId);
+}
+
+/** Busca sub-rate limit de um mirror. Retorna {0, 300} se não configurado. */
+async function getMirrorSubRateLimit(
+  mirrorId?: number,
+): Promise<{ maxMsgs: number; windowSec: number }> {
+  if (mirrorId) {
+    const config = await getMirrorConfig(mirrorId);
+    if (config) {
+      return {
+        maxMsgs: config.subRateMaxMsgs,
+        windowSec: config.subRateWindowSec,
+      };
+    }
+  }
+  return { maxMsgs: 0, windowSec: 300 };
 }
 
 /**
@@ -1105,8 +1239,8 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
     return false;
   }
 
-  // ── 5. Busca grupos de destino ────────────────────────────────────
-  const targetGroups = await getTargetGroups(affiliateId);
+  // ── 5. Busca grupos de destino (mirror ou fallback affiliate) ─────
+  const targetGroups = await getMirrorTargetGroups(affiliateId, event.mirrorId);
   if (targetGroups.length === 0) {
     log('warn', 'Nenhum grupo de destino configurado', { affiliateId });
     incrementCounter('mirror_messages_blocked_total', { reason: 'no_target_groups' });
@@ -1124,8 +1258,8 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
     return false;
   }
 
-  // ── 6. Monta template ─────────────────────────────────────────────
-  const messageTemplate = await getMessageTemplate(affiliateId);
+  // ── 6. Monta template (mirror ou fallback affiliate) ──────────────
+  const messageTemplate = await getMirrorMessageTemplate(affiliateId, event.mirrorId);
   const hasCustomTemplate = !!messageTemplate;
   const template = buildTemplateMessage(text, originalUrl, convertedUrl, messageTemplate);
   log('info', 'Template montado', {
@@ -1140,8 +1274,17 @@ export async function processMirrorMessage(event: MirrorMessageEvent): Promise<b
   const failedTargetJids: string[] = [];
   const finalStatus = conversionSuccess ? 'sent' : 'failed';
 
+  // Busca sub-rate limit do mirror (0 = sem limite)
+  const { maxMsgs: subRateMaxMsgs, windowSec: subRateWindowSec } = await getMirrorSubRateLimit(event.mirrorId);
+
   for (const target of targetGroups) {
-    const sent = await sendToGroup(instanceName, target.jid, template);
+    const sent = await sendToGroup(
+      instanceName,
+      target.jid,
+      template,
+      subRateMaxMsgs,
+      subRateWindowSec,
+    );
     if (sent) {
       anySent = true;
       incrementCounter('mirror_messages_sent_total');

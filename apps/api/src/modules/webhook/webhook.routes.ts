@@ -158,7 +158,7 @@ async function handleMessagesUpsert(
       ignored++;
       continue;
     }
-    const { affiliateId, groupName } = info;
+    const { affiliateId, mirrorId, groupName } = info;
 
     // Se o nome do grupo não está no cache, tenta buscar via Evolution API
     let resolvedGroupName = groupName;
@@ -168,7 +168,7 @@ async function handleMessagesUpsert(
         if (groupInfo?.name) {
           resolvedGroupName = groupInfo.name;
           // Atualiza o cache com o nome encontrado
-          await cacheSourceGroup(remoteJid, affiliateId, resolvedGroupName);
+          await cacheSourceGroup(remoteJid, affiliateId, resolvedGroupName, mirrorId);
         }
       } catch {
         // Falha silenciosa — usa nome vazio
@@ -182,6 +182,7 @@ async function handleMessagesUpsert(
       sourceGroupJid: remoteJid,
       sourceGroupName: resolvedGroupName,
       affiliateId,
+      mirrorId, // propagado do cache (pode ser undefined)
       text,
       timestamp: msg.messageTimestamp ?? Math.floor(Date.now() / 1000),
     };
@@ -191,7 +192,7 @@ async function handleMessagesUpsert(
       published++;
       console.log(
         `[webhook] Mensagem ${msg.key.id} adicionada ao stream ` +
-        `(affiliateId=${affiliateId}, grupo="${resolvedGroupName}", instância=${instanceName}, streamId=${id})`,
+        `(affiliateId=${affiliateId}${mirrorId ? `, mirrorId=${mirrorId}` : ''}, grupo="${resolvedGroupName}", instância=${instanceName}, streamId=${id})`,
       );
     } else {
       // Se Redis não está disponível, loga como ignorado
