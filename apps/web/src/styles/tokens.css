@@ -98,7 +98,7 @@
   --transition-slow: 300ms ease;
 
   /* ─── Z-index ────────────────────────────────────────────── */
-  --z-dropdown: 50;
+  --z-dropdown: 110;
   --z-modal: 100;
   --z-toast: 150;
 }
