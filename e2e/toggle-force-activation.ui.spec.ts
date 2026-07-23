@@ -1,5 +1,5 @@
 /**
- * Testes E2E de UI — Toggle de ativação forçada (grupos <70%).
+ * Testes E2E de UI — Toggle de ativação forçada (grupos <50%).
  *
  * Valida que:
  *   1. Grupos excluídos (desativados) aparecem no card "⚠️ Grupos Desativados"
@@ -41,7 +41,7 @@ test.describe('UI - Forçar Ativação de Grupos', () => {
     return { token: data.token, userId: data.user.id };
   }
 
-  test('deve exibir o card "⚠️ Grupos Desativados" quando houver grupos com <70%', async ({ page }) => {
+  test('deve exibir o card "⚠️ Grupos Desativados" quando houver grupos com <50%', async ({ page }) => {
     const { token, userId } = await setupAuthenticatedUser(page);
 
     // Simula uma configuração de espelhamento com validação falha:

@@ -1,7 +1,7 @@
 /**
  * Validador de ofertas em mensagens do WhatsApp.
  *
- * Analisa as últimas N mensagens de um grupo e verifica se ~70%
+ * Analisa as últimas N mensagens de um grupo e verifica se ~50%
  * contêm links válidos de marketplaces (Shopee, Mercado Livre, Amazon),
  * inclusive resolvendo redirecionamentos de encurtadores/mascaradores de URL.
  *
@@ -15,7 +15,7 @@ import { detectMarketplace, type Marketplace } from './index.ts';
 // ─── Configuração ──────────────────────────────────────────────────────
 
 export const VALIDATION_MESSAGE_LIMIT = 30;
-export const MIN_OFFER_RATIO = 0.3; // 30%
+export const MIN_OFFER_RATIO = 0.5; // 50%
 
 // Domínios conhecidos de encurtadores/mascaradores que redirecionam
 // para marketplaces. Se cair num destes, seguimos o redirect.

@@ -1,7 +1,7 @@
 /**
  * Testes do POST /api/affiliate/force-group
  *
- * Valida que o endpoint de ativação forçada de grupos com <70%
+ * Valida que o endpoint de ativação forçada de grupos com <50%
  * salva corretamente no banco e cache, mesmo sem validação.
  *
  * Cenários:
@@ -90,7 +90,7 @@ function makeAffiliate(overrides: object = {}) {
       {
         groupJid: 'ruim@c.us',
         groupName: 'Grupo Ruim',
-        reason: 'Apenas 30% de ofertas (mínimo 70%)',
+        reason: 'Apenas 30% de ofertas (mínimo 50%)',
         ratio: 0.3,
         totalMessages: 20,
         validOffers: 6,
@@ -295,7 +295,7 @@ describe('POST /api/affiliate/force-group', () => {
           {
             groupJid: 'ruim@c.us',
             groupName: 'Grupo Ruim',
-            reason: 'Apenas 30% de ofertas (mínimo 70%)',
+            reason: 'Apenas 30% de ofertas (mínimo 50%)',
             ratio: 0.3,
             totalMessages: 20,
             validOffers: 6,
@@ -303,7 +303,7 @@ describe('POST /api/affiliate/force-group', () => {
           {
             groupJid: 'outro-ruim@c.us',
             groupName: 'Outro Ruim',
-            reason: 'Apenas 10% de ofertas (mínimo 70%)',
+            reason: 'Apenas 10% de ofertas (mínimo 50%)',
             ratio: 0.1,
             totalMessages: 10,
             validOffers: 1,

@@ -215,7 +215,7 @@ export const affiliateRoutes = new Elysia()
     // mas não bloqueiam a configuração dos que passaram.
     const validation = await validateOfferGroups(evolutionInstanceId, sourceGroups, fetchGroupMessages);
 
-    // Filtra apenas grupos que passaram na validação (≥70% ofertas)
+    // Filtra apenas grupos que passaram na validação (≥50% ofertas)
     const passedGroups = sourceGroups.filter((sg) => {
       const result = validation.groups.find((g) => g.groupJid === sg.jid);
       return result?.passed ?? false;
@@ -249,7 +249,7 @@ export const affiliateRoutes = new Elysia()
 
       return {
         success: false,
-        error: 'Nenhum dos grupos selecionados passou na validação. Todos precisam ter no mínimo 70% de mensagens com links de marketplaces.',
+        error: 'Nenhum dos grupos selecionados passou na validação. Todos precisam ter no mínimo 50% de mensagens com links de marketplaces.',
         report: {
           overallRatio: validation.overallRatio,
           totalMessages: validation.totalMessages,
@@ -271,7 +271,7 @@ export const affiliateRoutes = new Elysia()
     const excludedGroups: ExcludedGroup[] = failedGroups.map((g) => ({
       groupJid: g.groupJid,
       groupName: g.groupName,
-      reason: `Apenas ${Math.round(g.ratio * 100)}% de ofertas válidas (mínimo 70%)`,
+      reason: `Apenas ${Math.round(g.ratio * 100)}% de ofertas válidas (mínimo 50%)`,
       ratio: g.ratio,
       totalMessages: g.totalMessages,
       validOffers: g.validOffers,
@@ -301,7 +301,7 @@ export const affiliateRoutes = new Elysia()
     // Mensagem adaptativa informando exclusões
     const message =
       failedGroups.length > 0
-        ? `Espelhamento configurado com ${passedGroups.length} grupo(s). ${failedGroups.length} grupo(s) foram desativados por não atingirem 70% de ofertas.`
+        ? `Espelhamento configurado com ${passedGroups.length} grupo(s). ${failedGroups.length} grupo(s) foram desativados por não atingirem 50% de ofertas.`
         : 'Espelhamento configurado com sucesso';
 
     return {
@@ -412,7 +412,7 @@ export const affiliateRoutes = new Elysia()
     await affiliatesRepo.addExcludedGroup(evolutionInstanceId, {
       groupJid: result.groupJid,
       groupName: result.groupName,
-      reason: `Apenas ${Math.round(result.ratio * 100)}% de ofertas válidas (mínimo 70%)`,
+      reason: `Apenas ${Math.round(result.ratio * 100)}% de ofertas válidas (mínimo 50%)`,
       ratio: result.ratio,
       totalMessages: result.totalMessages,
       validOffers: result.validOffers,
@@ -421,7 +421,7 @@ export const affiliateRoutes = new Elysia()
     return {
       success: true,
       passed: false,
-      message: `Grupo ainda não atingiu o mínimo de 70%. ${Math.round(result.ratio * 100)}% de ofertas válidas.`,
+      message: `Grupo ainda não atingiu o mínimo de 50%. ${Math.round(result.ratio * 100)}% de ofertas válidas.`,
       report: {
         groupJid: result.groupJid,
         groupName: result.groupName,

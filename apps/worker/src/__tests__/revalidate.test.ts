@@ -3,8 +3,8 @@
  *
  * Critérios:
  *   1) Worker em modo --revalidate executa a validação corretamente
- *   2) Grupos que passam nos 70% são mantidos como ativos
- *   3) Grupos que caem abaixo de 70% geram alerta com statusChanged=true
+ *   2) Grupos que passam nos 50% são mantidos como ativos
+ *   3) Grupos que caem abaixo de 50% geram alerta com statusChanged=true
  *   4) Configuração REVALIDATION_INTERVAL_DAYS é respeitada
  *   5) Migration adiciona colunas last_validated_at, last_validation_passed, last_validation_report
  *   6) Edge cases: grupo sem mensagens, grupo com 100% ofertas, grupo com 0% ofertas
@@ -163,7 +163,7 @@ describe('detectMarketplace', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('validateGroup (single group logic)', () => {
-  it('should pass when ≥70% are offers', () => {
+  it('should pass when ≥50% are offers', () => {
     const messages = [
       ...Array(7).fill(null).map(() => ({ text: makeOfferMessage('shopee') })),
       ...Array(3).fill(null).map(() => ({ text: makeNonOfferMessage() })),
@@ -175,7 +175,7 @@ describe('validateGroup (single group logic)', () => {
     expect(result.passed).toBe(true);
   });
 
-  it('should fail when <70% are offers', () => {
+  it('should fail when <50% are offers', () => {
     const messages = [
       ...Array(3).fill(null).map(() => ({ text: makeOfferMessage('shopee') })),
       ...Array(7).fill(null).map(() => ({ text: makeNonOfferMessage() })),
@@ -469,7 +469,7 @@ describe('updateValidation persistence', () => {
 
 describe('Integration: full revalidation flow simulation', () => {
   it('should correctly validate a group that went from passing to failing', () => {
-    // Simulate: previously passed (lastValidationPassed=true), now fails (<70%)
+    // Simulate: previously passed (lastValidationPassed=true), now fails (<50%)
     const previouslyPassed = true;
     const messages = Array(10).fill(null).map(() => ({ text: makeNonOfferMessage() }));
     const currentResult = calculateValidation(messages);

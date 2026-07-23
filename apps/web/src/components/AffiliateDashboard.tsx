@@ -459,7 +459,7 @@ export function AffiliateDashboard({ user, token, onLogout, onNavigateToLogs, on
                     ratio: data.report!.ratio,
                     totalMessages: data.report!.totalMessages,
                     validOffers: data.report!.validOffers,
-                    reason: `Apenas ${Math.round(data.report!.ratio * 100)}% de ofertas válidas (mínimo 70%)`,
+                    reason: `Apenas ${Math.round(data.report!.ratio * 100)}% de ofertas válidas (mínimo 50%)`,
                   }
                 : eg
             )
@@ -1017,8 +1017,8 @@ export function AffiliateDashboard({ user, token, onLogout, onNavigateToLogs, on
                       <span>✅ {group.validOffers} ofertas</span>
                       <span>
                         {group.passed
-                          ? '✔️ Acima de 70%'
-                          : `⚠️ Apenas ${Math.round(group.ratio * 100)}% (mín. 70%)`
+                          ? '✔️ Acima de 50%'
+                          : `⚠️ Apenas ${Math.round(group.ratio * 100)}% (mín. 50%)`
                         }
                       </span>
                     </div>
@@ -1136,7 +1136,7 @@ export function AffiliateDashboard({ user, token, onLogout, onNavigateToLogs, on
             </div>
             <div style={{ padding: '1rem 1.25rem' }}>
               <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
-                Estes grupos foram desativados por não atingirem o mínimo de 70% de ofertas válidas.
+                Estes grupos foram desativados por não atingirem o mínimo de 50% de ofertas válidas.
               </div>
               {excludedGroups.map((group) => (
                 <div

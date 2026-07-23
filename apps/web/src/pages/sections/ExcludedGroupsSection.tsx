@@ -61,7 +61,7 @@ export function ExcludedGroupsSection({ groups, token, onUpdate }: ExcludedGroup
   return (
     <Card
       title="⚠️ Grupos Desativados"
-      subtitle="Grupos que não atingiram o mínimo de 70% de ofertas válidas"
+      subtitle="Grupos que não atingiram o mínimo de 50% de ofertas válidas"
       action={<Badge variant="error">{groups.length} desativado(s)</Badge>}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

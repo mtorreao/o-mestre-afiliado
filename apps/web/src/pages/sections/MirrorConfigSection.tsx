@@ -318,8 +318,8 @@ export function MirrorConfigSection({ token, onUpdate }: MirrorConfigSectionProp
                 <span>✅ {group.validOffers} ofertas</span>
                 <span>
                   {group.passed
-                    ? '✔️ Acima de 70%'
-                    : `⚠️ Apenas ${Math.round(group.ratio * 100)}% (mín. 70%)`
+                    ? '✔️ Acima de 50%'
+                    : `⚠️ Apenas ${Math.round(group.ratio * 100)}% (mín. 50%)`
                   }
                 </span>
               </div>

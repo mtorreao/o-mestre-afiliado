@@ -4,7 +4,7 @@
  * Verifica novamente todos os grupos fonte de todos os afiliados
  * ativos, usando a mesma lógica de validateOfferGroups().
  *
- * Se um grupo que antes passou nos 70% cair abaixo do threshold,
+ * Se um grupo que antes passou nos 50% cair abaixo do threshold,
  * a revalidação registra o problema e notifica (via log/console).
  *
  * Uso via worker:
@@ -183,9 +183,9 @@ async function fetchGroupMessages(
  *
  * Para cada afiliado:
  *   1. Busca as últimas 30 mensagens de cada grupo fonte
- *   2. Verifica a proporção de ofertas válidas (≥70%)
+ *   2. Verifica a proporção de ofertas válidas (≥50%)
  *   3. Compara com o resultado anterior (se disponível)
- *   4. Se caiu abaixo de 70%, registra alerta
+ *   4. Se caiu abaixo de 50%, registra alerta
  *   5. Atualiza last_validated_at no banco
  *
  * Retorna um resumo da rodada.
