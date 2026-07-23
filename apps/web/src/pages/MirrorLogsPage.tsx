@@ -152,14 +152,14 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
       <FilterBar
         collapsible
         actions={
-          <>
-            <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />}>
+          <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+            <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />} style={{ flex: 1 }}>
               Limpar
             </Button>
-            <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md">
+            <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>
               Filtrar
             </Button>
-          </>
+          </div>
         }
       >
         <FilterBar.Item width="150px">
