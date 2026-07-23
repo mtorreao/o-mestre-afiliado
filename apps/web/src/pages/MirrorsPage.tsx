@@ -9,9 +9,8 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PageLayout } from '../components/layout/PageLayout.tsx';
-import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Card, Button, Badge, LoadingSkeleton, Dialog, FilterBar, MobileFilterBar } from '../components/ui/index.ts';
+import { Button, Badge, Dialog, FilterBar, MobileFilterBar } from '../components/ui/index.ts';
+import { DataPage } from '../components/layout/DataPage.tsx';
 import { useToast } from '../components/ui/Toast.tsx';
 import {
   Search,
@@ -220,519 +219,117 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <PageLayout maxWidth="960px">
-      <PageHeader
-        title="📋 Espelhamentos"
-        subtitle={
-          data
-            ? `${data.total} registro(s)`
-            : loading
-              ? 'Carregando...'
-              : ''
-        }
-        actions={
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => navigate('/mirror-form')}
-              icon={<Edit3 size={14} />}
-            >
-              Novo
-            </Button>
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => fetchMirrors(page, searchText)}
-              disabled={loading}
-              icon={<RotateCw size={14} className={loading ? 'spin' : ''} />}
-            >
-              Atualizar
-            </Button>
-          </div>
-        }
-      />
-
-      {/* Filters */}
-      {isMobile ? (
+    <DataPage
+      title="📋 Espelhamentos"
+      total={data?.total}
+      loading={loading}
+      error={error}
+      onRefresh={() => fetchMirrors(page, searchText)}
+      onRetry={() => fetchMirrors(page, searchText)}
+      empty={!!data && data.rows.length === 0}
+      emptyMessage={searchText ? 'Nenhum espelhamento encontrado para esta busca.' : 'Nenhum espelhamento cadastrado ainda.'}
+      pagination={data ? { page: data.page, totalPages: data.totalPages, onPageChange: (p) => setPage(p) } : null}
+      headerActions={
+        <Button variant="primary" size="md" onClick={() => navigate('/mirror-form')} icon={<Edit3 size={14} />}>
+          Novo
+        </Button>
+      }
+    >
+      <DataPage.Mobile>
         <MobileFilterBar
           label="Filtros"
           actions={
             <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
-              <Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />} style={{ flex: 1 }}>
-                Limpar
-              </Button>
-              <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>
-                Buscar
-              </Button>
+              <Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />} style={{ flex: 1 }}>Limpar</Button>
+              <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>Buscar</Button>
             </div>
           }
         >
           <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
-              Buscar por nome
-            </label>
-            <input
-              type="text"
-              value={searchText}
-              onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }}
-              placeholder="Digite o nome do espelhamento..."
-              style={{
-                width: '100%',
-                padding: '0.4rem 0.5rem',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border)',
-                background: 'var(--color-surface)',
-                color: 'var(--color-text-primary)',
-                fontSize: 'var(--text-sm)',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>Buscar por nome</label>
+            <input type="text" value={searchText} onChange={(e) => setSearchText((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }} placeholder="Digite o nome do espelhamento..." style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
           </div>
         </MobileFilterBar>
-      ) : (
-        <FilterBar title="Filtros" action={
-          <Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />}>
-            Limpar
-          </Button>
-        }>
+      </DataPage.Mobile>
+
+      <DataPage.Desktop>
+        <FilterBar title="Filtros" action={<Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />}>Limpar</Button>}>
           <FilterBar.Item width="280px" grow={2}>
-            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>
-              Buscar por nome
-            </label>
-            <input
-              type="text"
-              value={searchText}
-              onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }}
-              placeholder="Digite o nome do espelhamento..."
-              style={{
-                width: '100%',
-                padding: '0.4rem 0.5rem',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border)',
-                background: 'var(--color-surface)',
-                color: 'var(--color-text-primary)',
-                fontSize: 'var(--text-sm)',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
+            <label style={{ display: 'block', fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: '0.3rem' }}>Buscar por nome</label>
+            <input type="text" value={searchText} onChange={(e) => setSearchText((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if ((e as unknown as { key: string }).key === 'Enter') handleSearch(); }} placeholder="Digite o nome do espelhamento..." style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--text-sm)', outline: 'none', boxSizing: 'border-box' }} />
           </FilterBar.Item>
         </FilterBar>
-      )}
+      </DataPage.Desktop>
 
-      {/* Table */}
-      <Card>
-        {loading && !data ? (
-          <LoadingSkeleton lines={6} />
-        ) : error ? (
-          /* Error state */
-          <div
-            style={{
-              padding: '2rem',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '0.75rem',
-            }}
-          >
-            <AlertTriangle
-              size={32}
-              style={{ color: 'var(--color-warning)' }}
-            />
-            <span
-              style={{
-                color: 'var(--color-text-secondary)',
-                fontSize: 'var(--text-sm)',
-              }}
-            >
-              Erro ao carregar espelhamentos
-            </span>
-            <span
-              style={{
-                color: 'var(--color-text-muted)',
-                fontSize: 'var(--text-xs)',
-              }}
-            >
-              {error}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fetchMirrors(page, searchText)}
-              icon={<RotateCw size={14} />}
-            >
-              Tentar novamente
-            </Button>
-          </div>
-        ) : !data || data.rows.length === 0 ? (
-          /* Empty state */
-          <div
-            style={{
-              padding: '2rem',
-              textAlign: 'center',
-              color: 'var(--color-text-muted)',
-              fontSize: 'var(--text-sm)',
-            }}
-          >
-            {searchText
-              ? 'Nenhum espelhamento encontrado para esta busca.'
-              : 'Nenhum espelhamento cadastrado ainda.'}
-          </div>
-        ) : (
-          /* Data rows */
-          <>
-            {/* Table header */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  'minmax(180px, 1fr) 100px 110px 170px',
-                gap: '0.5rem',
-                padding: '0.625rem 1rem',
-                borderBottom: '2px solid var(--color-border)',
-                fontSize: 'var(--text-xs)',
-                fontWeight: 600,
-                color: 'var(--color-text-secondary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}
-            >
-              <span>Nome</span>
-              <span>Status</span>
-              <span>Criado em</span>
-              <span style={{ textAlign: 'right' }}>Ações</span>
-            </div>
+      <DataPage.Content>
+        {/* Table header */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 100px 110px 170px', gap: '0.5rem', padding: '0.625rem 1rem', borderBottom: '2px solid var(--color-border)', fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <span>Nome</span>
+          <span>Status</span>
+          <span>Criado em</span>
+          <span style={{ textAlign: 'right' }}>Ações</span>
+        </div>
 
-            {/* Table rows */}
-            {data.rows.map((mirror) => {
-              const isActive = mirror.status === 'active';
-              const isExpanded = expandedId === mirror.id;
-
-              return (
-                <div key={mirror.id}>
-                  {/* Main row */}
-                  <div
-                    onClick={() =>
-                      setExpandedId(isExpanded ? null : mirror.id)
-                    }
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns:
-                        'minmax(180px, 1fr) 100px 110px 170px',
-                      gap: '0.5rem',
-                      padding: '0.75rem 1rem',
-                      borderBottom: '1px solid var(--color-border-light)',
-                      cursor: 'pointer',
-                      alignItems: 'center',
-                      background: isExpanded
-                        ? 'var(--color-bg-secondary)'
-                        : 'transparent',
-                      transition: 'background var(--transition-fast)',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isExpanded)
-                        (e.currentTarget as HTMLDivElement).style.background =
-                          'var(--color-surface-hover)';
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isExpanded)
-                        (e.currentTarget as HTMLDivElement).style.background =
-                          'transparent';
-                    }}
-                  >
-                    {/* Name */}
-                    <span
-                      style={{
-                        fontSize: 'var(--text-sm)',
-                        fontWeight: 500,
-                        color: 'var(--color-text-primary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {mirror.name}
-                    </span>
-
-                    {/* Status */}
-                    <Badge variant={isActive ? 'success' : 'neutral'}>
-                      {isActive ? 'Ativo' : 'Inativo'}
-                    </Badge>
-
-                    {/* Created at */}
-                    <span
-                      style={{
-                        fontSize: 'var(--text-sm)',
-                        color: 'var(--color-text-secondary)',
-                      }}
-                    >
-                      {formatDate(mirror.createdAt)}
-                    </span>
-
-                    {/* Actions */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: '0.25rem',
-                        justifyContent: 'flex-end',
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<Eye size={14} />}
-                        title="Ver detalhes"
-                        onClick={() =>
-                          setExpandedId(
-                            isExpanded ? null : mirror.id,
-                          )
-                        }
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<Edit3 size={14} />}
-                        title="Editar"
-                        onClick={() => navigate(`/mirror-form/${mirror.id}`)}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={
-                          isActive ? (
-                            <PowerOff size={14} />
-                          ) : (
-                            <Power size={14} />
-                          )
-                        }
-                        title={
-                          isActive
-                            ? 'Desativar'
-                            : 'Ativar'
-                        }
-                        onClick={() => handleToggleStatus(mirror)}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<Trash2 size={14} />}
-                        title="Excluir"
-                        style={{ color: 'var(--color-error)' }}
-                        onClick={() => setDeleteTarget(mirror)}
-                      />
-                    </div>
+        {/* Table rows */}
+        {data?.rows.map((mirror) => {
+          const isActive = mirror.status === 'active';
+          const isExpanded = expandedId === mirror.id;
+          return (
+            <div key={mirror.id}>
+              <div onClick={() => setExpandedId(isExpanded ? null : mirror.id)} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 100px 110px 170px', gap: '0.5rem', padding: '0.75rem 1rem', borderBottom: '1px solid var(--color-border-light)', cursor: 'pointer', alignItems: 'center', background: isExpanded ? 'var(--color-bg-secondary)' : 'transparent', transition: 'background var(--transition-fast)' }} onMouseEnter={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface-hover)'; }} onMouseLeave={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mirror.name}</span>
+                <Badge variant={isActive ? 'success' : 'neutral'}>{isActive ? 'Ativo' : 'Inativo'}</Badge>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{formatDate(mirror.createdAt)}</span>
+                <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+                  <Button variant="ghost" size="sm" icon={<Eye size={14} />} title="Ver detalhes" onClick={() => setExpandedId(isExpanded ? null : mirror.id)} />
+                  <Button variant="ghost" size="sm" icon={<Edit3 size={14} />} title="Editar" onClick={() => navigate(`/mirror-form/${mirror.id}`)} />
+                  <Button variant="ghost" size="sm" icon={isActive ? <PowerOff size={14} /> : <Power size={14} />} title={isActive ? 'Desativar' : 'Ativar'} onClick={() => handleToggleStatus(mirror)} />
+                  <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} title="Excluir" style={{ color: 'var(--color-error)' }} onClick={() => setDeleteTarget(mirror)} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div style={{ padding: '0.75rem 1rem', background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border-light)', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
+                  <div>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de origem:</span>
+                    <div style={{ marginTop: '0.2rem', color: 'var(--color-text-primary)' }}>{mirror.sourceGroups && mirror.sourceGroups.length > 0 ? mirror.sourceGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</div>
                   </div>
-
-                  {/* Expanded details */}
-                  {isExpanded && (
-                    <div
-                      style={{
-                        padding: '0.75rem 1rem',
-                        background: 'var(--color-bg)',
-                        borderBottom:
-                          '1px solid var(--color-border-light)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.5rem',
-                        fontSize: 'var(--text-sm)',
-                      }}
-                    >
-                      {/* Source groups */}
-                      <div>
-                        <span
-                          style={{
-                            fontSize: 'var(--text-xs)',
-                            color: 'var(--color-text-muted)',
-                            fontWeight: 500,
-                          }}
-                        >
-                          Grupos de origem:
-                        </span>
-                        <div
-                          style={{
-                            marginTop: '0.2rem',
-                            color: 'var(--color-text-primary)',
-                          }}
-                        >
-                          {mirror.sourceGroups &&
-                          mirror.sourceGroups.length > 0
-                            ? mirror.sourceGroups
-                                .map((g) => g.name || g.jid)
-                                .join(', ')
-                            : '(nenhum)'}
-                        </div>
-                      </div>
-
-                      {/* Target groups */}
-                      <div>
-                        <span
-                          style={{
-                            fontSize: 'var(--text-xs)',
-                            color: 'var(--color-text-muted)',
-                            fontWeight: 500,
-                          }}
-                        >
-                          Grupos de destino:
-                        </span>
-                        <div
-                          style={{
-                            marginTop: '0.2rem',
-                            color: 'var(--color-text-primary)',
-                          }}
-                        >
-                          {mirror.targetGroups &&
-                          mirror.targetGroups.length > 0
-                            ? mirror.targetGroups
-                                .map((g) => g.name || g.jid)
-                                .join(', ')
-                            : '(nenhum)'}
-                        </div>
-                      </div>
-
-                      {/* Message template */}
-                      {mirror.messageTemplate && (
-                        <div>
-                          <span
-                            style={{
-                              fontSize: 'var(--text-xs)',
-                              color: 'var(--color-text-muted)',
-                              fontWeight: 500,
-                            }}
-                          >
-                            Template de mensagem:
-                          </span>
-                          <div
-                            style={{
-                              marginTop: '0.2rem',
-                              padding: '0.4rem 0.5rem',
-                              background: 'var(--color-surface)',
-                              borderRadius: 'var(--radius-sm)',
-                              border:
-                                '1px solid var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                              fontFamily: 'var(--font-mono)',
-                              fontSize: 'var(--text-xs)',
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                            }}
-                          >
-                            {mirror.messageTemplate}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Sub-rate limit */}
-                      {(mirror.subRateLimitMaxMsgs != null || mirror.subRateLimitWindowSec != null) ? (
-                        <div>
-                          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>
-                            Limite por grupo destino:
-                          </span>
-                          <div style={{ marginTop: '0.2rem', color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)' }}>
-                            {mirror.subRateLimitMaxMsgs ?? 5} msg / {mirror.subRateLimitWindowSec ?? 300}s
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {/* Updated at */}
-                      <div>
-                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-                          Última atualização:{' '}
-                          {formatDate(mirror.updatedAt)}
-                        </span>
-                      </div>
+                  <div>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de destino:</span>
+                    <div style={{ marginTop: '0.2rem', color: 'var(--color-text-primary)' }}>{mirror.targetGroups && mirror.targetGroups.length > 0 ? mirror.targetGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</div>
+                  </div>
+                  {mirror.messageTemplate && (
+                    <div>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Template de mensagem:</span>
+                      <div style={{ marginTop: '0.2rem', padding: '0.4rem 0.5rem', background: 'var(--color-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{mirror.messageTemplate}</div>
                     </div>
                   )}
+                  {(mirror.subRateLimitMaxMsgs != null || mirror.subRateLimitWindowSec != null) ? (
+                    <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Limite por grupo destino:</span><div style={{ marginTop: '0.2rem', color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)' }}>{mirror.subRateLimitMaxMsgs ?? 5} msg / {mirror.subRateLimitWindowSec ?? 300}s</div></div>
+                  ) : null}
+                  <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Última atualização: {formatDate(mirror.updatedAt)}</span></div>
                 </div>
-              );
-            })}
-          </>
-        )}
-
-        {/* Pagination */}
-        {data && data.totalPages > 1 && (
-          <div
-            style={{
-              padding: '0.75rem 1rem',
-              borderTop: '1px solid var(--color-border-light)',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: '0.5rem',
-              fontSize: 'var(--text-sm)',
-            }}
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              ← Anterior
-            </Button>
-            <span
-              style={{
-                color: 'var(--color-text-muted)',
-                padding: '0 0.5rem',
-              }}
-            >
-              Página {data.page} de {data.totalPages}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={page >= data.totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Próxima →
-            </Button>
-          </div>
-        )}
-      </Card>
+              )}
+            </div>
+          );
+        })}
+      </DataPage.Content>
 
       {/* ─── Delete confirmation dialog ─────────────────────────── */}
-      <Dialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-        title="Excluir espelhamento"
-        description={
-          deleteTarget
-            ? `Tem certeza que deseja excluir "${deleteTarget.name}"? Esta ação não pode ser desfeita.`
-            : ''
-        }
-      >
-        <div
-          style={{
-            display: 'flex',
-            gap: '0.75rem',
-            justifyContent: 'flex-end',
-            marginTop: '0.5rem',
-          }}
+      <DataPage.Desktop>
+        <Dialog
+          open={!!deleteTarget}
+          onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+          title="Excluir espelhamento"
+          description={deleteTarget ? `Tem certeza que deseja excluir "${deleteTarget.name}"? Esta ação não pode ser desfeita.` : ''}
         >
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setDeleteTarget(null)}
-          >
-            Cancelar
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            loading={deleting}
-            onClick={handleConfirmDelete}
-          >
-            {deleting ? 'Excluindo...' : 'Sim, excluir'}
-          </Button>
-        </div>
-      </Dialog>
-    </PageLayout>
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
+            <Button variant="danger" size="sm" loading={deleting} onClick={handleConfirmDelete}>
+              {deleting ? 'Excluindo...' : 'Sim, excluir'}
+            </Button>
+          </div>
+        </Dialog>
+      </DataPage.Desktop>
+    </DataPage>
   );
 }
