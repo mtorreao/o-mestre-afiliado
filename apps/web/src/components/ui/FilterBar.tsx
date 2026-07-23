@@ -12,7 +12,7 @@
  *   </FilterBar>
  *
  * Uso collapsível (recolhe em mobile, abre BottomSheet):
- *   <FilterBar collapsible>
+ *   <FilterBar collapsible actions={<><Button>Filtrar</Button></>}>
  *     <FilterBar.Item width="150px">
  *       <Select ... />
  *     </FilterBar.Item>
@@ -37,9 +37,11 @@ interface FilterBarProps {
   collapsible?: boolean;
   /** Rótulo do botão de abrir filtros em modo collapsible */
   label?: string;
+  /** Ações que aparecem no rodapé do BottomSheet (mobile) ou ao lado (desktop) */
+  actions?: React.ReactNode;
 }
 
-export function FilterBar({ children, collapsible = false, label = 'Filtros' }: FilterBarProps) {
+export function FilterBar({ children, collapsible = false, label = 'Filtros', actions }: FilterBarProps) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [sheetOpen, setSheetOpen] = React.useState(false);
 
@@ -71,6 +73,22 @@ export function FilterBar({ children, collapsible = false, label = 'Filtros' }: 
           >
             {children}
           </div>
+
+          {/* Actions no rodapé */}
+          {actions && (
+            <div
+              style={{
+                display: 'flex',
+                gap: '0.5rem',
+                justifyContent: 'flex-end',
+                paddingTop: '1rem',
+                marginTop: '0.5rem',
+                borderTop: '1px solid var(--color-border-light)',
+              }}
+            >
+              {actions}
+            </div>
+          )}
         </BottomSheet>
       </FilterBarContext.Provider>
     );
@@ -88,6 +106,11 @@ export function FilterBar({ children, collapsible = false, label = 'Filtros' }: 
         }}
       >
         {children}
+        {actions && (
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginLeft: 'auto' }}>
+            {actions}
+          </div>
+        )}
       </div>
     </Card>
   );

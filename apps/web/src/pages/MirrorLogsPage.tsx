@@ -144,18 +144,24 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
             >
               Atualizar
             </Button>
+          </div>
+        }
+      />
+
+      {/* Filters */}
+      <FilterBar
+        collapsible
+        actions={
+          <>
             <Button variant="ghost" size="sm" onClick={handleReset} icon={<X size={14} />}>
               Limpar
             </Button>
             <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="sm">
               Filtrar
             </Button>
-          </div>
+          </>
         }
-      />
-
-      {/* Filters */}
-      <FilterBar collapsible>
+      >
         <FilterBar.Item width="150px">
           <Select
             label="Status"
