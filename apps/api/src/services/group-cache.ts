@@ -22,7 +22,7 @@
  */
 
 import { getRedis, cacheDel } from './redis.ts';
-import { AffiliatesRepository } from '@omestre/db';
+import { AffiliatesRepository, MirrorRepository } from '@omestre/db';
 
 const affiliatesRepo = new AffiliatesRepository();
 
@@ -278,8 +278,10 @@ export async function clearSourceGroupCache(): Promise<void> {
  */
 export async function warmSourceGroupCache(): Promise<void> {
   try {
+    // 1. Carrega sourceGroups de affiliates (legado)
     const all = await affiliatesRepo.findAllActiveWithSourceGroups();
     let totalGroups = 0;
+    let affiliateCount = all.length;
 
     for (const affiliate of all) {
       const groups = affiliate.sourceGroups as { jid: string; name: string }[] | null;
@@ -291,9 +293,29 @@ export async function warmSourceGroupCache(): Promise<void> {
       }
     }
 
+    // 2. Carrega sourceGroups de mirrors (novo CRUD)
+    const mirrorRepo = new MirrorRepository();
+    const mirrorResult = await mirrorRepo.list({ status: 'active', pageSize: 1000 });
+    let mirrorCount = mirrorResult.rows.length;
+
+    for (const mirror of mirrorResult.rows) {
+      const srcGroups = mirror.sourceGroups as { jid: string; name: string }[] | null;
+      if (!srcGroups || srcGroups.length === 0) continue;
+
+      // Encontra o affiliate pelo evolutionInstanceId (user-{userId})
+      const instanceName = `user-${mirror.userId}`;
+      const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
+      if (!affiliate) continue;
+
+      for (const group of srcGroups) {
+        await cacheSourceGroup(group.jid, affiliate.id, group.name, mirror.id);
+        totalGroups++;
+      }
+    }
+
     console.log(
       `🔥 Cache de sourceGroups warmado: ${totalGroups} grupo(s) carregado(s) ` +
-      `de ${all.length} afiliado(s) ativo(s)`,
+      `de ${affiliateCount} afiliado(s) + ${mirrorCount} mirror(es)`,
     );
   } catch (error) {
     console.error('[group-cache] Erro ao warmar cache de sourceGroups:', error);

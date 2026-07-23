@@ -21,15 +21,15 @@ import { Card } from './Card.tsx';
 
 interface FilterBarProps {
   children: React.ReactNode;
-  /** Título opcional do card (mostrado no header) */
+  /** Título opcional do card (mostrado no header à esquerda) */
   title?: string;
-  /** Ações alinhadas à direita (ex: botão Limpar) */
-  actions?: React.ReactNode;
+  /** Ação no header, alinhada à direita (ex: botão Limpar) */
+  action?: React.ReactNode;
 }
 
-export function FilterBar({ children, title, actions }: FilterBarProps) {
+export function FilterBar({ children, title, action }: FilterBarProps) {
   return (
-    <Card title={title}>
+    <Card title={title} action={action}>
       <div
         style={{
           display: 'flex',
@@ -39,11 +39,6 @@ export function FilterBar({ children, title, actions }: FilterBarProps) {
         }}
       >
         {children}
-        {actions && (
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginLeft: 'auto' }}>
-            {actions}
-          </div>
-        )}
       </div>
     </Card>
   );

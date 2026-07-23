@@ -282,7 +282,7 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
           </div>
         </MobileFilterBar>
       ) : (
-        <FilterBar title="Filtros" actions={
+        <FilterBar title="Filtros" action={
           <Button variant="ghost" size="md" onClick={handleReset} icon={<X size={14} />}>
             Limpar
           </Button>
