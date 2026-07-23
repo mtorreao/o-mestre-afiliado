@@ -30,6 +30,13 @@ export interface AffiliateGroupConfig {
   messageTemplate?: string | null;
 }
 
+export interface NotificationConfig {
+  /** Canal de notificação: 'whatsapp' | 'telegram' | 'disabled' */
+  channel: string;
+  /** JID (WhatsApp) ou chat ID (Telegram) para onde enviar */
+  jid: string | null;
+}
+
 // ─── Repository ──────────────────────────────────────────────────────
 
 export class AffiliatesRepository {
@@ -243,6 +250,59 @@ export class AffiliatesRepository {
   async findAll(): Promise<Affiliate[]> {
     const db = getDb();
     return db.select().from(affiliates);
+  }
+
+  /**
+   * Busca a configuração de notificação de um afiliado pelo evolutionInstanceId.
+   */
+  async findNotificationConfig(
+    evolutionInstanceId: string,
+  ): Promise<NotificationConfig | null> {
+    try {
+      const db = getDb();
+      const rows = await db
+        .select({
+          notificationChannel: affiliates.notificationChannel,
+          notificationJid: affiliates.notificationJid,
+        })
+        .from(affiliates)
+        .where(eq(affiliates.evolutionInstanceId, evolutionInstanceId))
+        .limit(1);
+
+      if (!rows[0]) return null;
+      return {
+        channel: rows[0].notificationChannel,
+        jid: rows[0].notificationJid,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Atualiza a configuração de notificação de um afiliado.
+   */
+  async updateNotificationConfig(
+    evolutionInstanceId: string,
+    config: { channel: string; jid?: string | null },
+  ): Promise<boolean> {
+    try {
+      const db = getDb();
+      const existing = await this.findByEvolutionInstanceId(evolutionInstanceId);
+      if (!existing) return false;
+
+      await db
+        .update(affiliates)
+        .set({
+          notificationChannel: config.channel,
+          notificationJid: config.jid ?? null,
+        })
+        .where(eq(affiliates.id, existing.id));
+
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
