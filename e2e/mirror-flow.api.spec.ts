@@ -234,7 +234,7 @@ test.describe('Mirror Flow — Groups Config', () => {
     expect(body.error).toMatch(/pelo menos 1|Selecione pelo menos/);
   });
 
-  test('POST /api/affiliate/groups-config — valida ofertas com sucesso (simulador retorna 70%+ links)', async () => {
+  test('POST /api/affiliate/groups-config — valida ofertas com sucesso (simulador retorna 50%+ links)', async () => {
     const { token } = await createUserWithConnectedWhatsApp();
 
     // O simulador retorna 6/7 mensagens com links de marketplace no grupo 1 (~86%)
