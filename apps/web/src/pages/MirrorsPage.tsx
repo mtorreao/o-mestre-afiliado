@@ -261,58 +261,40 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
         </FilterBar>
       </DataPage.Desktop>
 
-      <DataPage.Content>
-        {/* Table header */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 100px 110px 170px', gap: '0.5rem', padding: '0.625rem 1rem', borderBottom: '2px solid var(--color-border)', fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          <span>Nome</span>
-          <span>Status</span>
-          <span>Criado em</span>
-          <span style={{ textAlign: 'right' }}>Ações</span>
-        </div>
-
-        {/* Table rows */}
-        {data?.rows.map((mirror) => {
-          const isActive = mirror.status === 'active';
-          const isExpanded = expandedId === mirror.id;
-          return (
-            <div key={mirror.id}>
-              <div onClick={() => setExpandedId(isExpanded ? null : mirror.id)} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 100px 110px 170px', gap: '0.5rem', padding: '0.75rem 1rem', borderBottom: '1px solid var(--color-border-light)', cursor: 'pointer', alignItems: 'center', background: isExpanded ? 'var(--color-bg-secondary)' : 'transparent', transition: 'background var(--transition-fast)' }} onMouseEnter={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface-hover)'; }} onMouseLeave={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mirror.name}</span>
-                <Badge variant={isActive ? 'success' : 'neutral'}>{isActive ? 'Ativo' : 'Inativo'}</Badge>
-                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{formatDate(mirror.createdAt)}</span>
-                <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="sm" icon={<Eye size={14} />} title="Ver detalhes" onClick={() => setExpandedId(isExpanded ? null : mirror.id)} />
-                  <Button variant="ghost" size="sm" icon={<Edit3 size={14} />} title="Editar" onClick={() => navigate(`/mirror-form/${mirror.id}`)} />
-                  <Button variant="ghost" size="sm" icon={isActive ? <PowerOff size={14} /> : <Power size={14} />} title={isActive ? 'Desativar' : 'Ativar'} onClick={() => handleToggleStatus(mirror)} />
-                  <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} title="Excluir" style={{ color: 'var(--color-error)' }} onClick={() => setDeleteTarget(mirror)} />
-                </div>
-              </div>
-              {isExpanded && (
-                <div style={{ padding: '0.75rem 1rem', background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border-light)', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
-                  <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de origem:</span>
-                    <div style={{ marginTop: '0.2rem', color: 'var(--color-text-primary)' }}>{mirror.sourceGroups && mirror.sourceGroups.length > 0 ? mirror.sourceGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</div>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de destino:</span>
-                    <div style={{ marginTop: '0.2rem', color: 'var(--color-text-primary)' }}>{mirror.targetGroups && mirror.targetGroups.length > 0 ? mirror.targetGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</div>
-                  </div>
-                  {mirror.messageTemplate && (
-                    <div>
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Template de mensagem:</span>
-                      <div style={{ marginTop: '0.2rem', padding: '0.4rem 0.5rem', background: 'var(--color-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{mirror.messageTemplate}</div>
-                    </div>
-                  )}
-                  {(mirror.subRateLimitMaxMsgs != null || mirror.subRateLimitWindowSec != null) ? (
-                    <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Limite por grupo destino:</span><div style={{ marginTop: '0.2rem', color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)' }}>{mirror.subRateLimitMaxMsgs ?? 5} msg / {mirror.subRateLimitWindowSec ?? 300}s</div></div>
-                  ) : null}
-                  <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Última atualização: {formatDate(mirror.updatedAt)}</span></div>
-                </div>
-              )}
+      <DataPage.Table
+        columns={[
+          { label: 'Nome', width: 'minmax(180px, 1fr)', render: (r: Mirror) => (
+            <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.name}</span>
+          )},
+          { label: 'Status', width: '100px', render: (r: Mirror) => (
+            <Badge variant={r.status === 'active' ? 'success' : 'neutral'}>{r.status === 'active' ? 'Ativo' : 'Inativo'}</Badge>
+          )},
+          { label: 'Criado em', width: '110px', render: (r: Mirror) => (
+            <span style={{ color: 'var(--color-text-secondary)' }}>{formatDate(r.createdAt)}</span>
+          )},
+          { label: 'Ações', width: '170px', align: 'right', render: (r: Mirror) => (
+            <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+              <Button variant="ghost" size="sm" icon={<Eye size={14} />} title="Ver detalhes" onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} />
+              <Button variant="ghost" size="sm" icon={<Edit3 size={14} />} title="Editar" onClick={() => navigate(`/mirror-form/${r.id}`)} />
+              <Button variant="ghost" size="sm" icon={r.status === 'active' ? <PowerOff size={14} /> : <Power size={14} />} title={r.status === 'active' ? 'Desativar' : 'Ativar'} onClick={() => handleToggleStatus(r)} />
+              <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} title="Excluir" style={{ color: 'var(--color-error)' }} onClick={() => setDeleteTarget(r)} />
             </div>
-          );
-        })}
-      </DataPage.Content>
+          )},
+        ]}
+        data={data?.rows}
+        keyExtractor={(r: Mirror) => r.id}
+        onRowClick={(r: Mirror) => setExpandedId(expandedId === r.id ? null : r.id)}
+        expandedRow={expandedId}
+        renderExpanded={(r: Mirror) => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
+            <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de origem: </span><span style={{ color: 'var(--color-text-primary)' }}>{r.sourceGroups?.length ? r.sourceGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</span></div>
+            <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de destino: </span><span style={{ color: 'var(--color-text-primary)' }}>{r.targetGroups?.length ? r.targetGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</span></div>
+            {r.messageTemplate && <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Template: </span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>{r.messageTemplate}</span></div>}
+            {(r.subRateLimitMaxMsgs != null || r.subRateLimitWindowSec != null) && <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Limite: </span><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>{r.subRateLimitMaxMsgs ?? 5} msg / {r.subRateLimitWindowSec ?? 300}s</span></div>}
+            <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Última atualização: {formatDate(r.updatedAt)}</span></div>
+          </div>
+        )}
+      />
 
       {/* ─── Delete confirmation dialog ─────────────────────────── */}
       <DataPage.Desktop>
