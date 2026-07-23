@@ -3,12 +3,13 @@
  *
  * Tabela com filtros por status, marketplace, período e busca textual.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Button, Select, Badge, Loading, LoadingSkeleton, FilterBar } from '../components/ui/index.ts';
 import { fetchApi } from '../lib/api-client.ts';
 import { Filter, RotateCw, Search, X, ChevronDown, ChevronUp, Copy } from 'lucide-react';
+import { useMediaQuery } from '../hooks/useMediaQuery.ts';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -84,6 +85,9 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
 
   const pageSize = 25;
 
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
   const fetchLogs = useCallback(async (p: number) => {
     setLoading(true);
     try {
@@ -101,14 +105,35 @@ export function MirrorLogsPage({ token }: MirrorLogsPageProps) {
       const json = await res.json() as MirrorLogResponse;
       if (json.success) setData(json);
     } catch {
-      // Silencioso — toast já disparado pelo fetchApi em outros lugares
+      // Silencioso
     }
     setLoading(false);
   }, [token, statusFilter, marketplaceFilter, searchText, dateFrom, dateTo]);
 
+  // Initial fetch on mount
+  useEffect(() => {
+    fetchLogs(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Desktop: auto-filtro com debounce (300ms) quando qualquer filtro muda
+  useEffect(() => {
+    if (isMobile) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, marketplaceFilter, searchText, dateFrom, dateTo, isMobile]);
+
+  // Fetch na mudança de página (paginação ou auto-filtro setar page=1)
   useEffect(() => {
     fetchLogs(page);
-  }, [page, fetchLogs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   function handleSearch() {
     setPage(1);
