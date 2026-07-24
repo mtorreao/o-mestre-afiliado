@@ -1,28 +1,20 @@
+# ─── Stage 1: Build Dispatcher ──────────────────────────────────────────
 FROM oven/bun:1.3-slim AS builder
+
 WORKDIR /app
+COPY package.json bun.lock tsconfig.json ./
+COPY apps/ apps/
+COPY packages/ packages/
 
-COPY package.json bun.lock ./
-COPY packages/shared/package.json packages/shared/
-COPY packages/db/package.json packages/db/
-COPY packages/worker-common/package.json packages/worker-common/
-COPY apps/dispatcher/package.json apps/dispatcher/
+RUN cd /app && bun install
+RUN cd /app/apps/dispatcher && bun run build
 
-RUN bun install
-
-COPY tsconfig.json .
-COPY packages/shared/ packages/shared/
-COPY packages/db/ packages/db/
-COPY packages/worker-common/ packages/worker-common/
-COPY apps/dispatcher/ apps/dispatcher/
-
-WORKDIR /app/apps/dispatcher
-RUN bun run build
-
+# ─── Stage 2: Run Dispatcher ────────────────────────────────────────────
 FROM oven/bun:1.3-slim
-WORKDIR /app
 
-COPY --from=builder /app/node_modules /app/node_modules
-COPY --from=builder /app/apps/dispatcher/dist /app/dist
+WORKDIR /app
+COPY --from=builder /app/apps/dispatcher/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
 
 ENV METRICS_PORT=9093
 EXPOSE 9093
