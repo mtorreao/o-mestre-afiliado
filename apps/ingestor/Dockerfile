@@ -9,7 +9,7 @@ COPY packages/db/package.json packages/db/
 COPY packages/worker-common/package.json packages/worker-common/
 COPY apps/ingestor/package.json apps/ingestor/
 
-RUN bun install --frozen-lockfile
+RUN bun install
 
 # Copia o código fonte
 COPY tsconfig.json .

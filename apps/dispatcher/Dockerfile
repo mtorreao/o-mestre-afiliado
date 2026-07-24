@@ -7,7 +7,7 @@ COPY packages/db/package.json packages/db/
 COPY packages/worker-common/package.json packages/worker-common/
 COPY apps/dispatcher/package.json apps/dispatcher/
 
-RUN bun install --frozen-lockfile
+RUN bun install
 
 COPY tsconfig.json .
 COPY packages/shared/ packages/shared/
