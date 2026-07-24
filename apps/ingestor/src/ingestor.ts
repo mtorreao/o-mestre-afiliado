@@ -140,24 +140,75 @@ function loadWhitelist(): string[] {
 
 // ─── URL Extraction ──────────────────────────────────────────────────
 
-function extractMarketplaceUrl(text: string): string | null {
+/**
+ * Tipo de link de marketplace extraído de uma mensagem.
+ * - 'product': URL de página de PRODUTO (tem padrão de item claro)
+ * - 'coupon':  link de CUPOM / voucher / redirector de afiliado
+ * - 'other':   marketplace detectado mas sem padrão de produto claro
+ *              (ex.: shortlink s.shopee.com.br não resolvido)
+ */
+type LinkKind = 'product' | 'coupon' | 'other';
+
+interface ExtractedLink {
+  url: string;
+  kind: LinkKind;
+}
+
+/**
+ * Classifica um link de marketplace em produto / cupom / outro.
+ * Usa padrões de URL — NÃO resolve redirects (economia de rede).
+ */
+export function classifyLinkKind(url: string): LinkKind {
+  // Redirector de cupom conhecido (go.promozone.ai/*) sempre é cupom
+  if (/go\.promozone\.ai/i.test(url)) return 'coupon';
+  // Shortlinks Shopee (s.shopee.com.br/XXX) — affiliate/cupom/voucher:
+  // não temos como saber se é produto sem resolver o redirect (que é
+  // feito em outro passo). Marcamos como 'coupon' para que o pipeline
+  // não tente extrair imagem do shortlink e não use o shortlink como
+  // originalLink no dedup. O `resolveRedirectUrl` depois, se conseguir
+  // extrair um itemId real, promove a URL para o caminho de produto.
+  if (/s\.shopee\.com\.br/i.test(url)) return 'coupon';
+  // URLs de cupom/voucher óbvias
+  if (/voucher-wallet|cupom|\/claim\b|\/coupons?\b|\/voucher\b/i.test(url)) return 'coupon';
+  // Shopee produto: -i.SHOPID.ITEMID (o "i." pode vir após slug com hífen;
+  // ITEMID e SHOPID são separados por ponto na URL real)
+  if (/(^|[\/-])i\.\d+[./]\d+/i.test(url)) return 'product';
+  // MercadoLivre produto: MLBxxxx, /p/MLB, meli.la (oferta ML)
+  if (/(^|\/|\.)(MLB|MLM|MLA|MCO|MLC)\d{8,}/i.test(url) || /\/p\/MLB/i.test(url) || /meli\.la\//i.test(url)) return 'product';
+  // Amazon produto: /dp/ASIN ou /gp/product/ASIN
+  if (/\/dp\/[A-Z0-9]{10}/i.test(url) || /\/gp\/product\/[A-Z0-9]{10}/i.test(url)) return 'product';
+  // Demais (s.shopee.com.br shortlink não resolvido, magalu, etc.)
+  return 'other';
+}
+
+/**
+ * Extrai TODOS os links de marketplace de um texto, classificando cada um.
+ * Substitui extractMarketplaceUrl (que pegava só o primeiro).
+ */
+export function extractAllMarketplaceLinks(text: string): ExtractedLink[] {
   const urlRegex = /https?:\/\/[^\s<>"']+/gi;
   const urls = text.match(urlRegex);
-  if (!urls) return null;
+  if (!urls) return [];
 
-  const REDIRECTOR_DOMAINS = /go\.promozone\.ai/i;
-
-  for (const url of urls) {
-    if (REDIRECTOR_DOMAINS.test(url)) continue;
-    const marketplace = detectMarketplace(url);
-    if (marketplace !== 'unknown') return url;
-  }
-
+  const result: ExtractedLink[] = [];
   for (const url of urls) {
     const marketplace = detectMarketplace(url);
-    if (marketplace !== 'unknown') return url;
+    if (marketplace === 'unknown') continue;
+    result.push({ url, kind: classifyLinkKind(url) });
   }
-  return null;
+  return result;
+}
+
+/**
+ * Extrai a URL de marketplace da mensagem (compatibilidade).
+ * Pega o primeiro link não-cupom — mantém o comportamento antigo para
+ * chamadores que não tratam múltiplos links.
+ */
+function extractMarketplaceUrl(text: string): string | null {
+  const links = extractAllMarketplaceLinks(text);
+  if (links.length === 0) return null;
+  const nonCoupon = links.find((l) => l.kind !== 'coupon');
+  return (nonCoupon ?? links[0]!).url;
 }
 
 // ─── Dedup 24h (DB) ──────────────────────────────────────────────────
@@ -363,6 +414,35 @@ async function convertShopeeForAffiliate(
   };
 }
 
+/**
+ * Resolve um link curto meli.la/XXX para a URL de produto real do ML.
+ * meli.la é um redirect 301/302 do Mercado Livre — segue o redirect
+ * para obter a URL final (ex: https://www.mercadolivre.com.br/...)
+ * que é o que a API do Link Builder aceita.
+ */
+async function resolveMeliLaUrl(url: string): Promise<string> {
+  if (!/meli\.la\//i.test(url)) return url;
+
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+    const finalUrl = res.url || url;
+    // Só aceita o redirect se sair do domínio meli.la
+    if (finalUrl && finalUrl !== url && /mercadolivre\.com\.br/i.test(finalUrl)) {
+      return finalUrl;
+    }
+  } catch {
+    // mantém a URL original
+  }
+  return url;
+}
+
 async function convertMlForAffiliate(
   url: string,
   userId: number,
@@ -376,9 +456,13 @@ async function convertMlForAffiliate(
   const mlAffiliate = await mlRepo.findByPlatformUserId(userId);
 
   if (mlAffiliate?.melitat) {
+    // Resolve meli.la ANTES de tudo (link builder e fallback precisam de URL
+    // real de produto, não de slug curto)
+    const targetUrl = await resolveMeliLaUrl(url);
+
     if (mlAffiliate.sessionCookies) {
       const shortResult = await generateShortAffiliateLink(
-        url,
+        targetUrl,
         mlAffiliate.melitat,
         mlAffiliate.sessionCookies,
       );
@@ -391,32 +475,26 @@ async function convertMlForAffiliate(
         };
       }
 
-      if (
+      // Link curto falhou (cookie expirado, "URL not allowed", erro de rede,
+      // etc). Notifica apenas se for problema de cookie — em TODOS os casos
+      // faz fallback para URL params (nunca bloqueia a oferta por causa do
+      // link curto, conforme o plano de arquitetura).
+      const isCookieError =
         shortResult.error?.includes('HTTP 40') ||
-        shortResult.error?.includes('Cookies podem estar expirados')
-      ) {
+        shortResult.error?.includes('Cookies podem estar expirados');
+      if (isCookieError) {
         const instanceName = `user-${userId}`;
         processFailure(instanceName, 'cookie_expired', { marketplace: 'mercadolivre' }).catch(() => {});
       } else {
-        return {
-          convertedUrl: null,
-          marketplace: 'mercadolivre',
-          success: false,
+        log('info', 'Link curto ML indisponível — fallback para URL params', {
+          userId,
           error: shortResult.error,
-        };
+        });
       }
     }
 
+    // Fallback: URL params (matt_word/meliid) — funciona para qualquer URL ML.
     try {
-      let targetUrl = url;
-      if (/meli\.la\//i.test(url)) {
-        const resolved = await fetch(url, { method: 'HEAD', redirect: 'manual' });
-        const location = resolved.headers.get('location');
-        if (location && location !== url) {
-          targetUrl = location;
-        }
-      }
-
       const affiliateUrl = generateViaUrlParams(targetUrl, {
         meliid: mlAffiliate.meliid ?? undefined,
         melitat: mlAffiliate.melitat,
@@ -723,16 +801,112 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
 
   incrementCounter('pipeline_messages_received_total');
 
-  // ── 1. Extrai URL ──
-  const originalUrl = measureStepSync(steps.extract, () => extractMarketplaceUrl(text));
-  if (!originalUrl) {
+  // ── 1. Extrai URLs de marketplace ──
+  // Mensagens podem trazer MAIS DE UM link (ex.: produto + cupom).
+  // Regra: se houver ≥2 links de PRODUTO, bloqueia (nunca deveria ter 2
+  // produtos na mesma oferta). Se houver 1 produto + cupons, processa o
+  // produto e ignora os cupons.
+  const extractedLinks = measureStepSync(steps.extract, () => extractAllMarketplaceLinks(text));
+  if (extractedLinks.length === 0) {
     log('info', 'Mensagem sem URL de marketplace — ignorada', { messageId });
     incrementCounter('pipeline_messages_blocked_total', { reason: 'no_url' });
     return true;
   }
 
+  const productLinks = extractedLinks.filter((l) => l.kind === 'product');
+  const couponLinks = extractedLinks.filter((l) => l.kind === 'coupon');
+
+  if (productLinks.length >= 2) {
+    log('info', 'Múltiplos links de produto na mesma mensagem — bloqueada', {
+      messageId,
+      productCount: productLinks.length,
+      productUrls: productLinks.map((l) => l.url),
+    });
+    incrementCounter('pipeline_messages_blocked_total', { reason: 'multiple_product_links' });
+    return true;
+  }
+
+  // ── Resolução de shortlinks Shopee (s.shopee.com.br) ──
+  // Shortlinks Shopee são marcados como 'coupon' no classificador (não
+  // temos como saber se é produto sem resolver o redirect). Aqui tentamos
+  // resolver e, se for um produto de verdade, promovemos a URL para o
+  // caminho de produto. Links que NÃO resolvem para produto (cupom,
+  // voucher, afiliado) permanecem como cupons e são descartados.
+  const resolvedCouponLinks: ExtractedLink[] = [];
+  let promotedShopeeUrl: string | null = null;
+  for (const link of couponLinks) {
+    if (!/s\.shopee\.com\.br/i.test(link.url)) {
+      resolvedCouponLinks.push(link);
+      continue;
+    }
+    const resolved = await resolveRedirectUrl(link.url);
+    if (resolved && resolved !== link.url) {
+      // Verifica se a URL resolvida é uma página de produto Shopee
+      const isProduct = /-i\.\d+\.\d+/i.test(resolved);
+      if (isProduct) {
+        promotedShopeeUrl = resolved;
+        log('info', 'Shortlink Shopee resolvido para produto', {
+          messageId,
+          shortlink: link.url,
+          resolved,
+        });
+      } else {
+        log('info', 'Shortlink Shopee não resolve para produto — descartado', {
+          messageId,
+          shortlink: link.url,
+          resolved,
+        });
+      }
+    } else {
+      log('info', 'Shortlink Shopee sem redirect ou não resolveu — descartado', {
+        messageId,
+        shortlink: link.url,
+      });
+    }
+  }
+
+  // Se promovemos um shortlink, ele entra na lista de produtos
+  const finalProductLinks: ExtractedLink[] = promotedShopeeUrl
+    ? [...productLinks, { url: promotedShopeeUrl, kind: 'product' as const }]
+    : productLinks;
+
+  // Seleção da URL a processar:
+  //  - 1+ produto → usa o produto (ignora cupons)
+  //  - 0 produto → usa o primeiro link não-cupom (ex.: magalu) mantendo
+  //    o comportamento anterior. Mas se sobrou APENAS shortlinks Shopee
+  //    não-resolvidos, descarta (são links de cupom/afiliado).
+  const hasOnlyUnresolvedShopeeShortlinks =
+    finalProductLinks.length === 0 &&
+    extractedLinks.length > 0 &&
+    resolvedCouponLinks.length === 0;
+
+  if (hasOnlyUnresolvedShopeeShortlinks) {
+    log('info', 'Mensagem só contém shortlinks Shopee não-produto — ignorada', {
+      messageId,
+      shortlinks: extractedLinks.map((l) => l.url),
+    });
+    incrementCounter('pipeline_messages_blocked_total', { reason: 'shopee_shortlink_only' });
+    return true;
+  }
+
+  const selectedLink = finalProductLinks[0] ?? extractedLinks.find((l) => l.kind !== 'coupon');
+  const originalUrl = selectedLink?.url ?? null;
+
+  if (!originalUrl) {
+    log('info', 'Mensagem só contém links de cupom — ignorada', { messageId, couponCount: couponLinks.length });
+    incrementCounter('pipeline_messages_blocked_total', { reason: 'coupon_only' });
+    return true;
+  }
+
   const marketplace = detectMarketplace(originalUrl);
-  log('info', 'URL de marketplace detectada', { messageId, originalUrl, marketplace });
+  log('info', 'URL de marketplace detectada', {
+    messageId,
+    originalUrl,
+    marketplace,
+    totalLinks: extractedLinks.length,
+    productCount: productLinks.length,
+    couponCount: couponLinks.length,
+  });
 
   // ── 2. Blacklist ──
   const blacklistTerms = await measureStep(steps.blacklist, async () => loadBlacklist());
@@ -771,17 +945,11 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   // ── 5. Resolve redirect ──
   const resolvedUrl = await measureStep(steps.resolveRedirect, () => resolveRedirectUrl(originalUrl));
 
-  // ── 6. Fetch product image ──
-  const imageUrl = await measureStep(steps.imageFetch, () => fetchProductImage(marketplace, resolvedUrl));
-  if (!imageUrl) {
-    log('info', 'Imagem de produto não encontrada — bloqueado', { messageId, marketplace, resolvedUrl });
-    incrementCounter('pipeline_messages_blocked_total', { reason: 'no_product_image' });
-    incrementCounter('pipeline_image_fetch_total', { marketplace, result: 'not_found' });
-    return true;
-  }
-  incrementCounter('pipeline_image_fetch_total', { marketplace, result: 'found' });
-
-  // ── 7. Fan-out: para cada afiliado ──
+  // ── 6. Fan-out: para cada afiliado (valida credenciais + converte) ──
+  // A busca de imagem vem DEPOIS do fan-out: só faz sentido gastar o
+  // recurso de rede (fetch no marketplace) se ao menos um afiliado tiver
+  // credenciais válidas e gerar um SendEvent. Isso evita buscar imagem
+  // atoa quando nenhum afiliado consegue converter a oferta.
   const r = getRedis();
   if (!r) {
     log('error', 'Redis indisponível — não é possível publicar na Queue B');
@@ -854,7 +1022,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
           sourceGroupJid,
           mirrorId: config.mirrorId,
           text: templateText,
-          imageUrl,
+          imageUrl: '', // preenchido abaixo, após o fan-out (busca única)
           marketplace: conversion.marketplace,
           originalUrl,
           convertedUrl: conversion.convertedUrl!,
@@ -872,6 +1040,36 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   });
 
   incrementCounter('pipeline_affiliates_per_message', { count: String(sourceConfigs.length) });
+
+  // ── 7. Fetch product image (só se houver SendEvent válido) ──
+  // A imagem é OPCIONAL com fallback: se não for encontrada (ex.: Shopee
+  // bloqueando extração server-side, ou Amazon bloqueando bots), a oferta
+  // ainda é enviada como TEXTO (sendText) em vez de ser bloqueada — evitando
+  // regredir o comportamento do v1 (que enviava sem imagem). O Dispatcher
+  // já trata imageUrl vazio como envio de texto.
+  // Busca-se UMA vez por mensagem (a oferta é a mesma para todos os
+  // afiliados do sourceGroup) e só após confirmar que ao menos um afiliado
+  // gerou um SendEvent válido — evitando desperdício de rede.
+  let imageUrl = '';
+  if (sendEvents.length > 0) {
+    imageUrl = await measureStep(steps.imageFetch, () => fetchProductImage(marketplace, resolvedUrl)) || '';
+  }
+  if (imageUrl) {
+    incrementCounter('pipeline_image_fetch_total', { marketplace, result: 'found' });
+  } else {
+    log('info', 'Imagem de produto não encontrada — enviando como texto (fallback)', {
+      messageId,
+      marketplace,
+      resolvedUrl,
+    });
+    incrementCounter('pipeline_image_fetch_total', { marketplace, result: 'not_found' });
+    incrementCounter('pipeline_image_missing_fallback_total', { marketplace });
+  }
+
+  // Aplica a imagem (ou string vazia) em todos os SendEvents gerados
+  for (const evt of sendEvents) {
+    evt.imageUrl = imageUrl;
+  }
 
   // ── 8. Publica na Queue B ──
   if (sendEvents.length > 0) {
@@ -917,4 +1115,5 @@ export function initMetrics(): void {
   createCounter('pipeline_affiliates_per_message', 'Afiliados por mensagem', ['count']);
   createCounter('pipeline_send_events_published_total', 'SendEvents publicados na Queue B', ['count']);
   createCounter('pipeline_image_fetch_total', 'Resultado da busca de imagem', ['marketplace', 'result']);
+  createCounter('pipeline_image_missing_fallback_total', 'Ofertas enviadas como texto (sem imagem)', ['marketplace']);
 }

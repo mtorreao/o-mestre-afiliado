@@ -18,6 +18,7 @@ import {
   setStatusMeta,
 } from '@omestre/worker-common';
 import { processRawMessage, initMetrics } from './ingestor.ts';
+import { startMlCookieRevalidator, stopMlCookieRevalidator } from './ml-cookie-revalidator.ts';
 
 // ─── Config ──────────────────────────────────────────────────────────
 
@@ -170,6 +171,8 @@ async function shutdown(signal: string): Promise<void> {
     message: `Recebido ${signal} — iniciando graceful shutdown`,
   }));
 
+  stopMlCookieRevalidator();
+
   try {
     if (redis) {
       await redis.quit();
@@ -208,13 +211,16 @@ async function main(): Promise<void> {
   redis = connectRedis();
   await ensureConsumerGroup();
 
+  // Inicia re-validador periódico de cookies ML (background)
+  startMlCookieRevalidator();
+
   // Registra handlers de graceful shutdown
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
   // Inicia loop principal
   await mainLoop();
-}
+  }
 
 main().catch((err) => {
   console.error(JSON.stringify({
