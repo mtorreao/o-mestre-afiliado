@@ -178,7 +178,6 @@ Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
 | `ML_CLIENT_ID` | Para ML OAuth | converters, api, worker |
 | `ML_CLIENT_SECRET` | Para ML OAuth | converters, api, worker |
 | `ML_REFRESH_TOKEN` | Para ML OAuth | converters, api, worker |
-| `ML_COOKIES` | Para ML Cookies | converters, api, worker |
 | `API_PORT` | Não (default 5442) | api |
 | `EVOLUTION_API_KEY` | Sim | api, worker |
 | `EVOLUTION_WEBHOOK_URL` | Não | api |

@@ -179,7 +179,13 @@ async function sendMediaOrText(
     : `${EVOLUTION_API_URL}/message/sendText/${instanceName}`;
 
   const body = imageUrl
-    ? { number: groupJid, media: imageUrl, caption: text, delay: 2000 }
+    ? {
+        number: groupJid,
+        media: imageUrl,
+        mediatype: 'image' as const,
+        caption: text,
+        delay: 2000,
+      }
     : { number: groupJid, text, delay: 2000, linkPreview: true };
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

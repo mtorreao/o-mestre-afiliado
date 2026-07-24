@@ -139,7 +139,6 @@ Cada app usa `bun --hot` para reload automático. **Nota:** arquivos de pacotes 
 | `SHOPEE_SECRET` | converters, api, worker | Para Shopee |
 | `ML_CLIENT_ID` | converters, api, worker | Para ML OAuth |
 | `ML_CLIENT_SECRET` | converters, api, worker | Para ML OAuth |
-| `ML_COOKIES` | converters, api, worker | Para ML Cookies |
 | `API_PORT` | api | Não (default 5442) |
 | `EVOLUTION_API_KEY` | api, worker | Para Evolution API |
 | `POSTGRES_URL` | api, worker | URI do PostgreSQL |

@@ -60,13 +60,10 @@ Wrapper que valida o marketplace, chama `generateShortLink` e retorna um `Conver
 URL do produto
     │
     ├── Estratégia 1: API OAuth 2.0 (se ML_CLIENT_ID + ML_CLIENT_SECRET)
-    │   ├── getAccessToken() → access_token
     │   └── generateViaApi(url, token) → link de afiliado
     │
-    └── Estratégia 2: Cookies (se ML_COOKIES)
-        ├── generateViaCookies(url, cookies) → link
-        ├── Se falhar: refreshSessionCookies() → renew
-        └── generateViaCookies(url, newCookies) → link
+    └── Estratégia 2: Fallback URL params (se ML_AFFILIATE_TAG ou ML_MELIID+MELITAT)
+        └── generateViaUrlParams(url, creds) → link
 ```
 
 ### Estratégia 1: API OAuth 2.0 (Recomendada)
@@ -140,7 +137,7 @@ bun run ml "https://www.mercadolivre.com.br/produto-X/p/MLB123"
 | `ML_CLIENT_ID` | ML API OAuth | Para estratégia 1 |
 | `ML_CLIENT_SECRET` | ML API OAuth | Para estratégia 1 |
 | `ML_REFRESH_TOKEN` | ML API OAuth | Para estratégia 1 |
-| `ML_COOKIES` | ML Cookies | Para estratégia 2 |
+| `ML_AFFILIATE_TAG` | URL params | Para estratégia 2 (fallback) |
 
 ---
 
