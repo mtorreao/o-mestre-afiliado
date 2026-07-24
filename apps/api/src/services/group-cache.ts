@@ -1,28 +1,28 @@
 /**
- * Cache Redis para mapeamento sourceGroupJid → { affiliateId, mirrorId?, groupName }.
+ * Cache Redis para mapeamento sourceGroupJid → SourceGroupConfig[] (1:N).
  *
  * Evita consultar o PostgreSQL no hot path do webhook,
  * que recebe milhares de mensagens por dia.
  *
- * Estrutura no Redis:
- *   mirror:source-group:{jid} → { affiliateId: number, mirrorId?: number, groupName: string }
- *
- * O campo mirrorId indica que o grupo pertence a um espelhamento (mirror).
- * Quando presente, o worker busca targetGroups e configurações do mirror.
- * Quando ausente, usa a configuração legada do affiliate (affiliates table).
+ * Estrutura no Redis (v2 — 1:N):
+ *   mirror:source-group:{jid} → [
+ *     { affiliateId, mirrorId, instanceName, targetGroupJid, targetGroupName, messageTemplate, subRateMaxMsgs, subRateWindowSec },
+ *     ...
+ *   ]
  *
  * O webhook consulta este cache (O(1)), com fallback ao PostgreSQL
  * se a chave não estiver no Redis (TTL expirou, crash, etc.).
  * O fallback popula o cache automaticamente para evitar nova consulta DB.
  *
  * O cache é populado via:
- *   - POST/GET /api/affiliate/groups-config (legado, sem mirrorId)
  *   - POST/PUT /api/mirrors (com mirrorId)
  *   - Limpeza via DELETE /api/mirrors/:id
+ *   - Warm-up no startup da API
  */
 
 import { getRedis, cacheDel } from './redis.ts';
 import { AffiliatesRepository, MirrorRepository } from '@omestre/db';
+import type { SourceGroupConfig } from '@omestre/shared';
 
 const affiliatesRepo = new AffiliatesRepository();
 
@@ -31,14 +31,6 @@ const CACHE_SET_KEY = 'mirror:source-groups:all';
 
 /** TTL padrão de 1 hora (3600s) para cada entrada no cache. */
 const CACHE_TTL = 3600;
-
-/** Informação de cache para um sourceGroup. */
-export interface SourceGroupCacheEntry {
-  affiliateId: number;
-  /** ID do mirror (opcional). Se presente, o worker usa a config do mirror. */
-  mirrorId?: number;
-  groupName: string;
-}
 
 /**
  * Extrai o affiliateId e nome do grupo do cache para um JID de grupo de origem.
@@ -51,53 +43,13 @@ export interface SourceGroupCacheEntry {
 export async function getAffiliateIdBySourceGroup(
   groupJid: string,
 ): Promise<number | null> {
-  // ── 1. Tenta Redis ──────────────────────────────────────────────────
-  const r = getRedis();
-  if (r) {
-    try {
-      const raw = await r.get(`${CACHE_PREFIX}${groupJid}`);
-      if (raw) {
-        const data = JSON.parse(raw) as SourceGroupCacheEntry;
-        // Renova o TTL no acesso para manter entradas quentes vivas
-        await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
-        return data.affiliateId;
-      }
-    } catch {
-      // fallback silencioso para PostgreSQL
-    }
-  }
-
-  // ── 2. Fallback: busca na tabela mirrors ─────────────────────────────
-  try {
-    const mirrorRepo = new MirrorRepository();
-    const allMirrors = await mirrorRepo.list({ status: 'active', pageSize: 1000 });
-    for (const mirror of allMirrors.rows) {
-      const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
-      const found = groups?.find((g) => g.jid === groupJid);
-      if (found) {
-        // Encontrou no mirror — popula o cache
-        const instanceName = `user-${mirror.userId}`;
-        const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
-        if (affiliate) {
-          await cacheSourceGroup(groupJid, affiliate.id, found.name, mirror.id);
-          console.log(
-            `[group-cache] Fallback mirror: sourceGroup ${groupJid} carregado ` +
-            `para affiliateId=${affiliate.id} mirrorId=${mirror.id}`,
-          );
-          return affiliate.id;
-        }
-      }
-    }
-  } catch {
-    // silencia falha de DB
-  }
-
-  return null;
+  const configs = await getSourceGroupConfigs(groupJid);
+  return configs.length > 0 ? configs[0]!.affiliateId : null;
 }
 
 /**
- * Versão completa: retorna affiliateId + groupName do cache.
- * Útil quando o caller precisa do nome do grupo para logging ou enriquecimento.
+ * Versão completa: retorna SourceGroupConfig[] do cache (1:N).
+ * Usado pelo webhook para validar se o grupo é um sourceGroup conhecido.
  *
  * 1. Consulta Redis (O(1)) — hot path
  * 2. Se Redis não tem a chave, consulta PostgreSQL (fallback)
@@ -105,7 +57,18 @@ export async function getAffiliateIdBySourceGroup(
  */
 export async function getSourceGroupInfo(
   groupJid: string,
-): Promise<SourceGroupCacheEntry | null> {
+): Promise<SourceGroupConfig | null> {
+  const configs = await getSourceGroupConfigs(groupJid);
+  return configs.length > 0 ? configs[0]! : null;
+}
+
+/**
+ * Busca todas as configurações de sourceGroup para um JID (1:N).
+ * Retorna array vazio se não houver mirrors configurados.
+ */
+export async function getSourceGroupConfigs(
+  groupJid: string,
+): Promise<SourceGroupConfig[]> {
   // ── 1. Tenta Redis ──────────────────────────────────────────────────
   const r = getRedis();
   if (r) {
@@ -114,7 +77,13 @@ export async function getSourceGroupInfo(
       if (raw) {
         // Renova o TTL no acesso
         await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
-        return JSON.parse(raw) as SourceGroupCacheEntry;
+        const parsed = JSON.parse(raw);
+        // Suporta tanto formato antigo (objeto) quanto novo (array)
+        if (Array.isArray(parsed)) {
+          return parsed as SourceGroupConfig[];
+        }
+        // Formato antigo: converte para array
+        return [parsed as SourceGroupConfig];
       }
     } catch {
       // fallback silencioso para PostgreSQL
@@ -125,6 +94,8 @@ export async function getSourceGroupInfo(
   try {
     const mirrorRepo = new MirrorRepository();
     const allMirrors = await mirrorRepo.list({ status: 'active', pageSize: 1000 });
+    const configs: SourceGroupConfig[] = [];
+
     for (const mirror of allMirrors.rows) {
       const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
       const found = groups?.find((g) => g.jid === groupJid);
@@ -132,26 +103,68 @@ export async function getSourceGroupInfo(
         const instanceName = `user-${mirror.userId}`;
         const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
         if (affiliate) {
-          const entry: SourceGroupCacheEntry = { affiliateId: affiliate.id, mirrorId: mirror.id, groupName: found.name };
-          await cacheSourceGroup(groupJid, affiliate.id, found.name, mirror.id);
-          console.log(
-            `[group-cache] Fallback mirror: sourceGroup ${groupJid} info carregada ` +
-            `para affiliateId=${affiliate.id} mirrorId=${mirror.id}`,
-          );
-          return entry;
+          const targetGroups = mirror.targetGroups as { jid: string; name: string }[] | null;
+          const targetGroup = targetGroups?.[0];
+          if (targetGroup) {
+            const config: SourceGroupConfig = {
+              affiliateId: affiliate.id,
+              mirrorId: mirror.id,
+              instanceName,
+              targetGroupJid: targetGroup.jid,
+              targetGroupName: targetGroup.name,
+              messageTemplate: mirror.messageTemplate as string | null,
+              subRateMaxMsgs: mirror.subRateLimitMaxMsgs ?? 0,
+              subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
+            };
+            configs.push(config);
+          }
         }
       }
     }
+
+    if (configs.length > 0) {
+      await cacheSourceGroupConfigs(groupJid, configs);
+      console.log(
+        `[group-cache] Fallback mirror: sourceGroup ${groupJid} carregado ` +
+        `com ${configs.length} config(s)`,
+      );
+    }
+
+    return configs;
   } catch {
     // silencia falha de DB
   }
 
-  return null;
+  return [];
 }
 
 /**
- * Adiciona um sourceGroup ao cache.
+ * Adiciona configurações de sourceGroup ao cache (1:N).
  * Chamado quando o usuário configura grupos de espelhamento.
+ */
+export async function cacheSourceGroupConfigs(
+  groupJid: string,
+  configs: SourceGroupConfig[],
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+
+  try {
+    await r.setex(
+      `${CACHE_PREFIX}${groupJid}`,
+      CACHE_TTL,
+      JSON.stringify(configs),
+    );
+    // Mantém um set com todas as chaves para refresh bulk
+    await r.sadd(CACHE_SET_KEY, groupJid);
+  } catch {
+    // silencia falha de cache
+  }
+}
+
+/**
+ * Adiciona um sourceGroup ao cache (legado — 1:1).
+ * Mantido para compatibilidade com código antigo.
  */
 export async function cacheSourceGroup(
   groupJid: string,
@@ -163,12 +176,37 @@ export async function cacheSourceGroup(
   if (!r) return;
 
   try {
+    // Busca o mirror completo para montar o SourceGroupConfig
+    if (mirrorId) {
+      const mirrorRepo = new MirrorRepository();
+      const mirror = await mirrorRepo.findById(mirrorId);
+      if (mirror) {
+        const instanceName = `user-${mirror.userId}`;
+        const targetGroups = mirror.targetGroups as { jid: string; name: string }[] | null;
+        const targetGroup = targetGroups?.[0];
+        if (targetGroup) {
+          const config: SourceGroupConfig = {
+            affiliateId,
+            mirrorId,
+            instanceName,
+            targetGroupJid: targetGroup.jid,
+            targetGroupName: targetGroup.name,
+            messageTemplate: mirror.messageTemplate as string | null,
+            subRateMaxMsgs: mirror.subRateLimitMaxMsgs ?? 0,
+            subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
+          };
+          await cacheSourceGroupConfigs(groupJid, [config]);
+          return;
+        }
+      }
+    }
+
+    // Fallback: salva no formato antigo (será convertido em array no getSourceGroupConfigs)
     await r.setex(
       `${CACHE_PREFIX}${groupJid}`,
       CACHE_TTL,
-      JSON.stringify({ affiliateId, mirrorId, groupName: groupName ?? '' } as SourceGroupCacheEntry),
+      JSON.stringify({ affiliateId, mirrorId, groupName: groupName ?? '' }),
     );
-    // Mantém um set com todas as chaves para refresh bulk
     await r.sadd(CACHE_SET_KEY, groupJid);
   } catch {
     // silencia falha de cache
@@ -217,7 +255,7 @@ export async function removeSourceGroups(jids: string[]): Promise<void> {
  * Estratégia:
  *   1. Busca todos os sourceGroups atuais deste afiliado no Redis
  *   2. Remove os que não estão mais na nova lista
- *   3. Adiciona os novos
+ *   3. Adiciona os novos com SourceGroupConfig completo
  *
  * Isso garante que grupos removidos da configuração não fiquem
  * poluindo o cache.
@@ -243,15 +281,39 @@ export async function replaceSourceGroups(
       pipeline.del(`${CACHE_PREFIX}${jid}`);
       pipeline.srem(CACHE_SET_KEY, jid);
     }
-    for (const jid of newJids) {
-      const newGroup = newGroups.find((g) => g.jid === jid);
-      pipeline.setex(
-        `${CACHE_PREFIX}${jid}`,
-        CACHE_TTL,
-        JSON.stringify({ affiliateId, mirrorId, groupName: newGroup?.name ?? '' } as SourceGroupCacheEntry),
-      );
-      pipeline.sadd(CACHE_SET_KEY, jid);
+
+    // Busca o mirror completo para montar SourceGroupConfig
+    if (mirrorId) {
+      const mirrorRepo = new MirrorRepository();
+      const mirror = await mirrorRepo.findById(mirrorId);
+      if (mirror) {
+        const instanceName = `user-${mirror.userId}`;
+        const targetGroups = mirror.targetGroups as { jid: string; name: string }[] | null;
+        const targetGroup = targetGroups?.[0];
+        if (targetGroup) {
+          for (const jid of newJids) {
+            const newGroup = newGroups.find((g) => g.jid === jid);
+            const config: SourceGroupConfig = {
+              affiliateId,
+              mirrorId,
+              instanceName,
+              targetGroupJid: targetGroup.jid,
+              targetGroupName: targetGroup.name,
+              messageTemplate: mirror.messageTemplate as string | null,
+              subRateMaxMsgs: mirror.subRateLimitMaxMsgs ?? 0,
+              subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
+            };
+            pipeline.setex(
+              `${CACHE_PREFIX}${jid}`,
+              CACHE_TTL,
+              JSON.stringify([config]),
+            );
+            pipeline.sadd(CACHE_SET_KEY, jid);
+          }
+        }
+      }
     }
+
     await pipeline.exec();
   } catch {
     // silencia
@@ -306,8 +368,27 @@ export async function warmSourceGroupCache(): Promise<void> {
       const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
       if (!affiliate) continue;
 
+      const targetGroups = mirror.targetGroups as { jid: string; name: string }[] | null;
+      const targetGroup = targetGroups?.[0];
+      if (!targetGroup) continue;
+
+      // Agrupa configs por sourceGroupJid (pode haver múltiplos mirrors para o mesmo grupo)
       for (const group of srcGroups) {
-        await cacheSourceGroup(group.jid, affiliate.id, group.name, mirror.id);
+        const config: SourceGroupConfig = {
+          affiliateId: affiliate.id,
+          mirrorId: mirror.id,
+          instanceName,
+          targetGroupJid: targetGroup.jid,
+          targetGroupName: targetGroup.name,
+          messageTemplate: mirror.messageTemplate as string | null,
+          subRateMaxMsgs: mirror.subRateLimitMaxMsgs ?? 0,
+          subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
+        };
+
+        // Busca configs existentes para este grupo (1:N)
+        const existing = await getSourceGroupConfigs(group.jid);
+        const updated = [...existing, config];
+        await cacheSourceGroupConfigs(group.jid, updated);
         totalGroups++;
       }
     }
