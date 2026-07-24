@@ -350,6 +350,18 @@ export async function clearSourceGroupCache(): Promise<void> {
  * de sourceGroups esteja populado antes de começar a receber
  * webhooks da Evolution API.
  *
+ * Estratégia (1:N com dedup por mirrorId):
+ *   1. Lê TODOS os mirrors ativos do DB em uma única query
+ *   2. Agrupa configs em Map<sourceGroupJid, Map<mirrorId, config>>
+ *      — isso garante que cada (jid, mirrorId) aparece no máximo 1x,
+ *      mesmo se a função rodar múltiplas vezes (ex.: restart do container)
+ *   3. Persiste uma vez por sourceGroupJid com o array deduped
+ *
+ * LÊ EXCLUSIVAMENTE DO DB (não consulta cache). Isso evita o bug
+ * histórico em que cada execução acumulava configs ao invés de
+ * substituí-las — o que resultava em N entradas idênticas no Redis
+ * e N envios duplicados no Dispatcher.
+ *
  * Loga quantos grupos foram carregados.
  */
 export async function warmSourceGroupCache(): Promise<void> {
@@ -357,7 +369,9 @@ export async function warmSourceGroupCache(): Promise<void> {
     // Carrega sourceGroups de mirrors (CRUD atual)
     const mirrorRepo = new MirrorRepository();
     const mirrorResult = await mirrorRepo.list({ status: 'active', pageSize: 1000 });
-    let totalGroups = 0;
+
+    // Map<sourceGroupJid, Map<mirrorId, SourceGroupConfig>> — dedup por (jid, mirrorId)
+    const grouped = new Map<string, Map<number, SourceGroupConfig>>();
 
     for (const mirror of mirrorResult.rows) {
       const srcGroups = mirror.sourceGroups as { jid: string; name: string }[] | null;
@@ -372,7 +386,6 @@ export async function warmSourceGroupCache(): Promise<void> {
       const targetGroup = targetGroups?.[0];
       if (!targetGroup) continue;
 
-      // Agrupa configs por sourceGroupJid (pode haver múltiplos mirrors para o mesmo grupo)
       for (const group of srcGroups) {
         const config: SourceGroupConfig = {
           affiliateId: affiliate.id,
@@ -385,12 +398,34 @@ export async function warmSourceGroupCache(): Promise<void> {
           subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
         };
 
-        // Busca configs existentes para este grupo (1:N)
-        const existing = await getSourceGroupConfigs(group.jid);
-        const updated = [...existing, config];
-        await cacheSourceGroupConfigs(group.jid, updated);
-        totalGroups++;
+        let perJid = grouped.get(group.jid);
+        if (!perJid) {
+          perJid = new Map<number, SourceGroupConfig>();
+          grouped.set(group.jid, perJid);
+        }
+        // Dedup por mirrorId — último write vence (mesmo mirrorId não aparece 2x)
+        perJid.set(mirror.id, config);
       }
+    }
+
+    // Persiste uma vez por sourceGroupJid (DB é a única fonte de verdade)
+    const r = getRedis();
+    const pipeline = r ? r.pipeline() : null;
+    let totalGroups = 0;
+
+    for (const [jid, perMirror] of grouped.entries()) {
+      const configs = [...perMirror.values()];
+      if (pipeline) {
+        pipeline.setex(`${CACHE_PREFIX}${jid}`, CACHE_TTL, JSON.stringify(configs));
+        pipeline.sadd(CACHE_SET_KEY, jid);
+      } else {
+        await cacheSourceGroupConfigs(jid, configs);
+      }
+      totalGroups++;
+    }
+
+    if (pipeline) {
+      await pipeline.exec();
     }
 
     console.log(
