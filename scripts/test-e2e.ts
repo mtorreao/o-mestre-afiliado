@@ -92,8 +92,8 @@ for (let attempt = 1; attempt <= 5; attempt++) {
 }
 
 // ─── 3. Rodar testes ────────────────────────────────────────────────
-const testResult = spawnSync('npx', [
-  'playwright', 'test', '--config', 'e2e/playwright.config.ts',
+const testResult = spawnSync('bun', [
+  'x', 'playwright', 'test', '--config', 'e2e/playwright.config.ts',
 ], {
   cwd: ROOT,
   stdio: 'inherit',
