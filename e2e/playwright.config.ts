@@ -1,7 +1,6 @@
 import { defineConfig } from '@playwright/test';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const __dirname = import.meta.dir;
 const WEB_PORT = process.env.WEB_PORT || '15441';
 const API_PORT = process.env.API_PORT || '15442';
 const API_MIRROR_PORT = process.env.API_MIRROR_PORT || '15447';
