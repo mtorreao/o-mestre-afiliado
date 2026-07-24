@@ -282,13 +282,18 @@ export async function processSendEvent(event: SendEvent): Promise<boolean> {
   const { mirrorId, sourceMessageId, text, imageUrl, sourceGroupJid } = event;
   const totalStart = performance.now();
 
-  // ── 0. Dedup: já enviamos esta mensagem para este mirror? ──
+  // ── 0. Dedup atômico: já enviamos esta mensagem para este mirror? ──
+  // SET NX EX é atômico no Redis — só um consumer de todo o batch consegue
+  // reservar a chave, bloqueando duplicatas paralelas (read-then-write
+  // permitia N cópias passarem antes da 1ª escrita).
+  // Reserva ANTES de chamar Evolution: se o envio falhar, a chave fica
+  // reservada até o TTL — mais barato que reprocessar e duplicar.
   const r = getRedis();
+  const dedupKey = `${MIRROR_SEND_COMPLETED_PREFIX}${mirrorId}:${sourceMessageId}`;
   if (r) {
-    const dedupKey = `${MIRROR_SEND_COMPLETED_PREFIX}${mirrorId}:${sourceMessageId}`;
-    const alreadyCompleted = await r.get(dedupKey);
-    if (alreadyCompleted) {
-      log('info', 'SendEvent já processado — pulando (reentrega do stream)', {
+    const reserved = await r.set(dedupKey, '1', 'EX', MIRROR_SEND_COMPLETED_TTL, 'NX');
+    if (reserved !== 'OK') {
+      log('info', 'SendEvent já processado — pulando (dedup atômico)', {
         mirrorId,
         sourceMessageId,
         eventId: event.id,
@@ -362,16 +367,10 @@ export async function processSendEvent(event: SendEvent): Promise<boolean> {
     sendMediaOrText(instanceName, targetGroupJid, text, imageUrl),
   );
 
-  // ── 5. Marca como concluído (só após envio bem-sucedido) ──
-  if (sent && r) {
-    await r.setex(
-      `${MIRROR_SEND_COMPLETED_PREFIX}${mirrorId}:${sourceMessageId}`,
-      MIRROR_SEND_COMPLETED_TTL,
-      '1',
-    );
-  }
+  // Dedup já foi reservado atomicamente no passo 0 (SET NX EX).
+  // Não precisa re-marcar aqui — a chave expira sozinha via TTL.
 
-  // ── 6. Log no banco ──
+  // ── 5. Log no banco ──
   await logReflectedOffer({
     affiliateId,
     sourceGroupJid,
