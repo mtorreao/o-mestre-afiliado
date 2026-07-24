@@ -87,32 +87,57 @@ async function ensureConsumerGroup(): Promise<void> {
 
 // ─── Processamento de lote ───────────────────────────────────────────
 
+async function processOne(event: SendEvent, id: string): Promise<void> {
+  try {
+    const processed = await processSendEvent(event);
+    if (processed) {
+      await redis.xack(MIRROR_SEND_STREAM, MIRROR_SEND_CONSUMER_GROUP, id);
+    }
+  } catch (err) {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      service: 'dispatcher',
+      message: 'Erro ao processar SendEvent',
+      messageId: id,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+    // Não dá ACK — será reentregue para retry
+  }
+}
+
 async function processBatch(
   messageIds: string[],
   events: SendEvent[],
 ): Promise<void> {
-  // Cada evento é processado individualmente. O rate limiter (Redis INCR)
-  // já serializa/envia em ordem por instância, então não precisamos de
-  // agrupamento manual — instâncias diferentes correm em paralelo via
-  // Promise.allSettled, instâncias iguais respeitam o rate limit.
+  // Agrupa eventos por mirrorId para serializar dentro do mesmo destino
+  // (respeitando rate-limit por instanceName+targetGroupJid sem deadlock).
+  // Mirrors distintos rodam em paralelo — preserva paralelismo entre
+  // afiliados/instâncias diferentes.
+  //
+  // ANTES: Promise.allSettled(events.map(...)) — uma única chamada
+  // travando em waitForSlot (até 5min) bloqueava o batch inteiro.
+  // AGORA: serialização por mirrorId = rate-limit não trava nada além
+  // do próprio destino.
+  const groups = new Map<number, Array<{ event: SendEvent; id: string }>>();
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]!;
+    const id = messageIds[i]!;
+    let bucket = groups.get(event.mirrorId);
+    if (!bucket) {
+      bucket = [];
+      groups.set(event.mirrorId, bucket);
+    }
+    bucket.push({ event, id });
+  }
+
   await Promise.allSettled(
-    events.map(async (event, i) => {
-      const id = messageIds[i]!;
-      try {
-        const processed = await processSendEvent(event);
-        if (processed) {
-          await redis.xack(MIRROR_SEND_STREAM, MIRROR_SEND_CONSUMER_GROUP, id);
-        }
-      } catch (err) {
-        console.error(JSON.stringify({
-          timestamp: new Date().toISOString(),
-          level: 'error',
-          service: 'dispatcher',
-          message: 'Erro ao processar SendEvent',
-          messageId: id,
-          error: err instanceof Error ? err.message : String(err),
-        }));
-        // Não dá ACK — será reentregue para retry
+    [...groups.values()].map(async (bucket) => {
+      // Serializa dentro do bucket — rate-limit é respeitado
+      // e não trava batches de outros destinos
+      for (const { event, id } of bucket) {
+        await processOne(event, id);
       }
     }),
   );
@@ -219,6 +244,105 @@ async function shutdown(signal: string): Promise<void> {
 
 // ─── Startup ─────────────────────────────────────────────────────────
 
+async function reclaimPendingEntries(): Promise<void> {
+  // XAUTOCLAIM reclama mensagens pendentes de PEL órfão (consumer que
+  // crashou antes do XACK). Sem isso, mensagens podem ficar presas no PEL
+  // indefinidamente — o XREADGROUP só entrega PEL do próprio consumer
+  // (via '0'/'0' como start), então PEL órfão de consumidor morto nunca
+  // é re-entregue pelo loop principal.
+  //
+  // Estratégia: varre o stream em batches de 100, min-idle-time=5min.
+  // Mensagens com dedup-reservado (já processadas por outro consumer
+  // sobrevivente) vão cair no dedup atômico e ser puladas.
+  const minIdleMs = 5 * 60_000;
+  const batchSize = 100;
+  let cursor = '0-0';
+  let reclaimed = 0;
+  let skipped = 0;
+  let totalDeletedIds = 0;
+
+  try {
+    while (true) {
+      const result = (await redis.xautoclaim(
+        MIRROR_SEND_STREAM,
+        MIRROR_SEND_CONSUMER_GROUP,
+        CONSUMER_NAME,
+        minIdleMs,
+        cursor,
+        'COUNT', batchSize,
+      )) as [string, Array<[string, string[]]>, string[]] | null;
+
+      if (!result || !Array.isArray(result)) break;
+
+      // ioredis/Redis retorna shape variável entre versões:
+      // - 2 elementos: [cursor, entries]
+      // - 3 elementos: [cursor, entries, deletedIds] (Redis 6.2+)
+      const nextCursor = result[0] ?? '0-0';
+      const entries = result[1] ?? [];
+      const deletedIds = result[2] ?? [];
+      cursor = nextCursor;
+      totalDeletedIds += deletedIds.length;
+
+      for (const [messageId, fields] of entries) {
+        const payload = fields[fields.indexOf('payload') + 1];
+        if (!payload) {
+          await redis.xack(MIRROR_SEND_STREAM, MIRROR_SEND_CONSUMER_GROUP, messageId);
+          continue;
+        }
+
+        try {
+          const event = JSON.parse(payload) as SendEvent;
+          // processSendEvent faz dedup atômico (SET NX EX) — se outro
+          // consumer vivo já processou, retorna true sem enviar.
+          const processed = await processSendEvent(event);
+          if (processed) {
+            await redis.xack(MIRROR_SEND_STREAM, MIRROR_SEND_CONSUMER_GROUP, messageId);
+            reclaimed++;
+          } else {
+            // Processamento falhou (rate-limit, etc.) — não dá ACK para retry
+            skipped++;
+          }
+        } catch (err) {
+          console.error(JSON.stringify({
+            timestamp: new Date().toISOString(),
+            level: 'error',
+            service: 'dispatcher',
+            message: 'Erro ao processar entrada órfã',
+            messageId,
+            error: err instanceof Error ? err.message : String(err),
+          }));
+          skipped++;
+        }
+      }
+
+      // Cursor '0-0' significa que o scan completou
+      if (cursor === '0-0') break;
+    }
+
+    if (totalDeletedIds > 0 || reclaimed > 0 || skipped > 0) {
+      console.log(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        service: 'dispatcher',
+        message: 'XAUTOCLAIM no startup concluído',
+        reclaimed,
+        skipped,
+        deletedIds: totalDeletedIds,
+        minIdleMs,
+      }));
+    }
+  } catch (err) {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      service: 'dispatcher',
+      message: 'Erro no XAUTOCLAIM no startup',
+      error: err instanceof Error ? err.message : String(err),
+    }));
+    // Não propaga — startup continua mesmo se reclam falhar
+  }
+}
+
 async function main(): Promise<void> {
   console.log(JSON.stringify({
     timestamp: new Date().toISOString(),
@@ -234,6 +358,7 @@ async function main(): Promise<void> {
 
   redis = connectRedis();
   await ensureConsumerGroup();
+  await reclaimPendingEntries();
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
