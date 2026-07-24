@@ -2,24 +2,17 @@
  * Dead Letter Queue — Mensagens com falha permanente após todas as tentativas.
  *
  * Armazena no Redis (LIST + Sorted Set):
- *   mirrror:dlq:entries  — LIST com payloads JSON dos itens
- *   mirrror:dlq:index     — ZSET com {item-id → timestamp} para ordenação
+ *   mirror:dlq:entries  — LIST com payloads JSON dos itens
+ *   mirror:dlq:index     — ZSET com {item-id → timestamp} para ordenação
  *
- * Funcionalidades:
- *   - pushToDLQ(): adiciona item quando falha permanente
- *   - listDLQ(): lista itens da DLQ (com paginação)
- *   - getDLQItem(): busca um item específico por ID
- *   - requeueFromDLQ(): re-enfileira item no Redis Stream para reprocessamento
- *   - removeFromDLQ(): remove item da DLQ
- *   - countDLQ(): total de itens na DLQ
- *   - purgeOldDLQItems(): remove itens expirados
+ * Extraído de apps/worker/src/dead-letter-queue.ts para @omestre/worker-common.
+ * DLQ é compartilhada entre Ingestor, Dispatcher e API (reuso da conexão Redis).
  */
 
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
-import type { MirrorMessageEvent, MirrorDLQEntry } from '@omestre/shared';
+import type { MirrorDLQEntry, RawMessageEvent, SendEvent } from '@omestre/shared';
 import {
-  MIRROR_STREAM,
   MIRROR_DLQ_LIST,
   MIRROR_DLQ_INDEX,
   MIRROR_DLQ_TTL,
@@ -32,7 +25,7 @@ const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:5455';
 // ─── Tipos ────────────────────────────────────────────────────────────
 
 export interface DLQPushParams {
-  event: MirrorMessageEvent;
+  event: RawMessageEvent | SendEvent;
   failureReason: string;
   attempts: number;
   lastError: string;
@@ -54,7 +47,7 @@ export interface DLQListResult {
   limit: number;
 }
 
-// ─── Conexão Redis (lazy singleton, mesmo padrão da conversion-cache) ──
+// ─── Conexão Redis (lazy singleton) ──────────────────────────────────
 
 let redis: Redis | null = null;
 let dlqEnabled = true;
@@ -69,7 +62,7 @@ function getDLQRedis(): Redis | null {
       retryStrategy(times) {
         if (times > 2) {
           dlqEnabled = false;
-          return null; // stops retrying, desliga DLQ
+          return null;
         }
         return Math.min(times * 200, 1000);
       },
@@ -106,15 +99,6 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) 
 
 // ─── API pública ──────────────────────────────────────────────────────
 
-/**
- * Adiciona uma mensagem com falha permanente à Dead Letter Queue.
- *
- * O item é:
- *   1. Adicionado ao final da LIST `mirror:dlq:entries`
- *   2. Indexado no ZSET `mirror:dlq:index` com score = timestamp
- *
- * Falha silenciosa se Redis estiver indisponível.
- */
 export async function pushToDLQ(params: DLQPushParams): Promise<void> {
   const r = getDLQRedis();
   if (!r) {
@@ -142,18 +126,13 @@ export async function pushToDLQ(params: DLQPushParams): Promise<void> {
 
     const score = Date.now();
     const pipeline = r.pipeline();
-
-    // Adiciona ao final da LIST
     pipeline.rpush(MIRROR_DLQ_LIST, JSON.stringify(entry));
-
-    // Indexa no ZSET por timestamp para ordenação
     pipeline.zadd(MIRROR_DLQ_INDEX, score, id);
-
     await pipeline.exec();
 
     log('info', 'Item adicionado à Dead Letter Queue', {
       dlqId: id,
-      messageId: params.event.messageId,
+      messageId: 'messageId' in params.event ? params.event.messageId : params.event.sourceMessageId,
       failureReason: params.failureReason,
       attempts: params.attempts,
       marketplace: params.marketplace,
@@ -161,14 +140,11 @@ export async function pushToDLQ(params: DLQPushParams): Promise<void> {
   } catch (err) {
     log('error', 'Falha ao adicionar item à DLQ', {
       error: err instanceof Error ? err.message : String(err),
-      messageId: params.event.messageId,
+      messageId: 'messageId' in params.event ? params.event.messageId : params.event.sourceMessageId,
     });
   }
 }
 
-/**
- * Lista itens da Dead Letter Queue ordenados do mais recente para o mais antigo.
- */
 export async function listDLQ(
   options: DLQListOptions = {},
 ): Promise<DLQListResult> {
@@ -187,19 +163,10 @@ export async function listDLQ(
     const offset = options.offset ?? 0;
     const limit = options.limit ?? 20;
 
-    // Busca IDs do ZSET ordenados por score descendente (mais recentes primeiro)
-    const ids = await r.zrevrange(
-      MIRROR_DLQ_INDEX,
-      offset,
-      offset + limit - 1,
-    );
-
+    const ids = await r.zrevrange(MIRROR_DLQ_INDEX, offset, offset + limit - 1);
     if (ids.length === 0) return { ...emptyResult, total };
 
-    // Busca todos os itens da LIST
     const rawItems = await r.lrange(MIRROR_DLQ_LIST, 0, -1);
-
-    // Constrói mapa id → item
     const itemMap = new Map<string, MirrorDLQEntry>();
     for (const raw of rawItems) {
       try {
@@ -210,7 +177,6 @@ export async function listDLQ(
       }
     }
 
-    // Retorna na ordem do ZSET
     const items: MirrorDLQEntry[] = [];
     for (const id of ids) {
       const item = itemMap.get(id);
@@ -226,12 +192,7 @@ export async function listDLQ(
   }
 }
 
-/**
- * Busca um item específico da DLQ pelo ID.
- */
-export async function getDLQItem(
-  itemId: string,
-): Promise<MirrorDLQEntry | null> {
+export async function getDLQItem(itemId: string): Promise<MirrorDLQEntry | null> {
   const r = getDLQRedis();
   if (!r) return null;
 
@@ -251,32 +212,22 @@ export async function getDLQItem(
   }
 }
 
-/**
- * Re-enfileira um item da DLQ de volta no Redis Stream para reprocessamento.
- * Marca o item como reprocessado.
- */
-export async function requeueFromDLQ(itemId: string): Promise<boolean> {
+export async function requeueFromDLQ(
+  itemId: string,
+  targetStream: string,
+): Promise<boolean> {
   const r = getDLQRedis();
   if (!r) return false;
 
   try {
     const item = await getDLQItem(itemId);
     if (!item) {
-      log('warn', 'Item não encontrado na DLQ para re-processamento', {
-        dlqId: itemId,
-      });
+      log('warn', 'Item não encontrado na DLQ para re-processamento', { dlqId: itemId });
       return false;
     }
 
-    // Re-publica o evento original no stream
-    await r.xadd(
-      MIRROR_STREAM,
-      '*',
-      'payload',
-      JSON.stringify(item.event),
-    );
+    await r.xadd(targetStream, '*', 'payload', JSON.stringify(item.event));
 
-    // Atualiza o item na LIST marcando como reprocessado
     const now = new Date().toISOString();
     const updatedEntry: MirrorDLQEntry = {
       ...item,
@@ -285,7 +236,6 @@ export async function requeueFromDLQ(itemId: string): Promise<boolean> {
       reprocessResult: 're-enfileirado no stream',
     };
 
-    // Remove o item antigo e adiciona o atualizado
     const pipeline = r.pipeline();
     const oldRaw = JSON.stringify(item);
     pipeline.lrem(MIRROR_DLQ_LIST, 1, oldRaw);
@@ -294,9 +244,9 @@ export async function requeueFromDLQ(itemId: string): Promise<boolean> {
 
     log('info', 'Item re-enfileirado do DLQ para o stream', {
       dlqId: itemId,
-      messageId: item.event.messageId,
+      messageId: 'messageId' in item.event ? item.event.messageId : item.event.sourceMessageId,
+      targetStream,
     });
-
     return true;
   } catch (err) {
     log('error', 'Falha ao re-enfileirar item da DLQ', {
@@ -307,9 +257,6 @@ export async function requeueFromDLQ(itemId: string): Promise<boolean> {
   }
 }
 
-/**
- * Remove um item específico da DLQ.
- */
 export async function removeFromDLQ(itemId: string): Promise<boolean> {
   const r = getDLQRedis();
   if (!r) return false;
@@ -317,9 +264,7 @@ export async function removeFromDLQ(itemId: string): Promise<boolean> {
   try {
     const item = await getDLQItem(itemId);
     if (!item) {
-      log('warn', 'Item não encontrado na DLQ para remoção', {
-        dlqId: itemId,
-      });
+      log('warn', 'Item não encontrado na DLQ para remoção', { dlqId: itemId });
       return false;
     }
 
@@ -339,9 +284,6 @@ export async function removeFromDLQ(itemId: string): Promise<boolean> {
   }
 }
 
-/**
- * Retorna o número total de itens na DLQ.
- */
 export async function countDLQ(): Promise<number> {
   const r = getDLQRedis();
   if (!r) return 0;
@@ -353,30 +295,17 @@ export async function countDLQ(): Promise<number> {
   }
 }
 
-/**
- * Remove itens expirados da DLQ (mais velhos que MIRROR_DLQ_TTL).
- * Deve ser chamado periodicamente (ex: no startup e a cada N horas).
- */
 export async function purgeOldDLQItems(): Promise<number> {
   const r = getDLQRedis();
   if (!r) return 0;
 
   try {
     const cutoff = Date.now() - MIRROR_DLQ_TTL * 1000;
-
-    // Busca IDs com score menor que o cutoff (mais antigos que o TTL)
-    const oldIds = await r.zrangebyscore(
-      MIRROR_DLQ_INDEX,
-      0,
-      cutoff,
-    );
-
+    const oldIds = await r.zrangebyscore(MIRROR_DLQ_INDEX, 0, cutoff);
     if (oldIds.length === 0) return 0;
 
-    // Remove os itens antigos da LIST
     const rawItems = await r.lrange(MIRROR_DLQ_LIST, 0, -1);
     const pipeline = r.pipeline();
-
     const oldIdSet = new Set(oldIds);
     let removed = 0;
 

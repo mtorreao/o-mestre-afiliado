@@ -1,6 +1,9 @@
 /**
  * Notifier — Sistema de notificações proativas com delivery real.
  *
+ * Extraído de apps/worker/src/notifier.ts para @omestre/worker-common.
+ * Compartilhado entre Ingestor e Dispatcher.
+ *
  * FILOSOFIA: Só notificar o que o USUÁRIO pode corrigir.
  *
  * Tipos que GERAM notificação (user-fixable):
@@ -18,9 +21,6 @@
  * Cooldown: cada tipo tem cooldown de 1h no Redis.
  * Agrupamento: ocorrências no mesmo cooldown são acumuladas e enviadas
  * juntas na próxima janela ('47 ofertas bloqueadas por cookie expirado').
- *
- * Canal: configurado no perfil do afiliado (WhatsApp via Evolution API).
- * Se não configurado, notifica apenas via log (console).
  */
 
 import Redis from 'ioredis';
@@ -30,48 +30,31 @@ const affiliatesRepo = new AffiliatesRepository();
 
 // ─── Constantes ──────────────────────────────────────────────────────────
 
-/** Prefixos das chaves Redis */
 const COOLDOWN_PREFIX = 'notifier:cooldown:';
 const OCCURRENCE_PREFIX = 'notifier:occurrences:';
-
-/** Cooldown padrão entre notificações do mesmo tipo (1 hora) */
 const DEFAULT_COOLDOWN_SECONDS = 3600;
-
-/** Janela de acumulação de ocorrências (1 hora) */
 const OCCURRENCE_WINDOW_SECONDS = 3600;
-
-/** Threshold mínimo para enviar notificação agrupada */
 const MIN_OCCURRENCES_FOR_NOTIFICATION = 1;
 
-/** URL base da Evolution API */
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:5444';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
-// ─── Tipos de notificação ────────────────────────────────────────────────
+// ─── Tipos ───────────────────────────────────────────────────────────────
 
-/**
- * Tipos de problema que o USUÁRIO pode corrigir.
- * Estes geram notificações.
- */
 export type UserFixableType =
-  | 'cookie_expired'            // Cookies de sessão ML expirados
-  | 'refresh_token_expired'     // Refresh token ML expirado
-  | 'invalid_shopee_creds'      // Shopee App ID/Secret inválido
-  | 'ml_account_not_linked'     // Conta ML não vinculada ao usuário
-  | 'evolution_api_offline';    // Evolution API fora do ar
+  | 'cookie_expired'
+  | 'refresh_token_expired'
+  | 'invalid_shopee_creds'
+  | 'ml_account_not_linked'
+  | 'evolution_api_offline';
 
-/**
- * Tipos de problema que SÃO SILENCIOSOS (nunca geram notificação).
- */
 export type SilentType =
   | 'network_timeout'
   | 'dedup'
   | 'blacklist';
 
-/** Todos os tipos de falha */
 export type FailureType = UserFixableType | SilentType;
 
-/** Mensagens amigáveis para cada tipo de notificação */
 const NOTIFICATION_MESSAGES: Record<UserFixableType, string> = {
   cookie_expired:
     '🍪 Cookies de sessão do Mercado Livre expirados.\n' +
@@ -90,7 +73,6 @@ const NOTIFICATION_MESSAGES: Record<UserFixableType, string> = {
     'Verifique se o container da Evolution API está rodando.',
 };
 
-/** Labels curtas para usar em mensagens agrupadas */
 const NOTIFICATION_LABELS: Record<UserFixableType, string> = {
   cookie_expired: 'cookie expirado',
   refresh_token_expired: 'token expirado',
@@ -144,21 +126,13 @@ function evolutionHeaders(): Record<string, string> {
 
 // ─── Classificação ───────────────────────────────────────────────────────
 
-/**
- * Classifica um erro de conversão em um tipo de notificação.
- * Retorna null se o erro não é classificável.
- *
- * Examina a mensagem de erro para determinar a causa raiz.
- */
 export function classifyConversionError(
   marketplace: string,
   errorMessage: string,
 ): FailureType | null {
   const err = errorMessage.toLowerCase();
 
-  // ── Mercado Livre ──────────────────────────────────────────────────
   if (marketplace === 'mercadolivre') {
-    // Cookie expirado
     if (
       err.includes('http 40') ||
       err.includes('401') ||
@@ -171,7 +145,6 @@ export function classifyConversionError(
       return 'cookie_expired';
     }
 
-    // Refresh token expirado
     if (
       err.includes('refresh') ||
       err.includes('token expirado') ||
@@ -181,7 +154,6 @@ export function classifyConversionError(
       return 'refresh_token_expired';
     }
 
-    // Conta não vinculada (sem melitat)
     if (
       err.includes('melitat') ||
       err.includes('sem afiliado') ||
@@ -193,7 +165,6 @@ export function classifyConversionError(
     }
   }
 
-  // ── Shopee ─────────────────────────────────────────────────────────
   if (marketplace === 'shopee') {
     if (
       err.includes('app id') ||
@@ -210,7 +181,6 @@ export function classifyConversionError(
     }
   }
 
-  // ── Amazon ─────────────────────────────────────────────────────────
   if (marketplace === 'amazon') {
     if (
       err.includes('tracking') ||
@@ -221,7 +191,6 @@ export function classifyConversionError(
     }
   }
 
-  // ── Erros de rede / Evolution ──────────────────────────────────────
   if (
     err.includes('fetch failed') ||
     err.includes('econnrefused') ||
@@ -235,14 +204,9 @@ export function classifyConversionError(
     return 'evolution_api_offline';
   }
 
-  // Qualquer outro erro é genérico — não notifica
   return null;
 }
 
-/**
- * Verifica se um tipo de falha gera notificação.
- * Se sim, retorna o tipo de notificação; se não, retorna null.
- */
 export function getNotifiableType(type: FailureType): UserFixableType | null {
   const notifiable: Set<string> = new Set([
     'cookie_expired',
@@ -256,16 +220,12 @@ export function getNotifiableType(type: FailureType): UserFixableType | null {
 
 // ─── Cooldown ────────────────────────────────────────────────────────────
 
-/**
- * Verifica se está dentro do período de cooldown para um tipo de notificação.
- * Retorna true se ainda está em cooldown (não deve notificar).
- */
 export async function isInCooldown(
   type: UserFixableType,
   instanceName: string,
 ): Promise<boolean> {
   const r = getNotifierRedis();
-  if (!r) return false; // Sem Redis → sem cooldown (notifica sempre)
+  if (!r) return false;
 
   try {
     const key = `${COOLDOWN_PREFIX}${instanceName}:${type}`;
@@ -276,9 +236,6 @@ export async function isInCooldown(
   }
 }
 
-/**
- * Define o cooldown para um tipo de notificação.
- */
 export async function setCooldown(
   type: UserFixableType,
   instanceName: string,
@@ -297,10 +254,6 @@ export async function setCooldown(
 
 // ─── Acumulador de ocorrências ───────────────────────────────────────────
 
-/**
- * Incrementa o contador de ocorrências para um tipo.
- * Retorna o novo total de ocorrências na janela atual.
- */
 export async function incrementOccurrence(
   type: UserFixableType,
   instanceName: string,
@@ -311,7 +264,6 @@ export async function incrementOccurrence(
   try {
     const key = `${OCCURRENCE_PREFIX}${instanceName}:${type}`;
     const count = await r.incr(key);
-    // Define TTL na primeira inserção (se count === 1, acabou de criar)
     if (count === 1) {
       await r.expire(key, OCCURRENCE_WINDOW_SECONDS);
     }
@@ -321,9 +273,6 @@ export async function incrementOccurrence(
   }
 }
 
-/**
- * Lê o contador atual de ocorrências sem incrementar.
- */
 async function getOccurrenceCount(
   type: UserFixableType,
   instanceName: string,
@@ -340,9 +289,6 @@ async function getOccurrenceCount(
   }
 }
 
-/**
- * Reseta o contador de ocorrências (após enviar notificação).
- */
 async function resetOccurrences(
   type: UserFixableType,
   instanceName: string,
@@ -358,14 +304,8 @@ async function resetOccurrences(
   }
 }
 
-// ─── Busca configuração de notificação do afiliado ───────────────────────
+// ─── Busca configuração de notificação ───────────────────────────────────
 
-/**
- * Busca a configuração de notificação do afiliado no banco.
- * Usa o evolutionInstanceId (ex: "user-1") como chave.
- *
- * Retorna o canal e JID configurados, ou null se não configurado.
- */
 async function getAffiliateNotificationConfig(
   instanceName: string,
 ): Promise<{ channel: string; jid: string | null } | null> {
@@ -376,32 +316,21 @@ async function getAffiliateNotificationConfig(
   }
 }
 
-// ─── Envio de notificações ───────────────────────────────────────────────
+// ─── Envio ───────────────────────────────────────────────────────────────
 
-/**
- * Envia uma notificação via Evolution API (mensagem privada WhatsApp).
- *
- * @param instanceName Nome da instância Evolution (ex: "user-1")
- * @param text         Texto da mensagem a enviar
- * @param targetJid    JID de destino (ex: "5511999999999@s.whatsapp.net").
- *                     Se não informado, notifica via log apenas.
- */
 async function sendWhatsAppNotification(
   instanceName: string,
   text: string,
   targetJid?: string | null,
 ): Promise<boolean> {
   if (!targetJid) {
-    // Sem JID configurado → apenas loga
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'notifier',
-        message: `[NOTIFICAÇÃO] ${text.replace(/\n/g, ' | ')}`,
-        instanceName,
-      }),
-    );
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'notifier',
+      message: `[NOTIFICAÇÃO] ${text.replace(/\n/g, ' | ')}`,
+      instanceName,
+    }));
     return true;
   }
 
@@ -421,142 +350,104 @@ async function sendWhatsAppNotification(
     );
 
     if (res.ok) {
-      console.log(
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          level: 'info',
-          service: 'notifier',
-          message: `Notificação enviada via WhatsApp para ${targetJid}`,
-          instanceName,
-        }),
-      );
+      console.log(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        service: 'notifier',
+        message: `Notificação enviada via WhatsApp para ${targetJid}`,
+        instanceName,
+      }));
       return true;
     }
 
-    console.warn(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'warn',
-        service: 'notifier',
-        message: `Falha ao enviar notificação WhatsApp`,
-        status: res.status,
-        instanceName,
-      }),
-    );
+    console.warn(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      service: 'notifier',
+      message: 'Falha ao enviar notificação WhatsApp',
+      status: res.status,
+      instanceName,
+    }));
     return false;
   } catch (err) {
-    console.warn(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'warn',
-        service: 'notifier',
-        message: `Erro ao enviar notificação WhatsApp`,
-        error: err instanceof Error ? err.message : String(err),
-        instanceName,
-      }),
-    );
+    console.warn(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      service: 'notifier',
+      message: 'Erro ao enviar notificação WhatsApp',
+      error: err instanceof Error ? err.message : String(err),
+      instanceName,
+    }));
     return false;
   }
 }
 
 // ─── API Pública ─────────────────────────────────────────────────────────
 
-/**
- * Processa uma falha no pipeline e decide se deve notificar.
- *
- * Fluxo:
- *   1. Classifica a falha → tipo
- *   2. Se for silenciosa → ignora (log apenas)
- *   3. Incrementa contador de ocorrências
- *   4. Se está em cooldown → não notifica agora (ocorrências acumulam)
- *   5. Se cooldown expirou → busca config de notificação do afiliado
- *   6. Envia notificação com total acumulado (via WhatsApp ou log conforme config)
- *
- * @param instanceName  Nome da instância Evolution (ex: "user-1")
- * @param failureType   Tipo da falha (já classificado)
- * @param context       Contexto adicional (marketplace, count individual)
- */
 export async function processFailure(
   instanceName: string,
   failureType: FailureType,
   context?: { marketplace?: string; count?: number },
 ): Promise<void> {
-  // 1. Verifica se é um tipo notificável
   const notifiableType = getNotifiableType(failureType);
   if (!notifiableType) {
-    // Tipo silencioso — só log
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'debug',
-        service: 'notifier',
-        message: `Falha silenciosa ignorada: ${failureType}`,
-        instanceName,
-        ...(context ?? {}),
-      }),
-    );
-    return;
-  }
-
-  // 2. Incrementa contagem de ocorrências
-  const total = await incrementOccurrence(notifiableType, instanceName);
-
-  console.log(
-    JSON.stringify({
+    console.log(JSON.stringify({
       timestamp: new Date().toISOString(),
       level: 'debug',
       service: 'notifier',
-      message: `Ocorrência registrada: ${notifiableType} (total: ${total})`,
+      message: `Falha silenciosa ignorada: ${failureType}`,
       instanceName,
-      type: notifiableType,
-      totalOccurrences: total,
       ...(context ?? {}),
-    }),
-  );
-
-  // 3. Verifica cooldown
-  const inCooldown = await isInCooldown(notifiableType, instanceName);
-  if (inCooldown) {
-    // Ainda em cooldown — ocorrências continuam acumulando
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'debug',
-        service: 'notifier',
-        message: `Cooldown ativo para ${notifiableType} — ${total} ocorrências acumuladas`,
-        instanceName,
-        type: notifiableType,
-        totalOccurrences: total,
-      }),
-    );
+    }));
     return;
   }
 
-  // 4. Cooldown expirou — busca config de notificação do afiliado
+  const total = await incrementOccurrence(notifiableType, instanceName);
+
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: 'debug',
+    service: 'notifier',
+    message: `Ocorrência registrada: ${notifiableType} (total: ${total})`,
+    instanceName,
+    type: notifiableType,
+    totalOccurrences: total,
+    ...(context ?? {}),
+  }));
+
+  const inCooldown = await isInCooldown(notifiableType, instanceName);
+  if (inCooldown) {
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'debug',
+      service: 'notifier',
+      message: `Cooldown ativo para ${notifiableType} — ${total} ocorrências acumuladas`,
+      instanceName,
+      type: notifiableType,
+      totalOccurrences: total,
+    }));
+    return;
+  }
+
   const notificationConfig = await getAffiliateNotificationConfig(instanceName);
   const channel = notificationConfig?.channel ?? 'disabled';
   const targetJid = notificationConfig?.jid ?? null;
 
-  // Se disabled, loga apenas e define cooldown (evita spam de log)
   if (channel === 'disabled' || !targetJid) {
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'notifier',
-        message: `Notificação disponível para ${notifiableType} (${total} ocorrências) — sem canal configurado. Configure em /api/affiliate/notification-config.`,
-        instanceName,
-        type: notifiableType,
-        totalOccurrences: total,
-      }),
-    );
-    // Define cooldown mesmo sem canal para evitar repetir o log a cada ocorrência
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'notifier',
+      message: `Notificação disponível para ${notifiableType} (${total} ocorrências) — sem canal configurado.`,
+      instanceName,
+      type: notifiableType,
+      totalOccurrences: total,
+    }));
     await setCooldown(notifiableType, instanceName);
     await resetOccurrences(notifiableType, instanceName);
     return;
   }
 
-  // 5. Monta texto da notificação
   const label = NOTIFICATION_LABELS[notifiableType];
   const msg = NOTIFICATION_MESSAGES[notifiableType];
 
@@ -570,76 +461,58 @@ export async function processFailure(
     notificationText = `⚠️ ${msg}`;
   }
 
-  // 6. Envia conforme canal configurado
   let sent = false;
   if (channel === 'whatsapp') {
     sent = await sendWhatsAppNotification(instanceName, notificationText, targetJid);
   } else if (channel === 'telegram') {
-    // Telegram ainda não implementado — loga
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'notifier',
-        message: `[NOTIFICAÇÃO] Canal Telegram não implementado. Mensagem: ${notificationText.replace(/\n/g, ' | ')}`,
-        instanceName,
-        targetJid,
-      }),
-    );
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'notifier',
+      message: `[NOTIFICAÇÃO] Canal Telegram não implementado. Mensagem: ${notificationText.replace(/\n/g, ' | ')}`,
+      instanceName,
+      targetJid,
+    }));
     sent = true;
   }
 
-  // 7. Se enviou com sucesso, define cooldown e reseta contagem
   if (sent) {
     await setCooldown(notifiableType, instanceName);
     await resetOccurrences(notifiableType, instanceName);
   }
 }
 
-/**
- * Envia uma notificação direta (sem acumulação) com mensagem personalizada.
- * Útil para situações urgentes que não passam pelo pipeline de falhas.
- *
- * Respeita cooldown do tipo — se estiver em cooldown, não envia.
- * Busca a configuração de notificação do afiliado para o JID de destino.
- */
 export async function notifyDirect(
   instanceName: string,
   type: UserFixableType,
   message?: string,
 ): Promise<boolean> {
-  // Verifica cooldown
   const inCooldown = await isInCooldown(type, instanceName);
   if (inCooldown) {
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'debug',
-        service: 'notifier',
-        message: `Cooldown ativo para notificação direta ${type} — ignorando`,
-        instanceName,
-        type,
-      }),
-    );
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'debug',
+      service: 'notifier',
+      message: `Cooldown ativo para notificação direta ${type} — ignorando`,
+      instanceName,
+      type,
+    }));
     return false;
   }
 
-  // Busca config de notificação
   const notificationConfig = await getAffiliateNotificationConfig(instanceName);
   const channel = notificationConfig?.channel ?? 'disabled';
   const targetJid = notificationConfig?.jid ?? null;
 
   if (channel === 'disabled' || !targetJid) {
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'notifier',
-        message: `[NOTIFICAÇÃO] Notificação direta sem canal configurado: ${message ?? NOTIFICATION_MESSAGES[type]}`,
-        instanceName,
-        type,
-      }),
-    );
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'notifier',
+      message: `[NOTIFICAÇÃO] Notificação direta sem canal configurado: ${message ?? NOTIFICATION_MESSAGES[type]}`,
+      instanceName,
+      type,
+    }));
     return false;
   }
 
@@ -649,16 +522,14 @@ export async function notifyDirect(
   if (channel === 'whatsapp') {
     sent = await sendWhatsAppNotification(instanceName, text, targetJid);
   } else if (channel === 'telegram') {
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'notifier',
-        message: `[NOTIFICAÇÃO] Canal Telegram não implementado. Mensagem: ${text.replace(/\n/g, ' | ')}`,
-        instanceName,
-        targetJid,
-      }),
-    );
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'notifier',
+      message: `[NOTIFICAÇÃO] Canal Telegram não implementado. Mensagem: ${text.replace(/\n/g, ' | ')}`,
+      instanceName,
+      targetJid,
+    }));
     sent = true;
   }
 

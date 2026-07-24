@@ -1,31 +1,58 @@
 /**
- * Métricas Prometheus para o worker de espelhamento.
+ * Servidor de métricas HTTP genérico para processadores do worker.
  *
- * Contadores:
- *   mirror_messages_received_total
- *   mirror_messages_converted_total          (marketplace)
- *   mirror_messages_sent_total
- *   mirror_messages_blocked_total            (reason)
- *   mirror_failures_total                    (type, marketplace)
- *   mirror_deduplicated_total
+ * Cada processador (Ingestor na porta 9092, Dispatcher na porta 9093)
+ * cria suas próprias instâncias de StepTrackers e counters.
  *
- * Histograma:
- *   mirror_conversion_duration_seconds       (marketplace)
- *
- * Exposição HTTP em METRICS_PORT (default 9092):
- *   /metrics    — Prometheus text format
- *   /health     — OK (orquestrador)
- *   /status     — JSON com health, uptime, erros acumulados, DLQ count
- *   /dlq/*      — Dead Letter Queue management
+ * Endpoints:
+ *   /health  — OK (healthcheck Docker)
+ *   /metrics — Prometheus text format
+ *   /status  — JSON com health, uptime, step durations, counters
+ *   /dlq/*   — Dead Letter Queue management
  */
 
-// ─── Tipos internos ──────────────────────────────────────────────────
+import type { StepTracker } from './step-tracker.ts';
+import {
+  countDLQ,
+  listDLQ,
+  requeueFromDLQ,
+  removeFromDLQ,
+  purgeOldDLQItems,
+} from './dead-letter-queue.ts';
+
+// ─── Tipos ──────────────────────────────────────────────────────────────
+
+export interface StepTrackers {
+  [stepName: string]: StepTracker;
+}
+
+export interface StatusResponse {
+  service: string;
+  status: 'healthy' | 'degraded';
+  uptime: string;
+  uptimeSeconds: number;
+  startTime: string;
+  mode: string;
+  queueSize: number | null;
+  dlqCount: number;
+  stepDurations: Record<string, {
+    avg: number;
+    p50: number;
+    p99: number;
+    count: number;
+  }>;
+  errors: Array<{ time: string; message: string; count: number }>;
+  counters: Record<string, number | string>;
+  [key: string]: unknown;
+}
+
+// ─── Métricas Prometheus ─────────────────────────────────────────────────
 
 interface CounterMetric {
   value: number;
   help: string;
   labelNames: string[];
-  counts: Map<string, number>; // key = label values joined by ","
+  counts: Map<string, number>;
   type: 'counter';
 }
 
@@ -45,11 +72,7 @@ interface HistogramMetric {
 
 type Metric = CounterMetric | HistogramMetric;
 
-// ─── Estado interno ──────────────────────────────────────────────────
-
 const metrics = new Map<string, Metric>();
-
-// ─── Helpers ──────────────────────────────────────────────────────────
 
 function labelKey(labels: Record<string, string>): string {
   return Object.values(labels).join(',');
@@ -65,8 +88,6 @@ function formatLabels(labels: Record<string, string>): string {
   );
   return parts.length ? `{${parts.join(',')}}` : '';
 }
-
-// ─── API pública ─────────────────────────────────────────────────────
 
 export function createCounter(
   name: string,
@@ -143,12 +164,8 @@ export function observeHistogram(
   obs.sum += value;
   obs.count++;
 
-  // Incrementa os buckets cujo le seja >= value
-  // (bucket +Inf é tratado separadamente no output)
   for (const bc of obs.bucketCounts) {
-    if (value <= bc.le) {
-      bc.count++;
-    }
+    if (value <= bc.le) bc.count++;
   }
 }
 
@@ -186,9 +203,7 @@ export function getMetrics(): string {
         const labelStr = formatLabels(labels);
 
         for (const bc of obs.bucketCounts) {
-          lines.push(
-            `${name}_bucket${labelStr}{le="${bc.le}"} ${bc.count}`,
-          );
+          lines.push(`${name}_bucket${labelStr}{le="${bc.le}"} ${bc.count}`);
         }
         lines.push(`${name}_bucket${labelStr}{le="+Inf"} ${obs.count}`);
         lines.push(`${name}_count${labelStr} ${obs.count}`);
@@ -200,72 +215,29 @@ export function getMetrics(): string {
   return lines.join('\n') + '\n';
 }
 
-export function registerDefaultMetrics(): void {
-  createCounter(
-    'mirror_messages_received_total',
-    'Total de mensagens recebidas para processamento',
-  );
-  createCounter(
-    'mirror_messages_converted_total',
-    'Total de URLs convertidas com sucesso',
-    ['marketplace'],
-  );
-  createCounter(
-    'mirror_messages_sent_total',
-    'Total de mensagens enviadas para grupos de destino',
-  );
-  createCounter(
-    'mirror_messages_blocked_total',
-    'Total de mensagens bloqueadas (não passaram pelos filtros)',
-    ['reason'],
-  );
-  createCounter(
-    'mirror_failures_total',
-    'Total de falhas no pipeline',
-    ['type', 'marketplace'],
-  );
-  createCounter(
-    'mirror_deduplicated_total',
-    'Total de ofertas duplicadas ignoradas',
-  );
-  createCounter(
-    'mirror_rate_limited_total',
-    'Total de vezes que o rate limit foi acionado por instância',
-    ['instance_name'],
-  );
-  createCounter(
-    'mirror_rate_limit_wait_ms_total',
-    'Tempo total de espera acumulado devido a rate limit (ms)',
-  );
-  createHistogram(
-    'mirror_conversion_duration_seconds',
-    'Tempo gasto na conversão de URLs de oferta',
-    ['marketplace'],
-  );
+// ─── Status ──────────────────────────────────────────────────────────────
+
+let startTime = Date.now();
+let stepTrackers: StepTrackers = {};
+let statusOverrides: Record<string, unknown> = {};
+
+export function registerStepTrackers(trackers: StepTrackers): void {
+  stepTrackers = trackers;
 }
 
-// ─── Erros acumulados para o /status ──────────────────────────────────
+export function setStatusMeta(meta: Record<string, unknown>): void {
+  statusOverrides = { ...statusOverrides, ...meta };
+}
 
-/** Timestamp de inicialização do servidor de métricas. */
-let startTime = Date.now();
-
-/** Interface de erro rastreado. */
-export interface TrackedError {
+interface TrackedError {
   time: string;
   message: string;
   count: number;
 }
 
-/** Últimos erros (agrupados por mensagem, até 20). */
 const recentErrors = new Map<string, TrackedError>();
-
-/** Limite de erros rastreados. */
 const MAX_TRACKED_ERRORS = 20;
 
-/**
- * Registra um erro no tracker interno do /status.
- * Erros com a mesma mensagem são agrupados (incrementa count).
- */
 export function trackError(message: string): void {
   const existing = recentErrors.get(message);
   if (existing) {
@@ -277,7 +249,6 @@ export function trackError(message: string): void {
       message,
       count: 1,
     });
-    // Se estourou o limite, remove o mais velho
     if (recentErrors.size > MAX_TRACKED_ERRORS) {
       let oldestKey: string | null = null;
       let oldestTime = Infinity;
@@ -293,23 +264,10 @@ export function trackError(message: string): void {
   }
 }
 
-/**
- * Dados extras que o index.ts pode registrar para enriquecer o /status.
- * Ex: modo, tamanho da fila, etc.
- */
-let statusOverrides: Record<string, unknown> = {};
-
-/**
- * Permite que index.ts registre dados adicionais para o /status.
- */
-export function setStatusMeta(meta: Record<string, unknown>): void {
-  statusOverrides = { ...statusOverrides, ...meta };
-}
-
-/**
- * Retorna o objeto de status completo para o endpoint /status.
- */
-export async function getStatusResponse(): Promise<Record<string, unknown>> {
+export async function getStatusResponse(
+  serviceName: string,
+  targetStream: string,
+): Promise<StatusResponse> {
   const uptimeMs = Date.now() - startTime;
   const uptimeSeconds = Math.floor(uptimeMs / 1000);
   const days = Math.floor(uptimeSeconds / 86400);
@@ -323,16 +281,18 @@ export async function getStatusResponse(): Promise<Record<string, unknown>> {
         ? `${hours}h ${minutes}m ${seconds}s`
         : `${minutes}m ${seconds}s`;
 
-  // Tenta ler DLQ count
   let dlqCount = 0;
   try {
-    const { countDLQ } = await import('./dead-letter-queue.ts');
     dlqCount = await countDLQ();
   } catch {
-    // DLQ pode estar indisponível — não falha
+    // DLQ indisponível
   }
 
-  // Counter values resumidas
+  const stepDurations: Record<string, { avg: number; p50: number; p99: number; count: number }> = {};
+  for (const [name, tracker] of Object.entries(stepTrackers)) {
+    stepDurations[name] = tracker.snapshot();
+  }
+
   const countersSnapshot: Record<string, number | string> = {};
   for (const [name, metric] of metrics) {
     if (metric.type === 'counter') {
@@ -352,14 +312,15 @@ export async function getStatusResponse(): Promise<Record<string, unknown>> {
   }
 
   return {
-    service: 'mirror-worker-metrics',
+    service: serviceName,
     status: 'healthy',
-    uptimeSeconds,
     uptime: uptimeFormatted,
+    uptimeSeconds,
     startTime: new Date(startTime).toISOString(),
-    mode: statusOverrides.mode || 'unknown',
-    queueSize: statusOverrides.queueSize ?? null,
+    mode: (statusOverrides.mode as string) || 'unknown',
+    queueSize: (statusOverrides.queueSize as number) ?? null,
     dlqCount,
+    stepDurations,
     errors: Array.from(recentErrors.values()).sort(
       (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime(),
     ),
@@ -368,7 +329,7 @@ export async function getStatusResponse(): Promise<Record<string, unknown>> {
   };
 }
 
-// ─── HTTP Server ─────────────────────────────────────────────────────
+// ─── HTTP Server ─────────────────────────────────────────────────────────
 
 const METRICS_PORT = parseInt(process.env.METRICS_PORT || '9092', 10);
 const METRICS_API_KEY = process.env.METRICS_API_KEY || '';
@@ -382,13 +343,8 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-/**
- * Verifica se a requisição possui o METRICS_API_KEY correto.
- * Se METRICS_API_KEY não estiver configurada, pula a verificação (compat retroativa).
- * Se configurada, aceita Authorization: Bearer <key> ou X-API-Key: <key>.
- */
 function authenticateRequest(req: Request): boolean {
-  if (!METRICS_API_KEY) return true; // sem chave configurada → livre
+  if (!METRICS_API_KEY) return true;
 
   const authHeader = req.headers.get('authorization') || '';
   const apiKeyHeader = req.headers.get('x-api-key') || '';
@@ -402,18 +358,12 @@ function authenticateRequest(req: Request): boolean {
   return false;
 }
 
-/**
- * Inicia um servidor HTTP que expõe as métricas em /metrics e endpoints
- * da Dead Letter Queue em /dlq/*.
- * Pode ser chamado uma única vez — chamadas subsequentes são ignoradas.
- *
- * @param portOverride — Porta opcional para override (usado em testes).
- *   Se omitido, usa METRICS_PORT do ambiente (default 9092).
- */
-export function startMetricsServer(portOverride?: number): void {
+export function startMetricsServer(
+  serviceName: string,
+  targetStream: string,
+  portOverride?: number,
+): void {
   if (metricsServer) return;
-
-  registerDefaultMetrics();
 
   const effectivePort = portOverride ?? METRICS_PORT;
 
@@ -422,12 +372,10 @@ export function startMetricsServer(portOverride?: number): void {
     async fetch(req) {
       const url = new URL(req.url);
 
-      // /health é livre (usado pelo healthcheck do Docker Compose)
       if (url.pathname === '/health') {
         return new Response('OK', { status: 200 });
       }
 
-      // Demais endpoints requerem autenticação se METRICS_API_KEY estiver configurada
       if (!authenticateRequest(req)) {
         return jsonResponse({ error: 'Unauthorized' }, 401);
       }
@@ -443,21 +391,17 @@ export function startMetricsServer(portOverride?: number): void {
         });
       }
 
-      // ── Status endpoint ───────────────────────────────────────────
       if (url.pathname === '/status') {
-        const status = await getStatusResponse();
+        const status = await getStatusResponse(serviceName, targetStream);
         return jsonResponse(status);
       }
 
-      // ── Dead Letter Queue endpoints ─────────────────────────────
       if (url.pathname === '/dlq/count') {
-        const { countDLQ } = await import('./dead-letter-queue.ts');
         const count = await countDLQ();
         return jsonResponse({ count });
       }
 
       if (url.pathname === '/dlq') {
-        const { listDLQ } = await import('./dead-letter-queue.ts');
         const offset = parseInt(url.searchParams.get('offset') || '0', 10);
         const limit = parseInt(url.searchParams.get('limit') || '20', 10);
         const result = await listDLQ({ offset, limit });
@@ -469,8 +413,7 @@ export function startMetricsServer(portOverride?: number): void {
         if (!id) {
           return jsonResponse({ error: 'Parâmetro "id" é obrigatório' }, 400);
         }
-        const { requeueFromDLQ } = await import('./dead-letter-queue.ts');
-        const ok = await requeueFromDLQ(id);
+        const ok = await requeueFromDLQ(id, targetStream);
         return jsonResponse({ success: ok, dlqId: id });
       }
 
@@ -479,23 +422,22 @@ export function startMetricsServer(portOverride?: number): void {
         if (!id) {
           return jsonResponse({ error: 'Parâmetro "id" é obrigatório' }, 400);
         }
-        const { removeFromDLQ } = await import('./dead-letter-queue.ts');
         const ok = await removeFromDLQ(id);
         return jsonResponse({ success: ok, dlqId: id });
       }
 
       if (url.pathname === '/dlq/purge' && req.method === 'POST') {
-        const { purgeOldDLQItems } = await import('./dead-letter-queue.ts');
         const removed = await purgeOldDLQItems();
         return jsonResponse({ removed });
       }
 
       if (url.pathname === '/') {
         return jsonResponse({
-          service: 'mirror-worker-metrics',
+          service: serviceName,
           endpoints: [
             '/metrics',
             '/health',
+            '/status',
             '/dlq',
             '/dlq/count',
             '/dlq/requeue?id=...',
@@ -509,15 +451,13 @@ export function startMetricsServer(portOverride?: number): void {
     },
   });
 
-  console.log(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      service: 'mirror-metrics',
-      message: 'Servidor de métricas iniciado',
-      port: METRICS_PORT,
-    }),
-  );
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: 'info',
+    service: serviceName,
+    message: 'Servidor de métricas iniciado',
+    port: effectivePort,
+  }));
 }
 
 export function stopMetricsServer(): void {
@@ -527,13 +467,10 @@ export function stopMetricsServer(): void {
   }
 }
 
-/**
- * Reseta o estado interno do módulo de métricas.
- * Usado em testes para garantir estado limpo entre execuções.
- */
 export function resetMetrics(): void {
   metrics.clear();
   recentErrors.clear();
   statusOverrides = {};
   startTime = Date.now();
+  stepTrackers = {};
 }

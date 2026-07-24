@@ -1,10 +1,9 @@
 {
-  "name": "@omestre/worker",
+  "name": "@omestre/ingestor",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "revalidate": "bun run --hot src/index.ts --revalidate",
     "build": "bun build src/index.ts --outdir=dist --target=bun",
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit"
@@ -13,6 +12,7 @@
     "@omestre/converters": "workspace:*",
     "@omestre/shared": "workspace:*",
     "@omestre/db": "workspace:*",
+    "@omestre/worker-common": "workspace:*",
     "drizzle-orm": "^0.38.0",
     "ioredis": "^5.4.1"
   },

@@ -202,8 +202,13 @@ export type { TemplateEvalContext } from './template-parser.ts';
 
 // ─── Tipos do pipeline de espelhamento ──────────────────────────────────
 
-export type { MirrorMessageEvent } from './mirror-message.ts';
-export type { MirrorDLQEntry } from './mirror-message.ts';
+export type {
+  MirrorDLQEntry,
+  RawMessageEvent,
+  SendEvent,
+  SourceGroupConfig,
+  MirrorSendConfig,
+} from './mirror-message.ts';
 
 // ─── Constantes do pipeline ────────────────────────────────────────────
 
@@ -229,12 +234,6 @@ export type {
   FetchMessagesFn,
 } from './offer-validator.ts';
 
-/** Stream Redis para fila persistente de mensagens de espelhamento */
-export const MIRROR_STREAM = 'omestre:mirror:stream';
-
-/** Nome do consumer group Redis Stream para os workers */
-export const MIRROR_CONSUMER_GROUP = 'omestre:mirror:workers';
-
 /** Prefixo para chave de cache de conversão de URLs no Redis */
 export const MIRROR_CONVERSION_CACHE_PREFIX = 'mirror:conversion:';
 
@@ -249,3 +248,38 @@ export const MIRROR_DLQ_INDEX = 'mirror:dlq:index';
 
 /** TTL padrão para itens na DLQ (7 dias em segundos) */
 export const MIRROR_DLQ_TTL = 7 * 24 * 3600;
+
+// ─── Nova arquitetura — 2 filas (v2) ─────────────────────────────────
+
+/** Stream Redis para mensagens CRUAS (Queue A) */
+export const MIRROR_RAW_STREAM = 'omestre:mirror:raw';
+
+/** Consumer group da Queue A */
+export const MIRROR_RAW_CONSUMER_GROUP = 'mirror-raw';
+
+/** Stream Redis para mensagens PRONTAS (Queue B) */
+export const MIRROR_SEND_STREAM = 'omestre:mirror:send';
+
+/** Consumer group da Queue B */
+export const MIRROR_SEND_CONSUMER_GROUP = 'mirror-send';
+
+/** Prefixo das chaves de cache sourceGroup → mirrors (1:N) */
+export const MIRROR_SOURCE_GROUP_CACHE_PREFIX = 'mirror:source-group:';
+
+/** Prefixo para dedup de webhook (API) — 30s TTL */
+export const MIRROR_WEBHOOK_DEDUP_PREFIX = 'mirror:webhook-dedup:';
+
+/** Prefixo para send-dedup (Ingestor) — 1h TTL */
+export const MIRROR_SEND_DEDUP_PREFIX = 'mirror:send-dedup:';
+
+/** Prefixo para send-completed (Dispatcher) — 24h TTL */
+export const MIRROR_SEND_COMPLETED_PREFIX = 'mirror:send-completed:';
+
+/** TTL do dedup de webhook (30 segundos) */
+export const MIRROR_WEBHOOK_DEDUP_TTL = 30;
+
+/** TTL do send-dedup do Ingestor (1 hora) */
+export const MIRROR_SEND_DEDUP_TTL = 3600;
+
+/** TTL do send-completed do Dispatcher (24 horas) */
+export const MIRROR_SEND_COMPLETED_TTL = 86400;
