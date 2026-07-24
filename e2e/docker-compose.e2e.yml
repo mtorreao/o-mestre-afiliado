@@ -159,12 +159,12 @@ services:
     depends_on:
       - api-e2e
 
-  # ─── Worker (background) ───────────────────────────────────────────
-  worker-e2e:
-    container_name: omestre_e2e_worker
+  # ─── Ingestor (background — pipeline pesado) ───────────────────────
+  ingestor-e2e:
+    container_name: omestre_e2e_ingestor
     build:
       context: ../
-      dockerfile: apps/worker/Dockerfile
+      dockerfile: apps/ingestor/Dockerfile
     restart: no
     networks:
       - e2e-net
@@ -178,6 +178,30 @@ services:
       EVOLUTION_API_URL: http://evolution-api-e2e:8080
       EVOLUTION_API_KEY: e2e-evolution-api-key
       REDIS_URL: redis://redis-e2e:6379
+      METRICS_PORT: "9092"
+    depends_on:
+      - api-e2e
+
+  # ─── Dispatcher (background — envio de mensagens) ──────────────────
+  dispatcher-e2e:
+    container_name: omestre_e2e_dispatcher
+    build:
+      context: ../
+      dockerfile: apps/dispatcher/Dockerfile
+    restart: no
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      REDIS_URL: redis://redis-e2e:6379
+      METRICS_PORT: "9093"
     depends_on:
       - api-e2e
 
@@ -230,12 +254,12 @@ services:
       redis-e2e:
         condition: service_healthy
 
-  # ─── Worker (Mirror) ────────────────────────────────────────────────
-  worker-e2e-mirror:
-    container_name: omestre_e2e_worker_mirror
+  # ─── Ingestor (Mirror — pipeline pesado) ───────────────────────────
+  ingestor-e2e-mirror:
+    container_name: omestre_e2e_ingestor_mirror
     build:
       context: ../
-      dockerfile: apps/worker/Dockerfile
+      dockerfile: apps/ingestor/Dockerfile
     restart: no
     networks:
       - e2e-net
@@ -249,6 +273,31 @@ services:
       EVOLUTION_API_URL: http://whatsapp-simulator-e2e:8080
       EVOLUTION_API_KEY: e2e-evolution-api-key
       REDIS_URL: redis://redis-e2e:6379
+      METRICS_PORT: "9092"
+    depends_on:
+      api-e2e-mirror:
+        condition: service_started
+
+  # ─── Dispatcher (Mirror — envio de mensagens) ──────────────────────
+  dispatcher-e2e-mirror:
+    container_name: omestre_e2e_dispatcher_mirror
+    build:
+      context: ../
+      dockerfile: apps/dispatcher/Dockerfile
+    restart: no
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://whatsapp-simulator-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      REDIS_URL: redis://redis-e2e:6379
+      METRICS_PORT: "9093"
     depends_on:
       api-e2e-mirror:
         condition: service_started
