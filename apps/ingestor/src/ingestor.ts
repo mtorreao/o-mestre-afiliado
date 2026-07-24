@@ -225,8 +225,11 @@ async function getSourceGroupConfigs(sourceGroupJid: string): Promise<SourceGrou
     const raw = await r.get(key);
     if (!raw) return [];
 
-    const configs = JSON.parse(raw) as SourceGroupConfig[];
-    return Array.isArray(configs) ? configs : [];
+    const parsed = JSON.parse(raw);
+    const configs = Array.isArray(parsed) ? parsed : [parsed];
+    
+    // Filtra apenas configs completos (com instanceName)
+    return configs.filter((c: SourceGroupConfig) => c.instanceName && c.targetGroupJid);
   } catch {
     return [];
   }
