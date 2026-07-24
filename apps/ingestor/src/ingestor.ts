@@ -31,7 +31,6 @@ import {
 } from '@omestre/shared';
 import {
   convertShopeeUrlWithCredentials,
-  generateViaUrlParams,
   generateShortAffiliateLink,
   convertAmazonUrlWithTrackingId,
 } from '@omestre/converters';
@@ -96,7 +95,7 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) 
     console.error(JSON.stringify(entry));
   } else {
     console.log(JSON.stringify(entry));
-  }
+}
 }
 
 // ─── Blacklist / Whitelist ───────────────────────────────────────────
@@ -109,7 +108,7 @@ function loadTermsList(envPath: string, defaultPath: string, label: string): str
   const cacheKey = `_cache_${label}` as keyof typeof globalThis;
   if ((globalThis as Record<string, unknown>)[cacheKey] !== undefined) {
     return (globalThis as Record<string, unknown>)[cacheKey] as string[];
-  }
+}
 
   const filePath = process.env[envPath] || defaultPath;
   try {
@@ -124,7 +123,7 @@ function loadTermsList(envPath: string, defaultPath: string, label: string): str
     log('info', `Arquivo ${filePath} não encontrado, ${label.toLowerCase()} vazia`);
   } catch (err) {
     log('warn', `Erro ao carregar ${label.toLowerCase()}`, { path: filePath, error: String(err) });
-  }
+}
 
   (globalThis as Record<string, unknown>)[cacheKey] = [];
   return [];
@@ -195,7 +194,7 @@ export function extractAllMarketplaceLinks(text: string): ExtractedLink[] {
     const marketplace = detectMarketplace(url);
     if (marketplace === 'unknown') continue;
     result.push({ url, kind: classifyLinkKind(url) });
-  }
+}
   return result;
 }
 
@@ -242,7 +241,7 @@ async function isDuplicate(
       error: err instanceof Error ? err.message : String(err),
     });
     return false;
-  }
+}
 }
 
 // ─── Source Group Config (1:N cache) ─────────────────────────────────
@@ -262,7 +261,7 @@ function getRedis(): Redis | null {
     });
   } catch {
     return null;
-  }
+}
 
   return redisClient;
 }
@@ -283,7 +282,7 @@ async function getSourceGroupConfigs(sourceGroupJid: string): Promise<SourceGrou
     return configs.filter((c: SourceGroupConfig) => c.instanceName && c.targetGroupJid);
   } catch {
     return [];
-  }
+}
 }
 
 // ─── Conversion ──────────────────────────────────────────────────────
@@ -301,7 +300,7 @@ async function convertOfferUrl(
   const marketplace = detectMarketplace(originalUrl);
   if (marketplace === 'unknown') {
     return { convertedUrl: null, marketplace, success: false };
-  }
+}
 
   let resolvedUrl = await resolveRedirectUrl(originalUrl);
   let effectiveMarketplace = marketplace;
@@ -315,7 +314,7 @@ async function convertOfferUrl(
     if (resolvedMp !== 'unknown') {
       effectiveMarketplace = resolvedMp;
     }
-  }
+}
 
   const cached = await getCachedConversion(resolvedUrl);
   if (cached) {
@@ -324,12 +323,12 @@ async function convertOfferUrl(
       marketplace: cached.marketplace,
       cachedAt: cached.timestamp,
     });
-    return {
+  return {
       convertedUrl: cached.convertedUrl,
       marketplace: cached.marketplace,
       success: cached.convertedUrl !== null,
-    };
-  }
+  };
+}
 
   try {
     const userIdMatch = instanceName.match(/^user-(\d+)$/);
@@ -358,12 +357,12 @@ async function convertOfferUrl(
 
     const { convertUrl } = await import('@omestre/converters');
     const result = await convertUrl(resolvedUrl);
-    return {
+  return {
       convertedUrl: result.affiliateUrl,
       marketplace: effectiveMarketplace,
       success: result.success,
       error: result.error,
-    };
+  };
   } catch (err) {
     log('warn', 'Falha ao converter URL', {
       url: resolvedUrl,
@@ -372,7 +371,7 @@ async function convertOfferUrl(
       error: String(err),
     });
     return { convertedUrl: null, marketplace: effectiveMarketplace, success: false, error: String(err) };
-  }
+}
 }
 
 async function convertShopeeForAffiliate(
@@ -392,13 +391,13 @@ async function convertShopeeForAffiliate(
       appId: creds.shopeeAppId,
       secret: creds.shopeeAppSecret,
     });
-    return {
+  return {
       convertedUrl: result.affiliateUrl,
       marketplace: 'shopee',
       success: result.success,
       error: result.error,
-    };
-  }
+  };
+}
 
   log('info', 'Sem credenciais Shopee específicas — usando fallback global', { userId });
   const instanceName = `user-${userId}`;
@@ -439,7 +438,7 @@ async function resolveMeliLaUrl(url: string): Promise<string> {
     }
   } catch {
     // mantém a URL original
-  }
+}
   return url;
 }
 
@@ -456,76 +455,82 @@ async function convertMlForAffiliate(
   const mlAffiliate = await mlRepo.findByPlatformUserId(userId);
 
   if (mlAffiliate?.melitat) {
-    // Resolve meli.la ANTES de tudo (link builder e fallback precisam de URL
-    // real de produto, não de slug curto)
+    // Resolve meli.la ANTES de tudo — o Link Builder só aceita URL real de
+    // produto. meli.la/XXX é o próprio link curto de afiliado do ML, então
+    // o redirect tipicamente leva para /social/<outro-afiliado>/lists — não
+    // para um produto único. Mesmo assim tentamos o createLink porque
+    // existem casos onde o redirect leva para uma página de produto real.
     const targetUrl = await resolveMeliLaUrl(url);
 
-    if (mlAffiliate.sessionCookies) {
-      const shortResult = await generateShortAffiliateLink(
-        targetUrl,
-        mlAffiliate.melitat,
-        mlAffiliate.sessionCookies,
-      );
-
-      if (shortResult.success && shortResult.shortUrl) {
-        return {
-          convertedUrl: shortResult.shortUrl,
-          marketplace: 'mercadolivre',
-          success: true,
-        };
-      }
-
-      // Link curto falhou (cookie expirado, "URL not allowed", erro de rede,
-      // etc). Notifica apenas se for problema de cookie — em TODOS os casos
-      // faz fallback para URL params (nunca bloqueia a oferta por causa do
-      // link curto, conforme o plano de arquitetura).
-      const isCookieError =
-        shortResult.error?.includes('HTTP 40') ||
-        shortResult.error?.includes('Cookies podem estar expirados');
-      if (isCookieError) {
-        const instanceName = `user-${userId}`;
-        processFailure(instanceName, 'cookie_expired', { marketplace: 'mercadolivre' }).catch(() => {});
-      } else {
-        log('info', 'Link curto ML indisponível — fallback para URL params', {
-          userId,
-          error: shortResult.error,
-        });
-      }
-    }
-
-    // Fallback: URL params (matt_word/meliid) — funciona para qualquer URL ML.
-    try {
-      const affiliateUrl = generateViaUrlParams(targetUrl, {
-        meliid: mlAffiliate.meliid ?? undefined,
-        melitat: mlAffiliate.melitat,
+    // Sem cookies OU cookies expirados (HTTP 40*) — não tenta fallback de
+    // URL params: anexar matt_word em cima de uma URL /social/<outro> deixa
+    // dois matt_word conflitantes (o do link original ganha, comissão vai
+    // para o afiliado errado). Bloqueia a oferta e notifica.
+    if (!mlAffiliate.sessionCookies) {
+      log('info', 'Afiliado ML sem cookies de sessão — bloqueando oferta', {
+        userId,
+        url: targetUrl,
       });
-
-      return {
-        convertedUrl: affiliateUrl,
-        marketplace: 'mercadolivre',
-        success: true,
-      };
-    } catch (err) {
       return {
         convertedUrl: null,
         marketplace: 'mercadolivre',
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: 'Sem cookies de sessão ML para usar o Link Builder',
       };
     }
-  }
 
-  log('info', 'Sem afiliado ML vinculado — usando fallback global', { userId });
+    const shortResult = await generateShortAffiliateLink(
+      targetUrl,
+      mlAffiliate.melitat,
+      mlAffiliate.sessionCookies,
+    );
+
+    if (shortResult.success && shortResult.shortUrl) {
+      return {
+        convertedUrl: shortResult.shortUrl,
+        marketplace: 'mercadolivre',
+        success: true,
+      };
+    }
+
+    // Link builder falhou — classifica o motivo.
+    const errorMsg = shortResult.error ?? 'erro desconhecido';
+    const isCookieError =
+      errorMsg.includes('HTTP 40') ||
+      errorMsg.includes('Cookies podem estar expirados') ||
+      errorMsg.toLowerCase().includes('unauthorized');
+
+    if (isCookieError) {
+      const instanceName = `user-${userId}`;
+      processFailure(instanceName, 'cookie_expired', { marketplace: 'mercadolivre' }).catch(() => {});
+    } else {
+      log('info', 'Link builder ML rejeitou a oferta — bloqueando', {
+        userId,
+        url: targetUrl,
+        error: errorMsg,
+      });
+    }
+
+    // Em QUALQUER falha do Link Builder, bloqueia a oferta para este
+    // targetGroup. Sem fallback de URL params — gera comissão para o
+    // afiliado errado e polui o espelho com links não-confiáveis.
+  return {
+    convertedUrl: null,
+    marketplace: 'mercadolivre',
+    success: false,
+      error: errorMsg,
+  };
+}
+
+  log('info', 'Afiliado ML sem tag (melitat) — bloqueando oferta', { userId });
   const instanceName = `user-${userId}`;
   processFailure(instanceName, 'ml_account_not_linked', { marketplace: 'mercadolivre' }).catch(() => {});
 
-  const { convertUrl } = await import('@omestre/converters');
-  const result = await convertUrl(url);
   return {
-    convertedUrl: result.affiliateUrl,
+    convertedUrl: null,
     marketplace: 'mercadolivre',
-    success: result.success,
-    error: result.error,
+    success: false,
+    error: 'Afiliado ML sem tag (melitat) configurada. Reimporte os cookies pela extensão Chrome.',
   };
 }
 
@@ -543,13 +548,13 @@ async function convertAmazonForAffiliate(
 
   if (creds?.amazonTrackingId) {
     const result = await convertAmazonUrlWithTrackingId(url, creds.amazonTrackingId);
-    return {
+  return {
       convertedUrl: result.affiliateUrl,
       marketplace: 'amazon',
       success: result.success,
       error: result.error,
-    };
-  }
+  };
+}
 
   log('info', 'Sem tracking ID Amazon específico — usando fallback global', { userId });
   const { convertUrl } = await import('@omestre/converters');
@@ -582,17 +587,17 @@ function buildTemplateMessage(
       result = result.slice(0, maxLen - 50) + '...';
     }
     return result;
-  }
+}
 
   let text = ctx.originalText;
   if (ctx.convertedUrl) {
     text = text.replace(ctx.originalUrl, ctx.convertedUrl);
-  }
+}
 
   const maxLen = 4000;
   if (text.length > maxLen) {
     text = text.slice(0, maxLen - 50) + '...';
-  }
+}
   return text;
 }
 
@@ -620,7 +625,7 @@ async function verifyAffiliateLink(
       error: String(err),
     });
     return { valid: true };
-  }
+}
 }
 
 async function verifyMercadoLivreLink(
@@ -632,7 +637,7 @@ async function verifyMercadoLivreLink(
     url = new URL(convertedUrl);
   } catch {
     return { valid: false, reason: 'URL convertida inválida para verificação ML' };
-  }
+}
 
   const params = url.searchParams;
   const urlMeliid = params.get('meliid');
@@ -641,7 +646,7 @@ async function verifyMercadoLivreLink(
 
   if (!urlMeliid && !urlMelitat && !urlMattWord) {
     return { valid: true };
-  }
+}
 
   const db = getDb();
   const affRows = await db
@@ -652,12 +657,12 @@ async function verifyMercadoLivreLink(
 
   if (!affRows[0]?.evolutionInstanceId) {
     return { valid: false, reason: 'Afiliado sem evolutionInstanceId' };
-  }
+}
 
   const userIdMatch = affRows[0].evolutionInstanceId.match(/^user-(\d+)$/);
   if (!userIdMatch) {
     return { valid: false, reason: 'evolutionInstanceId sem formato user-{userId}' };
-  }
+}
 
   const userId = parseInt(userIdMatch[1]!, 10);
   const mlRepo = new MlAffiliateRepository();
@@ -665,7 +670,7 @@ async function verifyMercadoLivreLink(
 
   if (!mlAffiliate) {
     return { valid: false, reason: 'URL com parâmetros ML mas afiliado não vinculado' };
-  }
+}
 
   if (urlMelitat && mlAffiliate.melitat) {
     if (urlMelitat !== mlAffiliate.melitat) {
@@ -676,7 +681,7 @@ async function verifyMercadoLivreLink(
     }
   } else if (urlMelitat && !mlAffiliate.melitat) {
     return { valid: false, reason: 'melitat presente na URL mas afiliado não possui melitat configurado' };
-  }
+}
 
   if (urlMattWord && mlAffiliate.melitat) {
     if (urlMattWord !== mlAffiliate.melitat) {
@@ -687,7 +692,7 @@ async function verifyMercadoLivreLink(
     }
   } else if (urlMattWord && !mlAffiliate.melitat) {
     return { valid: false, reason: 'matt_word presente na URL mas afiliado não possui melitat configurado' };
-  }
+}
 
   if (urlMeliid && mlAffiliate.meliid) {
     if (urlMeliid !== mlAffiliate.meliid) {
@@ -696,7 +701,7 @@ async function verifyMercadoLivreLink(
         reason: `meliid não corresponde ao afiliado: esperado ${mlAffiliate.meliid}, recebido ${urlMeliid}`,
       };
     }
-  }
+}
 
   return { valid: true };
 }
@@ -710,7 +715,7 @@ async function verifyAmazonLink(
     url = new URL(convertedUrl);
   } catch {
     return { valid: false, reason: 'URL convertida inválida para verificação Amazon' };
-  }
+}
 
   const urlTag = url.searchParams.get('tag');
   if (!urlTag) return { valid: true };
@@ -724,12 +729,12 @@ async function verifyAmazonLink(
 
   if (!affRows[0]?.evolutionInstanceId) {
     return { valid: false, reason: 'Afiliado sem evolutionInstanceId' };
-  }
+}
 
   const userIdMatch = affRows[0].evolutionInstanceId.match(/^user-(\d+)$/);
   if (!userIdMatch) {
     return { valid: false, reason: 'evolutionInstanceId sem formato user-{userId}' };
-  }
+}
 
   const userId = parseInt(userIdMatch[1]!, 10);
   const credsRepo = new UserCredentialsRepository();
@@ -742,7 +747,7 @@ async function verifyAmazonLink(
         reason: `Amazon tag não corresponde ao afiliado: esperado ${creds.amazonTrackingId}, recebido ${urlTag}`,
       };
     }
-  }
+}
 
   return { valid: true };
 }
@@ -778,7 +783,7 @@ async function logReflectedOffer(params: {
       error: String(err),
       ...params,
     });
-  }
+}
 }
 
 // ─── Pipeline Principal ──────────────────────────────────────────────
@@ -811,7 +816,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     log('info', 'Mensagem sem URL de marketplace — ignorada', { messageId });
     incrementCounter('pipeline_messages_blocked_total', { reason: 'no_url' });
     return true;
-  }
+}
 
   const productLinks = extractedLinks.filter((l) => l.kind === 'product');
   const couponLinks = extractedLinks.filter((l) => l.kind === 'coupon');
@@ -824,7 +829,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     });
     incrementCounter('pipeline_messages_blocked_total', { reason: 'multiple_product_links' });
     return true;
-  }
+}
 
   // ── Resolução de shortlinks Shopee (s.shopee.com.br) ──
   // Shortlinks Shopee são marcados como 'coupon' no classificador (não
@@ -863,7 +868,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
         shortlink: link.url,
       });
     }
-  }
+}
 
   // Se promovemos um shortlink, ele entra na lista de produtos
   const finalProductLinks: ExtractedLink[] = promotedShopeeUrl
@@ -887,7 +892,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     });
     incrementCounter('pipeline_messages_blocked_total', { reason: 'shopee_shortlink_only' });
     return true;
-  }
+}
 
   const selectedLink = finalProductLinks[0] ?? extractedLinks.find((l) => l.kind !== 'coupon');
   const originalUrl = selectedLink?.url ?? null;
@@ -896,7 +901,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     log('info', 'Mensagem só contém links de cupom — ignorada', { messageId, couponCount: couponLinks.length });
     incrementCounter('pipeline_messages_blocked_total', { reason: 'coupon_only' });
     return true;
-  }
+}
 
   const marketplace = detectMarketplace(originalUrl);
   log('info', 'URL de marketplace detectada', {
@@ -919,7 +924,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
         return true;
       }
     }
-  }
+}
 
   // ── 3. Whitelist ──
   const whitelistTerms = await measureStep(steps.whitelist, async () => loadWhitelist());
@@ -931,7 +936,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
       incrementCounter('pipeline_messages_blocked_total', { reason: 'global_whitelist' });
       return true;
     }
-  }
+}
 
   // ── 4. Dedup 24h ── (via sourceGroup 1:N, usa o primeiro affiliate como proxy)
   // O dedup real é feito pelo send-dedup (Ingestor) e send-completed (Dispatcher)
@@ -940,7 +945,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   if (sourceConfigs.length === 0) {
     log('info', 'Nenhum afiliado configurado para este sourceGroup', { sourceGroupJid });
     return true;
-  }
+}
 
   // ── 5. Resolve redirect ──
   const resolvedUrl = await measureStep(steps.resolveRedirect, () => resolveRedirectUrl(originalUrl));
@@ -954,7 +959,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   if (!r) {
     log('error', 'Redis indisponível — não é possível publicar na Queue B');
     return false;
-  }
+}
 
   const sendEvents: SendEvent[] = [];
 
@@ -1053,7 +1058,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   let imageUrl = '';
   if (sendEvents.length > 0) {
     imageUrl = await measureStep(steps.imageFetch, () => fetchProductImage(marketplace, resolvedUrl)) || '';
-  }
+}
   if (imageUrl) {
     incrementCounter('pipeline_image_fetch_total', { marketplace, result: 'found' });
   } else {
@@ -1064,12 +1069,12 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     });
     incrementCounter('pipeline_image_fetch_total', { marketplace, result: 'not_found' });
     incrementCounter('pipeline_image_missing_fallback_total', { marketplace });
-  }
+}
 
   // Aplica a imagem (ou string vazia) em todos os SendEvents gerados
   for (const evt of sendEvents) {
     evt.imageUrl = imageUrl;
-  }
+}
 
   // ── 8. Publica na Queue B ──
   if (sendEvents.length > 0) {
@@ -1089,7 +1094,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
       count: sendEvents.length,
       mirrorIds: sendEvents.map((e) => e.mirrorId),
     });
-  }
+}
 
   // ── 9. ACK na Queue A ──
   const totalDuration = performance.now() - totalStart;
