@@ -159,7 +159,6 @@ ML_REFRESH_TOKEN=seu_refresh_token
 ML_MELIID=seu_meliid
 ML_MELITAT=om895584
 ML_AFFILIATE_TAG=matt:USERNAME:TOOLID
-ML_COOKIES="session_id=xxx; ..."
 
 # API
 API_PORT=3000

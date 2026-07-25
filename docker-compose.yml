@@ -21,7 +21,7 @@ services:
       POSTGRES_DATABASE: omestre_db
       POSTGRES_SCHEMA: omestre
       EVOLUTION_API_URL: "http://evolution-api:8080"
-      WORKER_METRICS_URL: "http://worker:9092"
+      WORKER_METRICS_URL: "http://ingestor:9092"
       FRONTEND_URL: "${FRONTEND_URL:-http://localhost:5441}"
       ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
       METRICS_API_KEY: "${METRICS_API_KEY}"
@@ -51,12 +51,12 @@ services:
       - omestre-prod-net
       - omestre-infra-net
 
-  # ─── Worker ───────────────────────────────────────────────────────────
-  worker:
+  # ─── Ingestor (v2) ───────────────────────────────────────────────────
+  ingestor:
     build:
       context: .
-      dockerfile: apps/worker/Dockerfile
-    container_name: omestre_worker
+      dockerfile: apps/ingestor/Dockerfile
+    container_name: omestre_ingestor
     restart: always
     depends_on:
       api:
@@ -71,10 +71,48 @@ services:
       POSTGRES_DATABASE: omestre_db
       POSTGRES_SCHEMA: omestre
       EVOLUTION_API_URL: "http://evolution-api:8080"
+      REDIS_URL: "redis://redis:6379"
       METRICS_API_KEY: "${METRICS_API_KEY}"
       ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      BLACKLIST_PATH: /app/blacklist.json
+      WHITELIST_PATH: /app/whitelist.json
+      METRICS_PORT: "9092"
     healthcheck:
       test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9092/health');process.exit(r.ok?0:1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+
+  # ─── Dispatcher (v2) ────────────────────────────────────────────────
+  dispatcher:
+    build:
+      context: .
+      dockerfile: apps/dispatcher/Dockerfile
+    container_name: omestre_dispatcher
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-evolution_pass}"
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: "http://evolution-api:8080"
+      REDIS_URL: "redis://redis:6379"
+      METRICS_API_KEY: "${METRICS_API_KEY}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      METRICS_PORT: "9093"
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9093/health');process.exit(r.ok?0:1)"]
       interval: 15s
       timeout: 10s
       retries: 5

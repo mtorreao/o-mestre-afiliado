@@ -1,10 +1,13 @@
 /**
  * Mercado Livre Affiliate Link Converter
  *
- * Suporta três estratégias (em ordem de prioridade):
+ * Suporta duas estratégias (em ordem de prioridade):
  * 1. API OFICIAL - OAuth 2.0 (alto volume)
- * 2. COOKIES - Simulação do Link Builder (médio volume)
- * 3. FALLBACK - Parâmetros na URL (qualquer volume)
+ * 2. FALLBACK - Parâmetros na URL (qualquer volume)
+ *
+ * Cookies de sessão (quando usados) são SEMPRE atrelados ao usuário
+ * (extensão Chrome → banco via MlAffiliateRepository.session_cookies),
+ * nunca lidos de variável de ambiente.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -50,7 +53,8 @@ export function getCredentials(): MercadoLivreCredentials {
     meliid: process.env.ML_MELIID,
     melitat: process.env.ML_MELITAT,
     simpleTag: process.env.ML_AFFILIATE_TAG,
-    cookies: process.env.ML_COOKIES,
+    // cookies: SEMPRE vem do banco (user-tied via extensão Chrome)
+    // Nunca ler de variável de ambiente
   };
 }
 

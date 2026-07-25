@@ -1,10 +1,11 @@
 /**
- * Testes E2E — Fluxo de Espelhamento de Mensagens (Mirror Pipeline)
+ * Testes E2E — Fluxo de Espelhamento de Mensagens (Mirror Pipeline v2)
  *
  * Este teste usa:
  *   - api-e2e-mirror (porta 15447) — API que aponta para o simulador
  *   - whatsapp-simulator-e2e (porta 15446) — simula a Evolution API
- *   - worker-e2e-mirror — processa as mensagens do Redis PubSub
+ *   - ingestor-e2e-mirror — pipeline pesado (Queue A → Queue B)
+ *   - dispatcher-e2e-mirror — envio de mensagens (Queue B → Evolution)
  *
  * O simulador armazena mensagens "enviadas" e as expõe em GET /__admin/messages.
  * O teste verifica se, após enviar um webhook com uma oferta, a mensagem
@@ -303,9 +304,9 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     });
     expect(webhookRes.status).toBe(200);
 
-    // ── 3. Aguarda o worker processar e enviar para o simulador ────
-    // O worker vai: detectar link → converter → montar template →
-    // enviar para grupo 3 via Evolution API (simulador)
+    // ── 3. Aguarda o ingestor+dispatcher processarem e enviar para o simulador ────
+    // O ingestor vai: detectar link → converter → montar template → publicar na Queue B
+    // O dispatcher vai: ler da Queue B → enviar para grupo 3 via Evolution API (simulador)
     const { found, messages } = await waitForMessageInSimulator(
       'https://shopee.com.br/produto-E2E-Test-123',
       20000,
@@ -356,7 +357,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // Aguarda um momento e verifica que NADA foi enviado
     await new Promise((r) => setTimeout(r, 3000));
     const messages = await getSimulatorMessages();
-    // Nenhuma mensagem do worker deve ter sido enviada
+    // Nenhuma mensagem do ingestor/dispatcher deve ter sido enviada
     const mirrorMessages = messages.filter(
       (m) => m.instanceName === 'user-1' && m.number === '120363000000000003@g.us',
     );

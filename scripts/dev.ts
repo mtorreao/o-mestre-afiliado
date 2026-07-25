@@ -436,8 +436,8 @@ async function cleanup(exitCode: number): Promise<void> {
 
   console.log('\n⏳ Parando processos...');
 
-  // 1. Mata todos os filhos (ordem inversa: web → worker → api → tunnel)
-  const order = ['web', 'worker', 'tunnel', 'api'];
+  // 1. Mata todos os filhos (ordem inversa: web → dispatcher/ingestor → api → tunnel)
+  const order = ['web', 'dispatcher', 'ingestor', 'tunnel', 'api'];
   for (const label of order) {
     const proc = processes.get(label);
     if (proc && !proc.killed) {
@@ -606,11 +606,14 @@ async function main(): Promise<void> {
   });
 
   if (!SKIP_WORKER) {
-    spawnPrefixed('worker', ['bun', '--watch', 'apps/worker/src/index.ts'], {
+    spawnPrefixed('ingestor', ['bun', '--watch', 'apps/ingestor/src/index.ts'], {
+      cwd: REPO_ROOT,
+    });
+    spawnPrefixed('dispatcher', ['bun', '--watch', 'apps/dispatcher/src/index.ts'], {
       cwd: REPO_ROOT,
     });
   } else {
-    console.log('  [worker] SKIP_WORKER=1, não subiu');
+    console.log('  [ingestor/dispatcher] SKIP_WORKER=1, não subiram');
   }
 
   spawnPrefixed('web', ['bun', 'run', 'dev', '--port', String(WEB_PORT), '--host', HOST], {

@@ -31,9 +31,8 @@ CAMINHOS DE INTEGRAÇÃO (em ordem de prioridade):
      .env: ML_CLIENT_ID + ML_CLIENT_SECRET + ML_REFRESH_TOKEN
      Endpoint: POST https://api.mercadolivre.com/affiliates/link-builder
 
-  2) COOKIES (simulação do Link Builder) — médio volume
-     .env: ML_COOKIES="session_id=xxx; ..."
-     Acessa: https://www.mercadolivre.com.br/afiliados/link-builder
+  2) FALLBACK (parâmetros na URL) — qualquer volume
+     .env: ML_AFFILIATE_TAG (ou ML_MELIID + ML_MELITAT)
 
 EXEMPLOS:
   bun run mercadolivre "https://www.mercadolivre.com.br/produto-X/p/MLB123"
@@ -145,7 +144,7 @@ async function main() {
     console.error('');
     console.error('   Configure ao menos uma das estratégias no .env:');
     console.error('   1) ML_CLIENT_ID + ML_CLIENT_SECRET (± ML_REFRESH_TOKEN)');
-    console.error('   2) ML_COOKIES');
+    console.error('   2) ML_AFFILIATE_TAG (ou ML_MELIID + ML_MELITAT)');
     process.exit(1);
   }
 }

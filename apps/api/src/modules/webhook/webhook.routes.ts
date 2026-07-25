@@ -15,9 +15,13 @@
 
 import { Elysia } from 'elysia';
 import { WhatsAppInstanceRepository } from '@omestre/db';
-import { MIRROR_STREAM } from '@omestre/shared';
-import type { MirrorMessageEvent } from '@omestre/shared';
-import { streamAdd, cacheDel } from '../../services/redis.ts';
+import {
+  MIRROR_RAW_STREAM,
+  MIRROR_WEBHOOK_DEDUP_PREFIX,
+  MIRROR_WEBHOOK_DEDUP_TTL,
+} from '@omestre/shared';
+import type { RawMessageEvent } from '@omestre/shared';
+import { streamAdd, cacheGet, cacheSet, cacheDel } from '../../services/redis.ts';
 import { getSourceGroupInfo, cacheSourceGroup } from '../../services/group-cache.ts';
 import { fetchGroupInfo } from '../../services/evolution.ts';
 
@@ -125,8 +129,11 @@ async function handleConnectionUpdate(
  *
  * Para cada mensagem de grupo (remoteJid terminando em @g.us) que
  * NÃO foi enviada pelo próprio bot (fromMe=false), extrai o texto,
- * identifica qual afiliado tem aquele grupo como sourceGroup e
- * publica no Redis PubSub para o worker processar.
+ * valida contra o cache Redis de sourceGroups e publica um RawMessageEvent
+ * CRU (sem afiliado resolvido) na Queue A (omestre:mirror:raw).
+ *
+ * O dedup de webhook ocorre AQUI (global, não por instância) para evitar
+ * que múltiplas instâncias no mesmo grupo_publiquem RawMessageEvents duplicados.
  */
 async function handleMessagesUpsert(
   instanceName: string,
@@ -159,7 +166,6 @@ async function handleMessagesUpsert(
     }
 
     // Busca no cache Redis se este grupo é um sourceGroup configurado
-    // (sem consulta ao PostgreSQL — apenas O(1) no Redis)
     const info = await getSourceGroupInfo(remoteJid);
     if (!info) {
       ignored++;
@@ -174,7 +180,6 @@ async function handleMessagesUpsert(
         const groupInfo = await fetchGroupInfo(instanceName, remoteJid);
         if (groupInfo?.name) {
           resolvedGroupName = groupInfo.name;
-          // Atualiza o cache com o nome encontrado
           await cacheSourceGroup(remoteJid, affiliateId, resolvedGroupName, mirrorId);
         }
       } catch {
@@ -182,30 +187,42 @@ async function handleMessagesUpsert(
       }
     }
 
-    // Publica no Redis para o worker processar
-    const event: MirrorMessageEvent = {
-      messageId: msg.key.id,
+    // ── Dedup de webhook (global, 30s) ──
+    // Evita RawMessageEvent duplicado quando múltiplas instâncias
+    // (no mesmo grupo fonte) disparam o webhook para a mesma mensagem.
+    const messageId = msg.key.id;
+    const dedupKey = `${MIRROR_WEBHOOK_DEDUP_PREFIX}${remoteJid}:${messageId}`;
+    const alreadySeen = await cacheGet<string>(dedupKey);
+    if (alreadySeen) {
+      console.log(
+        `[webhook] Mensagem ${messageId} já publicada na Queue A (dedup) — ignorada (instância=${instanceName})`,
+      );
+      ignored++;
+      continue;
+    }
+    await cacheSet(dedupKey, '1', MIRROR_WEBHOOK_DEDUP_TTL);
+
+    // Publica RawMessageEvent CRU na Queue A — sem affiliateId/mirrorId
+    const event: RawMessageEvent = {
+      messageId,
       instanceName,
       sourceGroupJid: remoteJid,
       sourceGroupName: resolvedGroupName,
-      affiliateId,
-      mirrorId, // propagado do cache (pode ser undefined)
       text,
       timestamp: msg.messageTimestamp ?? Math.floor(Date.now() / 1000),
     };
 
-    const id = await streamAdd(MIRROR_STREAM, event);
+    const id = await streamAdd(MIRROR_RAW_STREAM, event);
     if (id) {
       published++;
       console.log(
-        `[webhook] Mensagem ${msg.key.id} adicionada ao stream ` +
-        `(affiliateId=${affiliateId}${mirrorId ? `, mirrorId=${mirrorId}` : ''}, grupo="${resolvedGroupName}", instância=${instanceName}, streamId=${id})`,
+        `[webhook] RawMessageEvent ${messageId} publicado na Queue A ` +
+          `(grupo="${resolvedGroupName}", instância=${instanceName}, streamId=${id})`,
       );
     } else {
-      // Se Redis não está disponível, loga como ignorado
       console.warn(
-        `[webhook] Redis indisponível — mensagem ${msg.key.id} não publicada ` +
-        `(affiliateId=${affiliateId}, grupo="${resolvedGroupName}", instância=${instanceName})`,
+        `[webhook] Redis indisponível — mensagem ${messageId} não publicada ` +
+          `(grupo="${resolvedGroupName}", instância=${instanceName})`,
       );
       ignored++;
     }
