@@ -32,7 +32,7 @@ import {
 import {
   convertShopeeUrlWithCredentials,
   generateShortAffiliateLink,
-  convertAmazonUrlWithTrackingId,
+  convertAmazonUrlWithAffiliate,
 } from '@omestre/converters';
 import {
   getDb,
@@ -41,6 +41,7 @@ import {
   reflectedOffers,
   UserCredentialsRepository,
   MlAffiliateRepository,
+  AmazonAffiliateRepository,
   MirrorRepository,
 } from '@omestre/db';
 import { eq, and, gte } from 'drizzle-orm';
@@ -543,20 +544,23 @@ async function convertAmazonForAffiliate(
   success: boolean;
   error?: string;
 }> {
-  const credsRepo = new UserCredentialsRepository();
-  const creds = await credsRepo.findByUserId(userId);
+  const amazonRepo = new AmazonAffiliateRepository();
+  const amazonAffiliate = await amazonRepo.findByUserId(userId);
 
-  if (creds?.amazonTrackingId) {
-    const result = await convertAmazonUrlWithTrackingId(url, creds.amazonTrackingId);
-  return {
+  if (amazonAffiliate && (amazonAffiliate.trackingIds ?? []).length > 0) {
+    const result = await convertAmazonUrlWithAffiliate(
+      url,
+      amazonAffiliate.trackingIds ?? [],
+    );
+    return {
       convertedUrl: result.affiliateUrl,
       marketplace: 'amazon',
       success: result.success,
       error: result.error,
-  };
-}
+    };
+  }
 
-  log('info', 'Sem tracking ID Amazon específico — usando fallback global', { userId });
+  log('info', 'Afiliado Amazon sem tracking IDs — usando fallback global', { userId });
   const { convertUrl } = await import('@omestre/converters');
   const result = await convertUrl(url);
   return {
@@ -737,17 +741,20 @@ async function verifyAmazonLink(
 }
 
   const userId = parseInt(userIdMatch[1]!, 10);
-  const credsRepo = new UserCredentialsRepository();
-  const creds = await credsRepo.findByUserId(userId);
+  const amazonRepo = new AmazonAffiliateRepository();
+  const amazonAffiliate = await amazonRepo.findByUserId(userId);
 
-  if (creds?.amazonTrackingId) {
-    if (urlTag !== creds.amazonTrackingId) {
+  if (amazonAffiliate && (amazonAffiliate.trackingIds ?? []).length > 0) {
+    const activeTags = (amazonAffiliate.trackingIds ?? [])
+      .filter((t) => t.active)
+      .map((t) => t.tag);
+    if (urlTag && !activeTags.includes(urlTag)) {
       return {
         valid: false,
-        reason: `Amazon tag não corresponde ao afiliado: esperado ${creds.amazonTrackingId}, recebido ${urlTag}`,
+        reason: `Amazon tag não corresponde ao afiliado: esperado um de [${activeTags.join(', ')}], recebido ${urlTag}`,
       };
     }
-}
+  }
 
   return { valid: true };
 }

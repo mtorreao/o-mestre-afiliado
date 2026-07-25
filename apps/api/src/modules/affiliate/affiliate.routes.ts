@@ -1,7 +1,7 @@
 import { Elysia } from 'elysia';
-import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, MirrorLogRepository } from '@omestre/db';
+import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, MirrorLogRepository, AmazonAffiliateRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
-import { convertShopeeUrlWithCredentials, convertAmazonUrlWithTrackingId } from '@omestre/converters';
+import { convertShopeeUrlWithCredentials, convertAmazonUrlWithAffiliate } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
 import { detectMarketplace, resolvePlaceholders, processConditionalsHuman, buildEvalContext, findUnknownPlaceholders } from '@omestre/shared';
 import type { ConversionResult, TemplateContext } from '@omestre/shared';
@@ -12,6 +12,7 @@ import { fetchGroupMessages } from '../../services/evolution.ts';
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
 const mlRepo = new MlAffiliateRepository();
+const amazonRepo = new AmazonAffiliateRepository();
 const mirrorLogRepo = new MirrorLogRepository();
 
 export const affiliateRoutes = new Elysia()
@@ -32,6 +33,7 @@ export const affiliateRoutes = new Elysia()
 
     const creds = await credentialsRepo.findByUserId(auth.userId);
     const mlAffiliate = await mlRepo.findByPlatformUserId(auth.userId);
+    const amazonAffiliate = await amazonRepo.findByUserId(auth.userId);
 
     const mlInfo = mlAffiliate
       ? {
@@ -45,6 +47,16 @@ export const affiliateRoutes = new Elysia()
         }
       : { connected: false };
 
+    const amazonInfo = amazonAffiliate
+      ? {
+          connected: true,
+          nickname: amazonAffiliate.nickname,
+          active: amazonAffiliate.active,
+          trackingIds: amazonAffiliate.trackingIds ?? [],
+          activeTrackingCount: (amazonAffiliate.trackingIds ?? []).filter((t) => t.active).length,
+        }
+      : { connected: false };
+
     return {
       success: true,
       profile: {
@@ -53,9 +65,15 @@ export const affiliateRoutes = new Elysia()
         name: user.name,
         shopeeConfigured: !!(creds?.shopeeAppId),
         shopeeAppId: creds?.shopeeAppId || null,
-        amazonConfigured: !!(creds?.amazonTrackingId),
-        amazonTrackingId: creds?.amazonTrackingId || null,
+        // Mantido para compat (campo legado em user_credentials)
+        amazonConfigured: !!amazonAffiliate,
+        amazonTrackingId: amazonAffiliate
+          ? (amazonAffiliate.trackingIds?.find((t) => t.isDefault)?.tag ??
+              amazonAffiliate.trackingIds?.[0]?.tag ??
+              null)
+          : null,
         mercadoLivre: mlInfo,
+        amazon: amazonInfo,
         // Configuração de notificações proativas
         notificationConfig: {
           channel: null,
@@ -116,7 +134,7 @@ export const affiliateRoutes = new Elysia()
     }
 
     if (marketplace === 'amazon') {
-      return handleAmazonConversion(auth.userId, url);
+      return handleAmazonConversion(auth.userId, url, (body as { tag?: string }).tag);
     }
 
     set.status = 400;
@@ -350,24 +368,29 @@ async function handleMlConversion(
 }
 
 /**
- * Converte URL da Amazon usando o tracking ID do usuário.
+ * Converte URL da Amazon usando o tracking ID do afiliado.
+ * Multi-tracking: usa o default (ou primeiro ativo) por padrão.
+ * Aceita `tag` opcional para forçar um tracking específico.
  */
 async function handleAmazonConversion(
   userId: number,
   url: string,
+  preferredTag?: string,
 ): Promise<ConversionResult> {
-  const creds = await credentialsRepo.findByUserId(userId);
+  const amazonAffiliate = await amazonRepo.findByUserId(userId);
 
-  if (!creds?.amazonTrackingId) {
+  if (!amazonAffiliate || (amazonAffiliate.trackingIds ?? []).length === 0) {
     return {
       success: false,
       originalUrl: url,
       affiliateUrl: null,
       marketplace: 'amazon',
       method: 'unknown',
-      error: 'Amazon tracking ID não configurado. Configure no perfil.',
+      error: 'Afiliado Amazon sem tracking IDs configurados. Configure no painel.',
     };
   }
 
-  return convertAmazonUrlWithTrackingId(url, creds.amazonTrackingId);
+  return convertAmazonUrlWithAffiliate(url, amazonAffiliate.trackingIds ?? [], {
+    preferredTag: preferredTag ?? null,
+  });
 }

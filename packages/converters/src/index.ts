@@ -36,7 +36,9 @@ export {
   buildAffiliateUrl,
   convertAmazonUrl,
   convertAmazonUrlWithTrackingId,
+  convertAmazonUrlWithAffiliate,
 } from './amazon.ts';
+export type { ConvertAmazonMultiOptions } from './amazon.ts';
 
 /**
  * Converte qualquer URL suportada em link de afiliado.
