@@ -57,6 +57,8 @@ export interface SourceGroupConfig {
   affiliateId: number;
   mirrorId: number;
   instanceName: string;
+  /** Nome do source group (opcional — preenchido pela Evolution API no webhook) */
+  groupName?: string;
   targetGroupJid: string;
   targetGroupName: string;
   messageTemplate: string | null;

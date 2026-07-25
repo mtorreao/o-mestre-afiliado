@@ -45,6 +45,12 @@ interface WebhookMessage {
   message?: {
     conversation?: string;
     extendedTextMessage?: { text?: string };
+    // Mídia com caption no primeiro nível (Evolution v2 envia imageMessage
+    // diretamente para mensagens de imagem sem ephemeral wrapper)
+    imageMessage?: { caption?: string };
+    videoMessage?: { caption?: string };
+    documentMessage?: { caption?: string };
+    audioMessage?: { caption?: string };
     ephemeralMessage?: {
       message?: {
         imageMessage?: { caption?: string };
@@ -204,13 +210,13 @@ async function handleMessagesUpsert(
 
     // Publica RawMessageEvent CRU na Queue A — sem affiliateId/mirrorId
     const event: RawMessageEvent = {
-      messageId,
-      instanceName,
-      sourceGroupJid: remoteJid,
-      sourceGroupName: resolvedGroupName,
-      text,
-      timestamp: msg.messageTimestamp ?? Math.floor(Date.now() / 1000),
-    };
+          messageId,
+          instanceName,
+          sourceGroupJid: remoteJid,
+          sourceGroupName: resolvedGroupName ?? '',
+          text,
+          timestamp: msg.messageTimestamp ?? Math.floor(Date.now() / 1000),
+        };
 
     const id = await streamAdd(MIRROR_RAW_STREAM, event);
     if (id) {
