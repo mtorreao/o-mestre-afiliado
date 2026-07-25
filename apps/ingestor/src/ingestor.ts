@@ -48,7 +48,7 @@ import { eq, and, gte } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'fs';
-import { resolveRedirectUrl } from './resolve-redirect.ts';
+import { resolveRedirectUrl, resolveMeliRedirect, isMeliProductUrl } from './resolve-redirect.ts';
 import { getCachedConversion, setCachedConversion } from './conversion-cache.ts';
 import { fetchProductImage } from './product-image.ts';
 import {
@@ -416,32 +416,13 @@ async function convertShopeeForAffiliate(
 
 /**
  * Resolve um link curto meli.la/XXX para a URL de produto real do ML.
- * meli.la é um redirect 301/302 do Mercado Livre — segue o redirect
- * para obter a URL final (ex: https://www.mercadolivre.com.br/...)
- * que é o que a API do Link Builder aceita.
+ *
+ * IMPORTANTE: muitos meli.la escondem PERFIS SOCIAIS ou LISTAS de outros
+ * afiliados (ex: /social/om895584) — esses NÃO são produtos elegíveis e
+ * o Link Builder rejeita com erro 111. Use `resolveMeliRedirect` (em
+ * ./resolve-redirect.ts) que já trata isso: segue o redirect, faz strip
+ * de params de tracking (matt_word/matt_tool/ref) e retorna isProduct.
  */
-async function resolveMeliLaUrl(url: string): Promise<string> {
-  if (!/meli\.la\//i.test(url)) return url;
-
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-      signal: AbortSignal.timeout(5_000),
-    });
-    const finalUrl = res.url || url;
-    // Só aceita o redirect se sair do domínio meli.la
-    if (finalUrl && finalUrl !== url && /mercadolivre\.com\.br/i.test(finalUrl)) {
-      return finalUrl;
-    }
-  } catch {
-    // mantém a URL original
-}
-  return url;
-}
 
 async function convertMlForAffiliate(
   url: string,
@@ -461,7 +442,47 @@ async function convertMlForAffiliate(
     // o redirect tipicamente leva para /social/<outro-afiliado>/lists — não
     // para um produto único. Mesmo assim tentamos o createLink porque
     // existem casos onde o redirect leva para uma página de produto real.
-    const targetUrl = await resolveMeliLaUrl(url);
+    //
+    // `resolveMeliRedirect` já:
+    //  - segue o redirect
+    //  - strip de params de tracking do afiliado original (matt_word/matt_tool/ref)
+    //  - detecta se URL final é /p/MLB<id> (produto) ou /social/... (perfil/lista)
+    const resolved = await resolveMeliRedirect(url);
+    const isProductFromRedirect = /meli\.la/i.test(url);
+    const isProduct = isProductFromRedirect
+      ? resolved.isProduct
+      : isMeliProductUrl(resolved.url);
+    const targetUrl = resolved.url;
+
+    // Bloqueia oferta se a URL (meli.la OU direta ML) não leva a uma página
+    // de PRODUTO. Perfis sociais, listas, cupons, etc. não são elegíveis e o
+    // Link Builder rejeitaria (erro 111). Logamos o motivo para debug futuro.
+    if (!isProduct) {
+      log('info', 'meli.la não leva a produto — bloqueando oferta', {
+        userId,
+        originalUrl: url,
+        resolvedUrl: targetUrl,
+        reason: resolved.reason ?? 'not_product_url',
+        droppedParams: resolved.droppedParams ?? [],
+      });
+      return {
+        convertedUrl: null,
+        marketplace: 'mercadolivre',
+        success: false,
+        error: `meli.la não redireciona para produto: ${resolved.reason ?? 'not_product_url'}`,
+      };
+    }
+
+    // Log info quando houve strip de params de tracking (indicador de que
+    // estava vindo com tracking do afiliado original)
+    if (resolved.droppedParams && resolved.droppedParams.length > 0) {
+      log('info', 'meli.la: removidos params de tracking de outro afiliado', {
+        userId,
+        originalUrl: url,
+        canonicalUrl: targetUrl,
+        droppedParams: resolved.droppedParams,
+      });
+    }
 
     // Sem cookies OU cookies expirados (HTTP 40*) — não tenta fallback de
     // URL params: anexar matt_word em cima de uma URL /social/<outro> deixa

@@ -100,7 +100,10 @@ const app = new Elysia()
       return { error: true, message: `Endpoint não encontrado: ${error}` };
     }
     set.status = 500;
-    return { error: true, message: error?.message ?? 'Erro interno' };
+    return {
+      error: true,
+      message: error instanceof Error ? error.message : 'Erro interno',
+    };
   })
 
   // ═══════════════════════════════════════════════════════════════════════

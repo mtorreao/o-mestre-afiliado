@@ -17,6 +17,11 @@ import {
   authPut,
 } from './helpers.ts';
 
+type TemplateValidationResponse = Record<string, unknown> & {
+  success: boolean;
+  conditionalErrors: string[];
+};
+
 test.describe('Template API', () => {
   let token: string;
 
@@ -55,7 +60,7 @@ test.describe('Template API', () => {
   // ─── POST /api/affiliate/validate-template ───────────────────────────
 
   test('4. POST /api/affiliate/validate-template — template válido', async () => {
-    const { status, body } = await authPost(
+    const { status, body } = await authPost<TemplateValidationResponse>(
       '/api/affiliate/validate-template',
       token,
       { template: '{texto_original}' },
@@ -69,7 +74,7 @@ test.describe('Template API', () => {
   });
 
   test('5. POST /api/affiliate/validate-template — placeholders desconhecidos', async () => {
-    const { status, body } = await authPost(
+    const { status, body } = await authPost<TemplateValidationResponse>(
       '/api/affiliate/validate-template',
       token,
       { template: '{texto_original} {placeholder_invalido} {outro_errado}' },
@@ -82,7 +87,7 @@ test.describe('Template API', () => {
   });
 
   test('6. POST /api/affiliate/validate-template — detecta condicionais', async () => {
-    const { status, body } = await authPost(
+    const { status, body } = await authPost<TemplateValidationResponse>(
       '/api/affiliate/validate-template',
       token,
       { template: '{? marketplace = shopee}Shopee{/}' },
@@ -94,7 +99,7 @@ test.describe('Template API', () => {
   });
 
   test('7. POST /api/affiliate/validate-template — bloco condicional desbalanceado', async () => {
-    const { status, body } = await authPost(
+    const { status, body } = await authPost<TemplateValidationResponse>(
       '/api/affiliate/validate-template',
       token,
       { template: '{? marketplace = shopee}Shopee' },
@@ -107,7 +112,7 @@ test.describe('Template API', () => {
   });
 
   test('8. POST /api/affiliate/validate-template — template vazio', async () => {
-    const { status, body } = await authPost(
+    const { status, body } = await authPost<TemplateValidationResponse>(
       '/api/affiliate/validate-template',
       token,
       { template: '' },
@@ -268,7 +273,7 @@ test.describe('Template API', () => {
   });
 
   test('18. POST /api/affiliate/validate-template — detecta {se} balanceado', async () => {
-    const { status, body } = await authPost(
+    const { status, body } = await authPost<TemplateValidationResponse>(
       '/api/affiliate/validate-template',
       token,
       { template: "{se marketplace for igual a 'shopee'}🛒{fim}" },
@@ -280,7 +285,7 @@ test.describe('Template API', () => {
   });
 
   test('19. POST /api/affiliate/validate-template — detecta {se} desbalanceado', async () => {
-    const { status, body } = await authPost(
+    const { status, body } = await authPost<TemplateValidationResponse>(
       '/api/affiliate/validate-template',
       token,
       { template: "{se marketplace for igual a 'shopee'}🛒" },

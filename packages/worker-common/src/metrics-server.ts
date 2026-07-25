@@ -220,6 +220,7 @@ export function getMetrics(): string {
 let startTime = Date.now();
 let stepTrackers: StepTrackers = {};
 let statusOverrides: Record<string, unknown> = {};
+let queueSizeProvider: (() => Promise<number | null>) | null = null;
 
 export function registerStepTrackers(trackers: StepTrackers): void {
   stepTrackers = trackers;
@@ -227,6 +228,15 @@ export function registerStepTrackers(trackers: StepTrackers): void {
 
 export function setStatusMeta(meta: Record<string, unknown>): void {
   statusOverrides = { ...statusOverrides, ...meta };
+}
+
+/**
+ * Registra um provider que retorna a profundidade da fila (XLEN do stream).
+ * Chamado sob demanda no /status — o provider deve tratar indisponibilidade
+ * retornando null.
+ */
+export function setQueueSizeProvider(provider: () => Promise<number | null>): void {
+  queueSizeProvider = provider;
 }
 
 interface TrackedError {
@@ -288,6 +298,15 @@ export async function getStatusResponse(
     // DLQ indisponível
   }
 
+  let queueSize: number | null = (statusOverrides.queueSize as number) ?? null;
+  if (queueSizeProvider) {
+    try {
+      queueSize = await queueSizeProvider();
+    } catch {
+      // provider indisponível — mantém override/null
+    }
+  }
+
   const stepDurations: Record<string, { avg: number; p50: number; p99: number; count: number }> = {};
   for (const [name, tracker] of Object.entries(stepTrackers)) {
     stepDurations[name] = tracker.snapshot();
@@ -312,20 +331,20 @@ export async function getStatusResponse(
   }
 
   return {
+    ...statusOverrides,
     service: serviceName,
     status: 'healthy',
     uptime: uptimeFormatted,
     uptimeSeconds,
     startTime: new Date(startTime).toISOString(),
     mode: (statusOverrides.mode as string) || 'unknown',
-    queueSize: (statusOverrides.queueSize as number) ?? null,
+    queueSize,
     dlqCount,
     stepDurations,
     errors: Array.from(recentErrors.values()).sort(
       (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime(),
     ),
     counters: countersSnapshot,
-    ...statusOverrides,
   };
 }
 

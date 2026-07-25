@@ -22,6 +22,7 @@ services:
       POSTGRES_SCHEMA: omestre
       EVOLUTION_API_URL: "http://evolution-api:8080"
       WORKER_METRICS_URL: "http://ingestor:9092"
+      DISPATCHER_METRICS_URL: "http://dispatcher:9093"
       FRONTEND_URL: "${FRONTEND_URL:-http://localhost:5441}"
       ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
       METRICS_API_KEY: "${METRICS_API_KEY}"

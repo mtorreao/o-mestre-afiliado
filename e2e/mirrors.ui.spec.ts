@@ -14,7 +14,7 @@
  *   - Console sem erros JS
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { uniqueEmail, TEST_PASSWORD, TEST_NAME } from './helpers.ts';
 
 const WEB = process.env.WEB_URL || `http://localhost:${process.env.WEB_PORT || '15441'}`;
@@ -24,7 +24,7 @@ const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '
  * Helper: registra um usuário via API e configura o token diretamente
  * no localStorage para login instantâneo sem passar pelo formulário.
  */
-async function loginDirect(page: { goto: (url: string) => Promise<void>; evaluate: (fn: string | ((...args: unknown[]) => unknown), ...args: unknown[]) => Promise<unknown>; waitForSelector: (sel: string, opts?: object) => Promise<void> }): Promise<string> {
+async function loginDirect(page: Page): Promise<string> {
   const email = uniqueEmail();
   const password = TEST_PASSWORD;
 
@@ -54,7 +54,7 @@ async function loginDirect(page: { goto: (url: string) => Promise<void>; evaluat
 /**
  * Helper: navega para a página de espelhamentos via sidebar e aguarda carregar.
  */
-async function navigateToMirrors(page: { click: (sel: string) => Promise<void>; waitForSelector: (sel: string, opts?: object) => Promise<void> }) {
+async function navigateToMirrors(page: Page) {
   await page.click('button:has-text("Espelhamentos")');
   await page.waitForSelector('text=📋 Espelhamentos');
 }

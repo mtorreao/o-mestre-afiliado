@@ -205,6 +205,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5451}
       # Worker metrics API (DNS interno do container) — Ingestor v2
       WORKER_METRICS_URL: http://ingestor:9092
+      # Dispatcher metrics (DNS interno do container)
+      DISPATCHER_METRICS_URL: http://dispatcher:9093
       # Webhook que a Evolution API usa para chamar de volta
       WEBHOOK_URL: http://api:5442/webhook/message
       REDIS_URL: redis://redis:6379

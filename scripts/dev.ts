@@ -33,7 +33,7 @@
  * =============================================================================
  */
 
-import { spawn, type Subprocess } from 'bun';
+import { spawn, type Subprocess, type ReadableSubprocess } from 'bun';
 import { mkdir, readFile, writeFile, readdir, rm } from 'fs/promises';
 import { existsSync } from 'fs';
 import * as net from 'net';
@@ -177,7 +177,9 @@ function getParentPid(pid: number): number | null {
     // Formato CSV: Node,ParentProcessId\n<hostname>,<ppid>
     const lines = out.split('\n').filter(l => l.includes(','));
     if (lines.length > 0) {
-      const ppid = Number(lines[lines.length - 1].split(',')[1]?.trim());
+      const lastLine = lines.at(-1);
+      if (!lastLine) return null;
+      const ppid = Number(lastLine.split(',')[1]?.trim());
       return isNaN(ppid) || ppid === 0 ? null : ppid;
     }
   } catch { /* wmic indisponível */ }
@@ -394,16 +396,18 @@ function startOutputReader(
 function spawnPrefixed(
   label: string,
   cmd: string[],
-  opts?: Parameters<typeof spawn>[1],
-): Subprocess {
+  opts?: Omit<Parameters<typeof spawn>[1], 'stdin' | 'stdout' | 'stderr' | 'stdio'>,
+): ReadableSubprocess {
   const proc = spawn(cmd, {
-    stdio: ['ignore', 'pipe', 'pipe'],
     ...opts,
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
   processes.set(label, proc);
   console.log(`  [${label}] PID ${proc.pid}`);
-  startOutputReader(label, proc.stdout!, false);
-  startOutputReader(label, proc.stderr!, true);
+  startOutputReader(label, proc.stdout, false);
+  startOutputReader(label, proc.stderr, true);
   return proc;
 }
 

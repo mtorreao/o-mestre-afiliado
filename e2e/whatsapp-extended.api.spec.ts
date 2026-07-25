@@ -23,6 +23,16 @@ import {
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 
+type GroupValidationResponse = Record<string, unknown> & {
+  success: boolean;
+  report: {
+    groups: Array<{
+      errors: unknown[];
+      passed: boolean;
+    }>;
+  };
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 /**
@@ -113,8 +123,8 @@ test.describe('Affiliate - Validar Grupos de Ofertas', () => {
   test('deve rejeitar lista vazia de grupos', async () => {
     const { token } = await createTestUser();
 
-    const { status, body } = await authPost(
-      '/api/affiliate/validate-groups',
+    const { status, body } = await authPost<GroupValidationResponse>(
+          '/api/affiliate/validate-groups',
       token,
       { sourceGroups: [] },
     );
@@ -126,8 +136,8 @@ test.describe('Affiliate - Validar Grupos de Ofertas', () => {
   test('deve rejeitar mais de 3 grupos', async () => {
     const { token } = await createTestUser();
 
-    const { status, body } = await authPost(
-      '/api/affiliate/validate-groups',
+    const { status, body } = await authPost<GroupValidationResponse>(
+          '/api/affiliate/validate-groups',
       token,
       {
         sourceGroups: [
@@ -148,8 +158,8 @@ test.describe('Affiliate - Validar Grupos de Ofertas', () => {
 
     // Com instância ativa ou não, o endpoint deve processar a requisição
     // (o resultado da validação depende da Evolution, mas a API deve responder)
-    const { status, body } = await authPost(
-      '/api/affiliate/validate-groups',
+    const { status, body } = await authPost<GroupValidationResponse>(
+          '/api/affiliate/validate-groups',
       token,
       {
         sourceGroups: [
@@ -174,8 +184,8 @@ test.describe('Affiliate - Validar Grupos de Ofertas', () => {
     const { token } = await createTestUser();
 
     // Usuário sem WhatsApp conectado — a Evolution não tem a instância
-    const { status, body } = await authPost(
-      '/api/affiliate/validate-groups',
+    const { status, body } = await authPost<GroupValidationResponse>(
+          '/api/affiliate/validate-groups',
       token,
       {
         sourceGroups: [
@@ -188,7 +198,9 @@ test.describe('Affiliate - Validar Grupos de Ofertas', () => {
       expect(body.validated).toBe(false);
 
       // O grupo deve ter erros por não conseguir buscar mensagens
-      const group = body.report.groups[0];
+      const [group] = body.report.groups;
+      expect(group).toBeDefined();
+      if (!group) throw new Error('Relatório não contém o grupo validado');
       expect(group.errors).toBeInstanceOf(Array);
       expect(group.errors.length).toBeGreaterThan(0);
       expect(group.passed).toBe(false);
@@ -200,8 +212,8 @@ test.describe('Affiliate - Validar Grupos de Ofertas', () => {
   test('sourceGroups mal formatado sem jid deve ser processado', async () => {
     const { token } = await createTestUser();
 
-    const { status, body } = await authPost(
-      '/api/affiliate/validate-groups',
+    const { status, body } = await authPost<GroupValidationResponse>(
+          '/api/affiliate/validate-groups',
       token,
       {
         sourceGroups: [

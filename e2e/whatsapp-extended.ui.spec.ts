@@ -8,7 +8,7 @@
  *         API rodando em http://localhost:15442
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { uniqueEmail, TEST_PASSWORD, TEST_NAME } from './helpers.ts';
 
 const WEB = process.env.WEB_URL || `http://localhost:${process.env.WEB_PORT || '15441'}`;
@@ -18,7 +18,7 @@ const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '
  * Helper: registra um usuário via UI e vai para o dashboard.
  * Segue o mesmo padrão dos testes auth.ui.spec.ts existentes.
  */
-async function registerAndLogin(page: { goto: (url: string, opts?: object) => Promise<void>; fill: (sel: string, val: string) => Promise<void>; click: (sel: string) => Promise<void>; waitForSelector: (sel: string, opts?: object) => Promise<void>; locator: (sel: string) => { waitFor: (opts?: object) => Promise<void> } }) {
+async function registerAndLogin(page: Page) {
   const email = uniqueEmail();
 
   // Vai para home e clica em "Criar conta"

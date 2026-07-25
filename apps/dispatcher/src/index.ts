@@ -19,6 +19,7 @@ import {
 import {
   startMetricsServer,
   setStatusMeta,
+  setQueueSizeProvider,
 } from '@omestre/worker-common';
 import { processSendEvent, initMetrics } from './dispatcher.ts';
 
@@ -355,6 +356,13 @@ async function main(): Promise<void> {
   initMetrics();
   startMetricsServer('dispatcher', MIRROR_SEND_STREAM);
   setStatusMeta({ mode: 'dispatcher' });
+  setQueueSizeProvider(async () => {
+    try {
+      return await redis.xlen(MIRROR_SEND_STREAM);
+    } catch {
+      return null;
+    }
+  });
 
   redis = connectRedis();
   await ensureConsumerGroup();

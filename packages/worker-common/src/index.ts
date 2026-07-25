@@ -47,6 +47,7 @@ export {
   getStatusResponse,
   registerStepTrackers,
   setStatusMeta,
+  setQueueSizeProvider,
   createCounter,
   createHistogram,
   incrementCounter,

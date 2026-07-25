@@ -51,7 +51,7 @@ const app = new Elysia()
   // ─── Error handler global ──────────────────────────────────────────
   .onError(({ code, error, set }) => {
     // Se for erro de banco (timeout, conexão), retorna 503
-    const msg = error?.message?.toLowerCase() ?? '';
+    const msg = error instanceof Error ? error.message.toLowerCase() : '';
     if (
       msg.includes('timeout') ||
       msg.includes('connect') ||

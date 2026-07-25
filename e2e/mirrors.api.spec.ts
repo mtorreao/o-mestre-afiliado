@@ -32,6 +32,26 @@ import {
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 
+type MirrorResponse = {
+  success: boolean;
+  mirror: {
+    id: number;
+    name: string;
+    status: string;
+    sourceGroups: unknown[];
+    targetGroups: unknown[];
+    messageTemplate: string | null;
+  };
+};
+
+type MirrorListResponse = {
+  success: boolean;
+  rows: unknown[];
+  total: number;
+  page: number;
+  totalPages: number;
+};
+
 test.describe('Mirrors API — CRUD', () => {
   let token: string;
   let mirrorId: number;
@@ -44,7 +64,7 @@ test.describe('Mirrors API — CRUD', () => {
   // ─── Listagem vazia ────────────────────────────────────────────────
 
   test('1. GET /api/mirrors — listagem vazia retorna total 0', async () => {
-    const { status, body } = await authGet('/api/mirrors', token);
+    const { status, body } = await authGet<MirrorListResponse>('/api/mirrors', token);
     expect(status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.rows).toEqual([]);
@@ -55,7 +75,7 @@ test.describe('Mirrors API — CRUD', () => {
   // ─── Criação ───────────────────────────────────────────────────────
 
   test('2. POST /api/mirrors — criar espelhamento com dados válidos', async () => {
-    const { status, body } = await authPost('/api/mirrors', token, {
+    const { status, body } = await authPost<MirrorResponse>('/api/mirrors', token, {
       name: 'Ofertas Diárias',
       sourceGroups: [
         { jid: 'source-group-1@g.us', name: 'Grupo Origem' },
@@ -77,7 +97,7 @@ test.describe('Mirrors API — CRUD', () => {
   });
 
   test('3. POST /api/mirrors — criar sem grupos de origem (validação)', async () => {
-    const { status, body } = await authPost('/api/mirrors', token, {
+    const { status, body } = await authPost<MirrorResponse>('/api/mirrors', token, {
       name: 'Sem Origem',
       targetGroups: [{ jid: 't@g.us', name: 'T' }],
     });
@@ -87,7 +107,7 @@ test.describe('Mirrors API — CRUD', () => {
   });
 
   test('4. POST /api/mirrors — criar sem nome (validação deve falhar)', async () => {
-    const { status, body } = await authPost('/api/mirrors', token, {
+    const { status, body } = await authPost<MirrorResponse>('/api/mirrors', token, {
       sourceGroups: [{ jid: 's@g.us', name: 'S' }],
       targetGroups: [{ jid: 't@g.us', name: 'T' }],
     });
@@ -97,7 +117,7 @@ test.describe('Mirrors API — CRUD', () => {
 
   test('5. POST /api/mirrors — criar com nome muito longo', async () => {
     const longName = 'A'.repeat(256);
-    const { status, body } = await authPost('/api/mirrors', token, {
+    const { status, body } = await authPost<MirrorResponse>('/api/mirrors', token, {
       name: longName,
       sourceGroups: [{ jid: 's@g.us', name: 'S' }],
       targetGroups: [{ jid: 't@g.us', name: 'T' }],
@@ -109,7 +129,7 @@ test.describe('Mirrors API — CRUD', () => {
   // ─── Listagem populada ─────────────────────────────────────────────
 
   test('6. GET /api/mirrors — listagem populada retorna > 0', async () => {
-    const { status, body } = await authGet('/api/mirrors', token);
+    const { status, body } = await authGet<MirrorListResponse>('/api/mirrors', token);
     expect(status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.total).toBeGreaterThan(0);
@@ -120,7 +140,7 @@ test.describe('Mirrors API — CRUD', () => {
   // ─── Detalhe ───────────────────────────────────────────────────────
 
   test('7. GET /api/mirrors/:id — detalhe do espelhamento', async () => {
-    const { status, body } = await authGet(`/api/mirrors/${mirrorId}`, token);
+    const { status, body } = await authGet<MirrorResponse>(`/api/mirrors/${mirrorId}`, token);
     expect(status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.mirror.id).toBe(mirrorId);
@@ -140,7 +160,7 @@ test.describe('Mirrors API — CRUD', () => {
   // ─── Edição ────────────────────────────────────────────────────────
 
   test('9. PUT /api/mirrors/:id — atualizar nome e template', async () => {
-    const { status, body } = await authPut(`/api/mirrors/${mirrorId}`, token, {
+    const { status, body } = await authPut<MirrorResponse>(`/api/mirrors/${mirrorId}`, token, {
       name: 'Ofertas Atualizadas',
       messageTemplate: '{link_convertido}',
     });
@@ -152,7 +172,7 @@ test.describe('Mirrors API — CRUD', () => {
 
   test('10. PUT /api/mirrors/:id — atualizar com dados parciais', async () => {
     // Atualizar apenas sourceGroups
-    const { status, body } = await authPut(`/api/mirrors/${mirrorId}`, token, {
+    const { status, body } = await authPut<MirrorResponse>(`/api/mirrors/${mirrorId}`, token, {
       sourceGroups: [
         { jid: 'new-source@g.us', name: 'Novo Grupo Origem' },
         { jid: 'extra-source@g.us', name: 'Extra' },

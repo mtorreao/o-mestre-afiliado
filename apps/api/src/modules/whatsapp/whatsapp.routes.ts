@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia';
-import { WhatsAppInstanceRepository } from '@omestre/db';
+import { WhatsAppInstanceRepository, MirrorRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import {
   getConnectionState,
@@ -12,10 +12,9 @@ import {
 } from '../../services/evolution.ts';
 import { cacheGet, cacheSet, cacheDel } from '../../services/redis.ts';
 import { removeSourceGroups } from '../../services/group-cache.ts';
-import { AffiliatesRepository } from '@omestre/db';
 
 const instanceRepo = new WhatsAppInstanceRepository();
-const affiliatesRepo = new AffiliatesRepository();
+const mirrorRepo = new MirrorRepository();
 
 // Mapeia estado da Evolution API para nosso domínio
 function mapStatus(evolutionState: string): string {
@@ -318,18 +317,22 @@ export const whatsAppRoutes = new Elysia()
       // Invalida cache de grupos
       await cacheDel(`whatsapp:groups:${instanceName}`);
 
-      // Limpa cache de sourceGroups do afiliado
+      // Limpa do cache os grupos de origem configurados nos mirrors do usuário.
       try {
-        const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
-        if (affiliate?.sourceGroups) {
-          const jids = (affiliate.sourceGroups as { jid: string; name: string }[]).map((g) => g.jid);
-          if (jids.length > 0) {
-            await removeSourceGroups(jids);
-            console.log(
-              `[whatsapp] Cache de sourceGroups limpo para ${instanceName} ` +
-              `(${jids.length} grupo(s) removido(s))`,
-            );
-          }
+        const mirrors = await mirrorRepo.list({ userId: auth.userId, pageSize: 100 });
+        const jids = [
+          ...new Set(
+            mirrors.rows.flatMap((mirror) =>
+              (mirror.sourceGroups ?? []).map((group) => group.jid),
+            ),
+          ),
+        ];
+        if (jids.length > 0) {
+          await removeSourceGroups(jids);
+          console.log(
+            `[whatsapp] Cache de sourceGroups limpo para ${instanceName} ` +
+            `(${jids.length} grupo(s) removido(s))`,
+          );
         }
       } catch {
         // Falha silenciosa — cache pode já estar vazio

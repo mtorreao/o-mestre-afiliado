@@ -16,6 +16,7 @@ import {
 import {
   startMetricsServer,
   setStatusMeta,
+  setQueueSizeProvider,
 } from '@omestre/worker-common';
 import { processRawMessage, initMetrics } from './ingestor.ts';
 import { startMlCookieRevalidator, stopMlCookieRevalidator } from './ml-cookie-revalidator.ts';
@@ -206,6 +207,13 @@ async function main(): Promise<void> {
   initMetrics();
   startMetricsServer('ingestor', MIRROR_RAW_STREAM);
   setStatusMeta({ mode: 'ingestor' });
+  setQueueSizeProvider(async () => {
+    try {
+      return await redis.xlen(MIRROR_RAW_STREAM);
+    } catch {
+      return null;
+    }
+  });
 
   // Conecta Redis
   redis = connectRedis();

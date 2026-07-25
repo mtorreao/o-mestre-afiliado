@@ -45,17 +45,21 @@ export async function createTestUser(baseUrl = API_BASE): Promise<{
 /**
  * Faz uma requisição GET autenticada.
  */
-export async function authGet(path: string, token: string, baseUrl = API_BASE) {
+export async function authGet<TBody extends Record<string, unknown> = Record<string, unknown>>(
+  path: string,
+  token: string,
+  baseUrl = API_BASE,
+) {
   const res = await fetch(`${baseUrl}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  return { status: res.status, body: (await res.json()) as TBody };
 }
 
 /**
  * Faz uma requisição POST autenticada.
  */
-export async function authPost(
+export async function authPost<TBody extends Record<string, unknown> = Record<string, unknown>>(
   path: string,
   token: string,
   body: Record<string, unknown>,
@@ -69,13 +73,13 @@ export async function authPost(
     },
     body: JSON.stringify(body),
   });
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  return { status: res.status, body: (await res.json()) as TBody };
 }
 
 /**
  * Faz uma requisição PUT autenticada.
  */
-export async function authPut(
+export async function authPut<TBody extends Record<string, unknown> = Record<string, unknown>>(
   path: string,
   token: string,
   body: Record<string, unknown>,
@@ -89,13 +93,13 @@ export async function authPut(
     },
     body: JSON.stringify(body),
   });
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  return { status: res.status, body: (await res.json()) as TBody };
 }
 
 /**
  * Faz uma requisição PATCH autenticada.
  */
-export async function authPatch(
+export async function authPatch<TBody extends Record<string, unknown> = Record<string, unknown>>(
   path: string,
   token: string,
   body: Record<string, unknown>,
@@ -109,16 +113,20 @@ export async function authPatch(
     },
     body: JSON.stringify(body),
   });
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  return { status: res.status, body: (await res.json()) as TBody };
 }
 
 /**
  * Faz uma requisição DELETE autenticada.
  */
-export async function authDelete(path: string, token: string, baseUrl = API_BASE) {
+export async function authDelete<TBody extends Record<string, unknown> = Record<string, unknown>>(
+  path: string,
+  token: string,
+  baseUrl = API_BASE,
+) {
   const res = await fetch(`${baseUrl}${path}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  return { status: res.status, body: (await res.json()) as TBody };
 }
