@@ -111,6 +111,10 @@ const REDIRECTOR_DOMAINS: { pattern: RegExp; resolve: Resolver }[] = [
     pattern: /meli\.la/i,
     resolve: resolveMeliShortlink,
   },
+  {
+    pattern: /mercadolivre\.com\.br\/sec\//i,
+    resolve: resolveMeliSecLink,
+  },
 ];
 
 function extractShortCode(url: string): string | null {
@@ -304,6 +308,59 @@ async function resolveMeliShortlink(url: string): Promise<ResolvedMeliRedirect |
   if (reason) result.reason = reason;
   if (dropped.length > 0) result.droppedParams = dropped;
   return result;
+}
+
+/**
+ * Resolve um link mercadolivre.com.br/sec/XXX (link curto de campanha/cupom).
+ *
+ * Estratégia: GET com redirect:manual → extrai Location → strip de query
+ * params e fragment. O resultado é uma URL limpa do ML (ex.: /ofertas).
+ *
+ * Diferente do meli.la, links /sec/ tipicamente levam a páginas de campanha
+ * ou listagem de ofertas — NÃO a um produto único. O caller usa isso para
+ * reconstruir o texto com a URL resolvida (informativa), não para conversão.
+ */
+async function resolveMeliSecLink(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+
+    const location = res.headers.get('location');
+    if (!location) return null;
+
+    let absoluteUrl: string;
+    try {
+      absoluteUrl = new URL(location, url).toString();
+    } catch {
+      return null;
+    }
+
+    // Aceita somente destinos no domínio do Mercado Livre
+    let parsed: URL;
+    try {
+      parsed = new URL(absoluteUrl);
+    } catch {
+      return null;
+    }
+
+    if (!/mercadolivre\.com\.br/i.test(parsed.hostname)) return null;
+
+    // Strip query params e fragment — o destino é informativo
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 export async function resolveRedirectUrl(url: string): Promise<string> {
