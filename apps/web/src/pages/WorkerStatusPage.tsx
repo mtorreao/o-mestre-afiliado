@@ -8,7 +8,7 @@
  *   4. Dispatcher     — métricas e latências detalhadas (com breakdown por marketplace)
  *   5. DLQ            — destaque, com expansão inline para gestão
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
@@ -22,6 +22,8 @@ import {
   Trash,
   ChevronDown,
   ChevronUp,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 import {
   counterLabel,
@@ -775,12 +777,16 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
 
 // ─── DLQ section (top-level) ──────────────────────────
 
+type QueueFilter = 'all' | 'A' | 'B';
+
 function DLQSection() {
   const [data, setData] = useState<DLQListResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [purging, setPurging] = useState(false);
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
+  const [reasonFilter, setReasonFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -831,6 +837,37 @@ function DLQSection() {
   const items: DLQEntry[] = data?.items ?? [];
   const total = data?.total ?? 0;
 
+  // Contagem por failureReason (sobre a lista carregada, não sobre o total geral).
+  // Usada para popular os chips de filtro com valores reais do que o usuário está vendo.
+  const reasonCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      counts.set(item.failureReason, (counts.get(item.failureReason) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [items]);
+
+  // Filtro client-side: queueFilter usa o tipo do evento cru;
+  // reasonFilter é comparação exata de string.
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      if (reasonFilter && item.failureReason !== reasonFilter) return false;
+      if (queueFilter !== 'all') {
+        const meta = getFailureMeta(item.failureReason);
+        if (meta.queue !== queueFilter) return false;
+      }
+      return true;
+    });
+  }, [items, queueFilter, reasonFilter]);
+
+  const hasActiveFilter = queueFilter !== 'all' || reasonFilter !== null;
+  function clearFilters() {
+    setQueueFilter('all');
+    setReasonFilter(null);
+  }
+
   return (
     <Card
       title={
@@ -871,18 +908,183 @@ function DLQSection() {
         <Loading text="Carregando DLQ..." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {items.map((item) => (
-            <DLQItem
-              key={item.id}
-              item={item}
-              busy={busyId === item.id}
-              onRequeue={handleRequeue}
-              onRemove={handleRemove}
-            />
-          ))}
+          <DLQFilterBar
+            queueFilter={queueFilter}
+            onQueueFilterChange={setQueueFilter}
+            reasonCounts={reasonCounts}
+            reasonFilter={reasonFilter}
+            onReasonFilterChange={setReasonFilter}
+            onClearFilters={clearFilters}
+            hasActiveFilter={hasActiveFilter}
+            totalShown={filteredItems.length}
+            totalLoaded={items.length}
+          />
+
+          {filteredItems.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '0.75rem', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+              Nenhum item corresponde aos filtros.{' '}
+              <button
+                onClick={clearFilters}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-primary)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  font: 'inherit',
+                  textDecoration: 'underline',
+                }}
+              >
+                Limpar filtros
+              </button>
+            </div>
+          ) : (
+            filteredItems.map((item) => (
+              <DLQItem
+                key={item.id}
+                item={item}
+                busy={busyId === item.id}
+                onRequeue={handleRequeue}
+                onRemove={handleRemove}
+              />
+            ))
+          )}
         </div>
       )}
     </Card>
+  );
+}
+
+// ─── DLQ filter bar ───────────────────────────────────
+
+function DLQFilterBar({
+  queueFilter,
+  onQueueFilterChange,
+  reasonCounts,
+  reasonFilter,
+  onReasonFilterChange,
+  onClearFilters,
+  hasActiveFilter,
+  totalShown,
+  totalLoaded,
+}: {
+  queueFilter: QueueFilter;
+  onQueueFilterChange: (q: QueueFilter) => void;
+  reasonCounts: Array<{ reason: string; count: number }>;
+  reasonFilter: string | null;
+  onReasonFilterChange: (r: string | null) => void;
+  onClearFilters: () => void;
+  hasActiveFilter: boolean;
+  totalShown: number;
+  totalLoaded: number;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem',
+        padding: '0.5rem 0.6rem',
+        background: 'var(--color-bg)',
+        border: '1px solid var(--color-border-light)',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600 }}>Fila:</span>
+        <SegmentedButton active={queueFilter === 'all'} onClick={() => onQueueFilterChange('all')} label="Todas" />
+        <SegmentedButton active={queueFilter === 'A'} onClick={() => onQueueFilterChange('A')} label="Queue A" />
+        <SegmentedButton active={queueFilter === 'B'} onClick={() => onQueueFilterChange('B')} label="Queue B" />
+
+        <div style={{ flex: 1 }} />
+
+        <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+          Mostrando {totalShown} de {totalLoaded}
+        </span>
+
+        {hasActiveFilter && (
+          <Button variant="ghost" size="sm" onClick={onClearFilters} icon={<X size={12} />}>
+            Limpar
+          </Button>
+        )}
+      </div>
+
+      {reasonCounts.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600 }}>Motivo:</span>
+          {reasonCounts.map(({ reason, count }) => {
+            const active = reasonFilter === reason;
+            const meta = getFailureMeta(reason);
+            return (
+              <button
+                key={reason}
+                onClick={() => onReasonFilterChange(active ? null : reason)}
+                aria-pressed={active}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                  padding: '0.15rem 0.5rem',
+                  fontSize: '0.7rem',
+                  fontWeight: active ? 600 : 500,
+                  borderRadius: 'var(--radius-full)',
+                  border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border-light)'}`,
+                  background: active ? 'var(--color-primary-subtle)' : 'var(--color-bg-secondary)',
+                  color: active ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                  cursor: 'pointer',
+                  lineHeight: 1.5,
+                  fontFamily: 'inherit',
+                }}
+                title={meta.stage}
+              >
+                <span>{reason}</span>
+                <span
+                  style={{
+                    fontSize: '0.6rem',
+                    padding: '0 0.3rem',
+                    borderRadius: 'var(--radius-full)',
+                    background: active ? 'var(--color-primary)' : 'var(--color-border-light)',
+                    color: active ? 'var(--color-primary-contrast, white)' : 'var(--color-text-muted)',
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SegmentedButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        padding: '0.2rem 0.6rem',
+        fontSize: 'var(--text-xs)',
+        fontWeight: active ? 600 : 500,
+        borderRadius: 'var(--radius-full)',
+        border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border-light)'}`,
+        background: active ? 'var(--color-primary-subtle)' : 'transparent',
+        color: active ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
