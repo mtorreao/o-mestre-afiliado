@@ -225,6 +225,8 @@ services:
       dockerfile: apps/ingestor/Dockerfile
     container_name: omestre_dev_ingestor
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:9092:9092"
     depends_on:
       api:
         condition: service_healthy
@@ -257,6 +259,8 @@ services:
       dockerfile: apps/dispatcher/Dockerfile
     container_name: omestre_dev_dispatcher
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:9093:9093"
     depends_on:
       api:
         condition: service_healthy

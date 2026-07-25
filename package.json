@@ -16,8 +16,8 @@
     "build:ingestor": "bun run --cwd apps/ingestor build",
     "build:dispatcher": "bun run --cwd apps/dispatcher build",
     "build:web": "bun run --cwd apps/web build",
-    "build": "bun build:api && bun build:ingestor && bun build:dispatcher && bun build:web",
-    "build:v2": "bun build:api && bun build:ingestor && bun build:dispatcher && bun build:web",
+    "build": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:web",
+    "build:v2": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:web",
     "shopee": "bun run --cwd packages/converters shopee",
     "mercadolivre": "bun run --cwd packages/converters mercadolivre",
     "ml": "bun run --cwd packages/converters mercadolivre",
@@ -26,8 +26,11 @@
     "db:push": "bun run --cwd packages/db db:push",
     "db:studio": "bun run --cwd packages/db db:studio",
     "test:e2e": "bun run scripts/test-e2e.ts",
-    "deploy:local": "bun run scripts/deploy-local.ts"
-  },
+    "deploy:local": "bun run scripts/deploy-local.ts",
+    "healthcheck": "bun run scripts/healthcheck.ts",
+    "healthcheck:alert": "bun run scripts/healthcheck.ts --alert",
+    "typecheck": "tsc --noEmit"
+    },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/bun": "latest",
