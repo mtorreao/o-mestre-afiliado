@@ -21,6 +21,7 @@
         "@omestre/converters": "workspace:*",
         "@omestre/db": "workspace:*",
         "@omestre/shared": "workspace:*",
+        "@omestre/worker-common": "workspace:*",
         "elysia": "^1.2.25",
         "ioredis": "^5.11.1",
       },
