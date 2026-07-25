@@ -114,6 +114,11 @@ export { userWhatsAppInstances } from './userWhatsAppInstances.ts';
 // ─── Espelhamentos (mirrors) ────────────────────────────────────────
 export { mirrors } from './mirrors.ts';
 
+// ─── Afiliados Amazon (multi-tracking ID) ───────────────────────────
+
+export { amazonAffiliates } from './amazonAffiliates.ts';
+export type { AmazonTrackingId, AmazonRegion } from './amazonAffiliates.ts';
+
 // ─── Re-export dos schemas auxiliares ───────────────────────────────
 export { omestre } from './omestre.ts';
 export { users } from './users.ts';

@@ -19,6 +19,7 @@ export {
   omestre,
   affiliates,
   mlAffiliates,
+  amazonAffiliates,
   reflectedOffers,
   marketplaceEnum,
   offerStatusEnum,
@@ -29,6 +30,7 @@ export {
 } from './schema/index.ts';
 
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+export type { AmazonTrackingId, AmazonRegion } from './schema/index.ts';
 
 // ─── Repository ─────────────────────────────────────────────────────────
 
@@ -40,6 +42,15 @@ export type {
   MlAffiliateUpsertData,
   MlAffiliatePatchData,
 } from './repository/mlAffiliates.repository.ts';
+
+export { AmazonAffiliateRepository } from './repository/amazonAffiliates.repository.ts';
+export type {
+  AmazonAffiliate,
+  NewAmazonAffiliate,
+  AmazonAffiliateSummary,
+  AmazonAffiliateUpsertData,
+  AmazonTrackingIdInput,
+} from './repository/amazonAffiliates.repository.ts';
 
 export { UserRepository } from './repository/users.repository.ts';
 export type { User, NewUser, UserPublic } from './repository/users.repository.ts';

@@ -20,11 +20,17 @@ import { mirrorRoutes } from './modules/mirrors/mirrors.routes.ts';
 import { whatsAppRoutes } from './modules/whatsapp/whatsapp.routes.ts';
 import { webhookRoutes } from './modules/webhook/webhook.routes.ts';
 import { mlRoutes } from './modules/ml/ml.routes.ts';
+import { amazonRoutes } from './modules/amazon/amazon.routes.ts';
 import { warmSourceGroupCache } from './services/group-cache.ts';
+import {
+  getAggregatedWorkerStatus,
+  listDlqItems,
+  requeueDlqItem,
+  removeDlqItem,
+  purgeDlq,
+} from './services/worker-metrics.ts';
 
 const PORT = parseInt(process.env.API_PORT || '5442', 10);
-const WORKER_METRICS_URL = process.env.WORKER_METRICS_URL || 'http://localhost:9092';
-const WORKER_METRICS_API_KEY = process.env.METRICS_API_KEY || '';
 
 // ─── App ─────────────────────────────────────────────────────────────────
 
@@ -36,7 +42,7 @@ const app = new Elysia()
       documentation: {
         info: {
           title: 'O Mestre Afiliado — API',
-          description: 'API para conversão de links de afiliados (Shopee, Mercado Livre)',
+          description: 'API para conversão de links de afiliados (Shopee, Mercado Livre, Amazon)',
           version: '1.0.0',
         },
       },
@@ -74,6 +80,7 @@ const app = new Elysia()
   .use(whatsAppRoutes)
   .use(webhookRoutes)
   .use(mlRoutes)
+  .use(amazonRoutes)
   .get('/', () => ({
     service: 'O Mestre Afiliado API',
     version: '1.0.0',
@@ -159,36 +166,47 @@ const app = new Elysia()
     },
   )
 
-  // ─── Worker Status — Proxy para o servidor de métricas do worker ───
-  .get('/api/worker/status', async ({ set }) => {
-    try {
-      const headers: Record<string, string> = {};
-      if (WORKER_METRICS_API_KEY) {
-        headers['x-api-key'] = WORKER_METRICS_API_KEY;
-      }
-      const res = await fetch(`${WORKER_METRICS_URL}/status`, {
-        signal: AbortSignal.timeout(5000),
-        headers,
-      });
-      if (!res.ok) {
-        set.status = 502;
-        return {
-          success: false,
-          error: `Worker retornou HTTP ${res.status}`,
-          workerStatus: 'unreachable',
-        };
-      }
-      const data = await res.json() as Record<string, unknown>;
-      return { success: true, ...data };
-    } catch (err) {
-      set.status = 503;
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : 'Falha ao contactar worker',
-        workerStatus: 'unreachable',
-        workerUrl: WORKER_METRICS_URL,
-      };
+  // ─── Worker Status — Agregador (Ingestor + Dispatcher) ───
+  .get('/api/worker/status', async () => {
+    return await getAggregatedWorkerStatus();
+  })
+
+  // ─── DLQ — operações diretas na fila compartilhada ───
+  .get('/api/worker/dlq', async ({ query }) => {
+    const offset = parseInt(String(query.offset ?? '0'), 10) || 0;
+    const limit = parseInt(String(query.limit ?? '20'), 10) || 20;
+    const result = await listDlqItems(offset, limit);
+    return { success: true, ...result };
+  })
+  .post('/api/worker/dlq/requeue', async ({ query, set }) => {
+    const id = query.id as string | undefined;
+    if (!id) {
+      set.status = 400;
+      return { success: false, error: 'Parâmetro "id" é obrigatório' };
     }
+    const result = await requeueDlqItem(id);
+    if (!result.success) {
+      set.status = 404;
+      return { success: false, error: 'Item não encontrado na DLQ' };
+    }
+    return { success: true, dlqId: id, targetStream: result.targetStream };
+  })
+  .post('/api/worker/dlq/remove', async ({ query, set }) => {
+    const id = query.id as string | undefined;
+    if (!id) {
+      set.status = 400;
+      return { success: false, error: 'Parâmetro "id" é obrigatório' };
+    }
+    const ok = await removeDlqItem(id);
+    if (!ok) {
+      set.status = 404;
+      return { success: false, error: 'Item não encontrado na DLQ' };
+    }
+    return { success: true, dlqId: id };
+  })
+  .post('/api/worker/dlq/purge', async () => {
+    const removed = await purgeDlq();
+    return { success: true, removed };
   })
 
   // ─── Cache warming no startup ─────────────────────────────────────

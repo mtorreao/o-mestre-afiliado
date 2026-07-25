@@ -65,7 +65,7 @@ export async function authPost(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
   });
@@ -85,9 +85,40 @@ export async function authPut(
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
+  });
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+}
+
+/**
+ * Faz uma requisição PATCH autenticada.
+ */
+export async function authPatch(
+  path: string,
+  token: string,
+  body: Record<string, unknown>,
+  baseUrl = API_BASE,
+) {
+  const res = await fetch(`${baseUrl}${path}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+}
+
+/**
+ * Faz uma requisição DELETE autenticada.
+ */
+export async function authDelete(path: string, token: string, baseUrl = API_BASE) {
+  const res = await fetch(`${baseUrl}${path}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
   });
   return { status: res.status, body: (await res.json()) as Record<string, unknown> };
 }

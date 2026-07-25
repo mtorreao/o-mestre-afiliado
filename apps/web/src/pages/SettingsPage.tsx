@@ -1,7 +1,7 @@
 /**
- * SettingsPage — Página de configurações com 3 abas
+ * SettingsPage — Página de configurações com 4 abas
  *
- * Abas: WhatsApp, Shopee, Mercado Livre
+ * Abas: WhatsApp, Shopee, Mercado Livre, Amazon
  * Reutiliza seções existentes do dashboard.
  *
  * Loading por seção: cada seção carrega independentemente.
@@ -18,9 +18,28 @@ import { MlConfigSection } from './sections/MlConfigSection.tsx';
 import { AmazonConfigSection } from './sections/AmazonConfigSection.tsx';
 import { TestConversionSection } from './sections/TestConversionSection.tsx';
 
+interface AmazonTrackingId {
+  tag: string;
+  label?: string;
+  region: string;
+  active: boolean;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+interface AmazonAffiliateInfo {
+  connected: true;
+  id: number;
+  nickname: string | null;
+  trackingIds: AmazonTrackingId[];
+  activeTrackingCount: number;
+  active: boolean;
+}
+
 interface ProfileData {
   shopeeAppId: string | null;
   amazonTrackingId: string | null;
+  amazon?: { connected: false } | AmazonAffiliateInfo;
   mercadoLivre:
     | { connected: false }
     | { connected: true; nickname: string; mlUserId: string; expired: boolean; hasSessionCookies: boolean; meliid: string | null; melitat: string | null };
@@ -78,6 +97,11 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
   const mlConnected = profile?.mercadoLivre.connected === true;
   const ml = mlConnected
     ? (profile!.mercadoLivre as Exclude<ProfileData['mercadoLivre'], { connected: false }>)
+    : null;
+
+  const amazonConnected = profile?.amazon?.connected === true;
+  const amazon = amazonConnected
+    ? (profile!.amazon as AmazonAffiliateInfo)
     : null;
 
   return (
@@ -152,6 +176,20 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                 </div>
               </Card>
             )}
+            <TestConversionSection token={token} />
+          </div>
+        )}
+
+        {/* Aba 4: Amazon */}
+        {loading ? (
+          <Loading text="Carregando perfil..." size="sm" />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
+            <AmazonConfigSection
+              token={token}
+              initialAffiliate={amazon}
+              onUpdate={loadProfile}
+            />
             <TestConversionSection token={token} />
           </div>
         )}

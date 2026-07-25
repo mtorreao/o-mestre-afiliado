@@ -1,10 +1,99 @@
 # Amazon — Programa de Afiliados (Amazon Associates / Creators API)
 
 > **Fonte:** Documentação oficial Amazon Product Advertising API 5.0 + Creators API + portal Amazon Associates Brasil.
-> **Última atualização:** 2026-07-19
+> **Última atualização:** 2026-07-24
 > **Link do programa:** https://associados.amazon.com.br/
 > **Portal do desenvolvedor (PAAPI 5.0 - legado):** https://webservices.amazon.com/paapi5/documentation/
 > **Creators API (novo):** https://affiliate-program.amazon.com/creatorsapi/docs/en-us/introduction
+
+---
+
+## 🆕 Arquitetura multi-afiliado (2026-07-24)
+
+A partir desta data, o `O Mestre Afiliado` suporta **múltiplos tracking IDs por afiliado** (até 100, limite do Amazon Associates). Cada afiliado da plataforma pode cadastrar 1 tracking ID por canal (Telegram, YouTube, site, etc.) e segmentar suas comissões no portal Amazon.
+
+### Modelo de dados
+
+```sql
+CREATE TABLE omestre.amazon_affiliates (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER UNIQUE REFERENCES users(id),
+  nickname TEXT,
+  tracking_ids JSONB NOT NULL DEFAULT '[]',  -- até 100 entries
+  active BOOLEAN DEFAULT true,
+  connected_at TIMESTAMP DEFAULT now(),
+  last_used_at TIMESTAMP DEFAULT now(),
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+-- shape de cada tracking_ids entry:
+-- { tag: "meusite-20", label: "Site principal", region: "BR",
+--   active: true, isDefault: true, createdAt: "2026-07-24T..." }
+```
+
+### Endpoints REST
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/api/amazon/affiliate` | Dados do afiliado do usuário logado |
+| `PUT` | `/api/amazon/affiliate` | Atualiza nickname / active |
+| `DELETE` | `/api/amazon/affiliate` | Remove afiliado |
+| `GET` | `/api/amazon/affiliate/tracking-ids` | Lista tracking IDs |
+| `POST` | `/api/amazon/affiliate/tracking-ids` | Adiciona tracking ID |
+| `PATCH` | `/api/amazon/affiliate/tracking-ids/:tag` | Edita tracking (label, active, isDefault) |
+| `DELETE` | `/api/amazon/affiliate/tracking-ids/:tag` | Remove tracking ID |
+| `POST` | `/api/amazon/convert` | Converte URL (usa default ou `tag` específica) |
+
+### Exemplo: adicionar tracking ID
+
+```bash
+curl -X POST https://api.seudominio.com/api/amazon/affiliate/tracking-ids \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tag": "meusite-tg-20",
+    "label": "Telegram BR",
+    "region": "BR"
+  }'
+```
+
+### Exemplo: converter URL com tag específica
+
+```bash
+curl -X POST https://api.seudominio.com/api/amazon/convert \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.amazon.com.br/dp/B08N5WRWNW",
+    "tag": "meusite-tg-20"  // opcional; se omitido, usa isDefault
+  }'
+```
+
+Resposta:
+```json
+{
+  "success": true,
+  "originalUrl": "https://www.amazon.com.br/dp/B08N5WRWNW",
+  "affiliateUrl": "https://www.amazon.com.br/dp/B08N5WRWNW/?tag=meusite-tg-20",
+  "marketplace": "amazon",
+  "method": "fallback"
+}
+```
+
+### Backward compatibility
+
+- `/api/affiliate/test-conversion` (rota legada) continua funcionando — agora lê de `amazon_affiliates` em vez de `user_credentials.amazon_tracking_id`.
+- `/api/affiliate/profile` retorna:
+  - `amazonConfigured: boolean` (true se afiliado existe)
+  - `amazonTrackingId: string | null` (tag default ou primeira ativa)
+  - `amazon: { connected, nickname, trackingIds, activeTrackingCount }` (info completa)
+
+### Backfill (migration 0014)
+
+`packages/db/src/migrations/0014_add_amazon_affiliates.sql` faz backfill automático: copia `user_credentials.amazon_tracking_id` para `amazon_affiliates.tracking_ids[0]` (marcando como default e label "Importado"). Dados legados são preservados.
+
+> A coluna `user_credentials.amazon_tracking_id` foi **mantida** por compat, mas pode ser removida em migration futura após confirmar que ninguém a usa mais.
 
 ---
 

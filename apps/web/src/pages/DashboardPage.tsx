@@ -31,6 +31,17 @@ interface ProfileData {
   name: string;
   shopeeConfigured: boolean;
   shopeeAppId: string | null;
+  amazonConfigured: boolean;
+  amazonTrackingId: string | null;
+  amazon?:
+    | { connected: false }
+    | {
+        connected: true;
+        nickname: string | null;
+        active: boolean;
+        trackingIds: { tag: string; isDefault: boolean; active: boolean }[];
+        activeTrackingCount: number;
+      };
   mercadoLivre:
     | { connected: false }
     | { connected: true; nickname: string; mlUserId: string; expired: boolean; hasSessionCookies: boolean; meliid: string | null; melitat: string | null };
@@ -292,6 +303,8 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
   const groupCount = profile?.sourceGroups?.length ?? 0;
   const shopeeConfigured = !!profile?.shopeeConfigured;
   const mlConnected = profile?.mercadoLivre.connected === true;
+  const amazonConnected =
+    profile?.amazon?.connected === true && (profile.amazon.activeTrackingCount ?? 0) > 0;
   const wppConnected = wppStatus?.connected === true;
 
   // ─── Render ────────────────────────────────────────
@@ -336,14 +349,17 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
               ? '…'
               : !profile
               ? '—'
-              : [shopeeConfigured && 'Shopee', mlConnected && 'ML']
+              : [shopeeConfigured && 'Shopee', mlConnected && 'ML', amazonConnected && 'Amazon']
                   .filter(Boolean)
                   .join(' + ') || 'Nenhum'
           }
           badge={
             !profileLoading && profile
-              ? shopeeConfigured || mlConnected
-                ? { label: `${[shopeeConfigured && 'Shopee', mlConnected && 'ML'].filter(Boolean).length} configurado(s)`, variant: 'success' as const }
+              ? [shopeeConfigured, mlConnected, amazonConnected].filter(Boolean).length > 0
+                ? {
+                    label: `${[shopeeConfigured, mlConnected, amazonConnected].filter(Boolean).length} configurado(s)`,
+                    variant: 'success' as const,
+                  }
                 : { label: 'Nenhum configurado', variant: 'neutral' as const }
               : undefined
           }

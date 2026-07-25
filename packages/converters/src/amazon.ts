@@ -245,8 +245,69 @@ export async function convertAmazonUrlWithTrackingId(
 /**
  * Converte uma URL da Amazon em link de afiliado
  * (usa tracking ID do .env: AMAZON_TRACKING_ID).
+ *
+ * ⚠️ Para fluxo MULTI-AFILIADO, prefira `convertAmazonUrlWithAffiliate`,
+ * que lê os tracking IDs do `AmazonAffiliateRepository`. Esta função é
+ * mantida para o CLI (`bun run amazon <url>`) e fallback global.
  */
 export async function convertAmazonUrl(url: string): Promise<ConversionResult> {
   const trackingId = process.env.AMAZON_TRACKING_ID;
   return convertAmazonUrlWithTrackingId(url, trackingId ?? null);
+}
+
+/**
+ * Converte uma URL da Amazon em link de afiliado usando os tracking IDs
+ * do afiliado (Amazon Associates).
+ *
+ * @param url - URL original do produto Amazon (amazon.com.br/dp/ASIN, amzn.to, etc)
+ * @param trackingIds - Lista de tracking IDs do afiliado.
+ *   Se vazia, retorna erro (afiliado sem tracking configurado).
+ *   Se contém mais de 1, usa o que tem `isDefault: true`.
+ *   Caso nenhum tenha `isDefault`, usa o primeiro da lista.
+ * @param preferredTag - Tag específico a usar (ex: quando o mirror escolhe
+ *   um tracking diferente do default). Se fornecido e existir na lista, usa-o.
+ * @returns ConversionResult com o link gerado (ou erro descritivo)
+ */
+export interface ConvertAmazonMultiOptions {
+  preferredTag?: string | null;
+}
+
+export async function convertAmazonUrlWithAffiliate(
+  url: string,
+  trackingIds: ReadonlyArray<{ tag: string; isDefault?: boolean; active?: boolean }>,
+  options: ConvertAmazonMultiOptions = {},
+): Promise<ConversionResult> {
+  // Selecionar qual tracking ID usar
+  const activeIds = trackingIds.filter((t) => t.active !== false);
+  if (activeIds.length === 0) {
+    return {
+      success: false,
+      originalUrl: url,
+      affiliateUrl: null,
+      marketplace: 'amazon',
+      method: 'unknown',
+      error: 'Nenhum tracking ID ativo configurado para este afiliado',
+    };
+  }
+
+  let selectedTag: string | undefined;
+  if (options.preferredTag) {
+    const preferred = activeIds.find((t) => t.tag === options.preferredTag);
+    if (!preferred) {
+      return {
+        success: false,
+        originalUrl: url,
+        affiliateUrl: null,
+        marketplace: 'amazon',
+        method: 'unknown',
+        error: `Tracking ID "${options.preferredTag}" não encontrado ou inativo`,
+      };
+    }
+    selectedTag = preferred.tag;
+  } else {
+    selectedTag =
+      activeIds.find((t) => t.isDefault === true)?.tag ?? activeIds[0]!.tag;
+  }
+
+  return convertAmazonUrlWithTrackingId(url, selectedTag);
 }
