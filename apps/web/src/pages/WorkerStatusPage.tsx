@@ -559,9 +559,12 @@ function DLQItem({
   onRemove: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const navigate = useNavigate();
   const meta = getFailureMeta(item.failureReason);
   const event = normalizeDLQEvent(item.event);
   const hasDetails = event !== undefined;
+  // mirrorId está em ambos os tipos de evento (raw é opcional, send é obrigatório)
+  const mirrorId = event?.mirrorId;
 
   return (
     <div
@@ -580,6 +583,33 @@ function DLQItem({
             <Badge variant={meta.queue === 'A' ? 'info' : 'warning'}>Queue {meta.queue}</Badge>
             {item.marketplace && <Badge variant="neutral">{item.marketplace}</Badge>}
             {item.reprocessed && <Badge variant="success">reprocessado</Badge>}
+            {mirrorId != null && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/mirror-form/${mirrorId}`);
+                }}
+                title={`Abrir espelhamento #${mirrorId} no MirrorFormPage`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.2rem',
+                  padding: '0.15rem 0.5rem',
+                  fontSize: '0.65rem',
+                  fontWeight: 500,
+                  borderRadius: 'var(--radius-full)',
+                  border: '1px solid var(--color-border-light)',
+                  background: 'var(--color-bg)',
+                  color: 'var(--color-text-secondary)',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  lineHeight: 1.5,
+                }}
+              >
+                <span>mirror #{mirrorId}</span>
+                <ExternalLink size={10} />
+              </button>
+            )}
           </div>
         </div>
         <span
