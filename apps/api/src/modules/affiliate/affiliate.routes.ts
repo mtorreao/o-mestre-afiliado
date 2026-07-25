@@ -91,16 +91,14 @@ export const affiliateRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const { shopeeAppId, shopeeAppSecret, amazonTrackingId } = body as {
+    const { shopeeAppId, shopeeAppSecret } = body as {
       shopeeAppId?: string;
       shopeeAppSecret?: string;
-      amazonTrackingId?: string;
     };
 
     await credentialsRepo.upsert(auth.userId, {
       shopeeAppId: shopeeAppId ?? undefined,
       shopeeAppSecret: shopeeAppSecret ?? undefined,
-      amazonTrackingId: amazonTrackingId ?? undefined,
     });
 
     return { success: true, message: 'Perfil atualizado' };

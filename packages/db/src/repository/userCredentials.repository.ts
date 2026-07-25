@@ -11,11 +11,13 @@ export type NewUserCredentials = InferInsertModel<typeof userCredentials>;
 /**
  * Dados para criar ou atualizar credenciais.
  * Campos undefined = não alterar.
+ *
+ * NOTA: tracking IDs Amazon ficam em `amazon_affiliates.tracking_ids`
+ * (jsonb) — gerenciados via `/api/amazon/affiliate/tracking-ids`.
  */
 export interface UserCredentialsInput {
   shopeeAppId?: string | null;
   shopeeAppSecret?: string | null;
-  amazonTrackingId?: string | null;
 }
 
 // ─── Repository ──────────────────────────────────────────────────────
@@ -47,7 +49,6 @@ export class UserCredentialsRepository {
       const updateData: Record<string, unknown> = {};
       if (data.shopeeAppId !== undefined) updateData.shopeeAppId = data.shopeeAppId;
       if (data.shopeeAppSecret !== undefined) updateData.shopeeAppSecret = data.shopeeAppSecret;
-      if (data.amazonTrackingId !== undefined) updateData.amazonTrackingId = data.amazonTrackingId;
 
       if (Object.keys(updateData).length === 0) return existing;
 
@@ -66,7 +67,6 @@ export class UserCredentialsRepository {
         userId,
         shopeeAppId: data.shopeeAppId ?? null,
         shopeeAppSecret: data.shopeeAppSecret ?? null,
-        amazonTrackingId: data.amazonTrackingId ?? null,
       })
       .returning();
 
