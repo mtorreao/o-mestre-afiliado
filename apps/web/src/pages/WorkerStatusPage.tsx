@@ -706,6 +706,19 @@ function DLQSection() {
 
 // ─── Página ──────────────────────────────────────────
 
+const STALE_AFTER_MS = 30_000;
+
+function useTickEvery(intervalMs: number): number {
+  // Hook re-render a cada `intervalMs` para refrescar indicadores relativos
+  // (ex: "Atualizado há Xs") sem precisar de fetch. Retorna timestamp atual.
+  const [tick, setTick] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return tick;
+}
+
 export function WorkerStatusPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<AggregatedWorkerStatus | null>(null);
@@ -713,6 +726,7 @@ export function WorkerStatusPage() {
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const tick = useTickEvery(10_000);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -743,6 +757,7 @@ export function WorkerStatusPage() {
   }
 
   const anyReachable = data?.services.some((s) => s.reachable) ?? false;
+  const isStale = lastUpdate ? tick - lastUpdate.getTime() > STALE_AFTER_MS : false;
 
   return (
     <PageLayout maxWidth="900px">
@@ -753,7 +768,29 @@ export function WorkerStatusPage() {
         actions={
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             {lastUpdate && (
-              <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+              <span
+                title={
+                  isStale
+                    ? 'Dados com mais de 30s — auto-refresh pode estar parado'
+                    : 'Dados ao vivo'
+                }
+                style={{
+                  fontSize: '0.65rem',
+                  color: isStale ? 'var(--color-warning)' : 'var(--color-text-muted)',
+                  fontWeight: isStale ? 600 : 400,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: isStale ? 'var(--color-warning)' : 'var(--color-success)',
+                  }}
+                />
                 Atualizado {relativeTime(lastUpdate.toISOString())}
               </span>
             )}
@@ -768,7 +805,33 @@ export function WorkerStatusPage() {
         }
       />
 
-      {loading && !data && <Loading text="Carregando status do worker..." />}
+      {loading && !data && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <div
+                  style={{
+                    height: 12,
+                    width: '40%',
+                    background: 'var(--color-bg-secondary)',
+                    borderRadius: 'var(--radius-sm)',
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                  }}
+                />
+                <div
+                  style={{
+                    height: 32,
+                    background: 'var(--color-bg-secondary)',
+                    borderRadius: 'var(--radius-md)',
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                  }}
+                />
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {error && !data && (
         <Card>
