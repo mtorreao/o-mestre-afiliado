@@ -1,8 +1,12 @@
 /**
- * WorkerStatusPage — Status do pipeline de espelhamento (Ingestor + Dispatcher)
+ * WorkerStatusPage — Dashboard de saúde e performance dos workers (Ingestor + Dispatcher)
  *
- * Exibe visão do pipeline (Queue A → Ingestor → Queue B → Dispatcher),
- * saúde/métricas/latência de cada serviço, e gerenciamento da DLQ.
+ * Mostra 5 seções em uma única página:
+ *   1. Pipeline       — Queue A → Ingestor → Queue B → Dispatcher → Evolution
+ *   2. Resumo saúde   — uptime, modo, último erro, DLQ, queue size por worker
+ *   3. Ingestor       — métricas e latências detalhadas
+ *   4. Dispatcher     — métricas e latências detalhadas (com breakdown por marketplace)
+ *   5. DLQ            — destaque, com expansão inline para gestão
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -25,7 +29,10 @@ import {
   formatMs,
   formatDate,
   relativeTime,
+  labelValueLabel,
+  marketplaceLabel,
 } from '../lib/worker-status.ts';
+import { sumByName, aggregateByLabel, rankedByLabel } from '../lib/worker-counters.ts';
 import type {
   AggregatedWorkerStatus,
   ServiceStatus,
@@ -34,20 +41,34 @@ import type {
   WorkerServiceName,
 } from '../lib/worker-status.ts';
 
-// ─── Helpers ────────────────────────────────────────
+// ─── Meta por serviço ─────────────────────────────────
 
-const SERVICE_META: Record<WorkerServiceName, { label: string; icon: string; desc: string }> = {
-  ingestor: { label: 'Ingestor', icon: '📥', desc: 'Queue A → conversão → Queue B' },
-  dispatcher: { label: 'Dispatcher', icon: '📤', desc: 'Queue B → envio → Evolution' },
+const SERVICE_META: Record<WorkerServiceName, { label: string; icon: string; desc: string; accent: string }> = {
+  ingestor: {
+    label: 'Ingestor',
+    icon: '📥',
+    desc: 'Queue A → conversão → Queue B',
+    accent: 'var(--color-info)',
+  },
+  dispatcher: {
+    label: 'Dispatcher',
+    icon: '📤',
+    desc: 'Queue B → envio → Evolution',
+    accent: 'var(--color-primary)',
+  },
 };
 
 function healthBadge(svc: ServiceStatus): { label: string; variant: 'success' | 'error' | 'warning' } {
-  if (!svc.reachable) return { label: '❌ Inacessível', variant: 'error' };
-  if (svc.status === 'healthy') return { label: '✅ Saudável', variant: 'success' };
-  return { label: '⚠️ Desconhecido', variant: 'warning' };
+  if (!svc.reachable) return { label: 'Inacessível', variant: 'error' };
+  if (svc.status === 'healthy') return { label: 'Saudável', variant: 'success' };
+  return { label: 'Desconhecido', variant: 'warning' };
 }
 
-// ─── Componentes internos ───────────────────────────
+function isEmpty(...values: number[]): boolean {
+  return values.every((v) => v === 0);
+}
+
+// ─── Pipeline view ────────────────────────────────────
 
 function PipelineView({ data }: { data: AggregatedWorkerStatus }) {
   const ingestor = data.services.find((s) => s.name === 'ingestor');
@@ -55,14 +76,22 @@ function PipelineView({ data }: { data: AggregatedWorkerStatus }) {
 
   const nodes = [
     { key: 'queueA', label: 'Queue A', sub: 'raw', value: data.pipeline.queueA, healthy: true },
-    { key: 'ingestor', label: 'Ingestor', sub: 'conversão', value: null, healthy: ingestor?.reachable ?? false },
+    { key: 'ingestor', label: 'Ingestor', sub: 'conversão', value: null as number | null, healthy: ingestor?.reachable ?? false },
     { key: 'queueB', label: 'Queue B', sub: 'send', value: data.pipeline.queueB, healthy: true },
-    { key: 'dispatcher', label: 'Dispatcher', sub: 'envio', value: null, healthy: dispatcher?.reachable ?? false },
+    { key: 'dispatcher', label: 'Dispatcher', sub: 'envio', value: null as number | null, healthy: dispatcher?.reachable ?? false },
     { key: 'evolution', label: 'Evolution', sub: 'WhatsApp', value: null, healthy: true },
   ];
 
   return (
-    <Card title="🔗 Pipeline de Espelhamento">
+    <Card
+      title={
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <span>🔗</span>
+          <span>Pipeline de Espelhamento</span>
+        </span>
+      }
+      subtitle="Mensagens em trânsito (XLEN dos streams Redis)"
+    >
       <div
         style={{
           display: 'flex',
@@ -127,25 +156,87 @@ function PipelineView({ data }: { data: AggregatedWorkerStatus }) {
   );
 }
 
-function MetricTile({ label, value, color }: { label: string; value: string | number; color?: string }) {
+// ─── Resumo de saúde (2 colunas) ──────────────────────
+
+function HealthSummary({ data }: { data: AggregatedWorkerStatus }) {
+  return (
+    <Card title="📊 Resumo de Saúde" subtitle="Estado operacional de cada worker">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+        {data.services.map((svc) => (
+          <ServiceSummary key={svc.name} svc={svc} />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ServiceSummary({ svc }: { svc: ServiceStatus }) {
+  const meta = SERVICE_META[svc.name];
+  const health = healthBadge(svc);
+  const distinctErrors = svc.errors?.length ?? 0;
+  const lastErrorTime = svc.errors?.[0]?.time;
+
   return (
     <div
       style={{
-        padding: '0.6rem 0.75rem',
+        padding: '0.75rem',
         background: 'var(--color-bg-secondary)',
         borderRadius: 'var(--radius-md)',
-        border: '1px solid var(--color-border-light)',
+        borderLeft: `3px solid ${meta.accent}`,
       }}
     >
-      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', marginBottom: '0.2rem', wordBreak: 'break-word' }}>
-        {label}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, fontSize: 'var(--text-sm)' }}>
+          <span>{meta.icon}</span>
+          <span>{meta.label}</span>
+        </span>
+        <Badge variant={health.variant}>{health.label}</Badge>
       </div>
-      <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: color ?? 'var(--color-primary)' }}>
-        {value}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', fontSize: 'var(--text-xs)' }}>
+        <Field label="Uptime" value={svc.uptime || '—'} />
+        <Field label="Modo" value={svc.mode || '—'} />
+        <Field
+          label="Queue size"
+          value={svc.queueSize != null ? String(svc.queueSize) : '—'}
+          accent={svc.queueSize && svc.queueSize > 50 ? 'var(--color-warning)' : undefined}
+        />
+        <Field
+          label="DLQ"
+          value={String(svc.dlqCount ?? 0)}
+          accent={svc.dlqCount && svc.dlqCount > 0 ? 'var(--color-error)' : 'var(--color-success)'}
+        />
+        <Field
+          label="Erros distintos"
+          value={String(distinctErrors)}
+          accent={distinctErrors > 0 ? 'var(--color-warning)' : 'var(--color-text-muted)'}
+        />
+        <Field
+          label="Último erro"
+          value={lastErrorTime ? relativeTime(lastErrorTime) : '—'}
+          accent={lastErrorTime ? 'var(--color-text-muted)' : 'var(--color-text-muted)'}
+        />
       </div>
+
+      {svc.startTime && (
+        <div style={{ marginTop: '0.5rem', fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+          Iniciado em {formatDate(svc.startTime)}
+        </div>
+      )}
     </div>
   );
 }
+
+function Field({ label, value, accent }: { label: string; value: string; accent?: string }) {
+  return (
+    <div>
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.65rem', marginBottom: '0.1rem' }}>{label}</div>
+      <div style={{ fontWeight: 600, color: accent ?? 'var(--color-text-primary)' }}>{value}</div>
+    </div>
+  );
+}
+
+// ─── Card detalhado por serviço ───────────────────────
 
 function ServiceCard({ svc }: { svc: ServiceStatus }) {
   const meta = SERVICE_META[svc.name];
@@ -163,6 +254,8 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
           <Badge variant={health.variant}>{health.label}</Badge>
         </span>
       }
+      subtitle={meta.desc}
+      style={{ borderLeft: `3px solid ${meta.accent}` }}
     >
       {!svc.reachable ? (
         <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
@@ -172,71 +265,32 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Info geral */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.75rem' }}>
-            <div>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Uptime</div>
-              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>{svc.uptime || '-'}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Fila</div>
-              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: svc.queueSize ? 'var(--color-primary)' : 'inherit' }}>
-                {svc.queueSize ?? '-'}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>DLQ</div>
-              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: svc.dlqCount ? 'var(--color-error)' : 'var(--color-success)' }}>
-                {svc.dlqCount ?? 0}
-              </div>
-            </div>
-            {svc.startTime && (
-              <div>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Iniciado</div>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>{formatDate(svc.startTime)}</div>
-              </div>
-            )}
-          </div>
-
-          {/* Métricas (counters) */}
-          {Object.keys(counters).length > 0 && (
-            <div>
-              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                Métricas
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '0.5rem' }}>
-                {Object.entries(counters).map(([key, value]) => (
-                  <MetricTile key={key} label={counterLabel(key)} value={String(value)} />
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Métricas por seção, agregadas por label */}
+          <ServiceMetrics serviceName={svc.name} counters={counters} />
 
           {/* Latência por etapa */}
           {stepEntries.length > 0 && (
             <div>
-              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                Latência por etapa
-              </div>
+              <SectionTitle>Latência por etapa</SectionTitle>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-xs)' }}>
                   <thead>
                     <tr style={{ color: 'var(--color-text-muted)', textAlign: 'left' }}>
-                      <th style={{ padding: '0.3rem 0.5rem', fontWeight: 600 }}>Etapa</th>
-                      <th style={{ padding: '0.3rem 0.5rem', fontWeight: 600, textAlign: 'right' }}>Média</th>
-                      <th style={{ padding: '0.3rem 0.5rem', fontWeight: 600, textAlign: 'right' }}>p50</th>
-                      <th style={{ padding: '0.3rem 0.5rem', fontWeight: 600, textAlign: 'right' }}>p99</th>
-                      <th style={{ padding: '0.3rem 0.5rem', fontWeight: 600, textAlign: 'right' }}>Amostras</th>
+                      <th style={th()}>Etapa</th>
+                      <th style={th('right')}>Média</th>
+                      <th style={th('right')}>p50</th>
+                      <th style={th('right')}>p99</th>
+                      <th style={th('right')}>Amostras</th>
                     </tr>
                   </thead>
                   <tbody>
                     {stepEntries.map(([name, v]) => (
                       <tr key={name} style={{ borderTop: '1px solid var(--color-border-light)' }}>
-                        <td style={{ padding: '0.35rem 0.5rem', color: 'var(--color-text-primary)' }}>{stepLabel(name)}</td>
-                        <td style={{ padding: '0.35rem 0.5rem', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{formatMs(v.avg)}</td>
-                        <td style={{ padding: '0.35rem 0.5rem', textAlign: 'right', color: 'var(--color-text-secondary)' }}>{formatMs(v.p50)}</td>
-                        <td style={{ padding: '0.35rem 0.5rem', textAlign: 'right', color: v.p99 > 5000 ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>{formatMs(v.p99)}</td>
-                        <td style={{ padding: '0.35rem 0.5rem', textAlign: 'right', color: 'var(--color-text-muted)' }}>{v.count}</td>
+                        <td style={td()}>{stepLabel(name)}</td>
+                        <td style={td('right')}>{formatMs(v.avg)}</td>
+                        <td style={td('right')}>{formatMs(v.p50)}</td>
+                        <td style={td('right', v.p99 > 5000 ? 'var(--color-warning)' : undefined)}>{formatMs(v.p99)}</td>
+                        <td style={td('right', 'var(--color-text-muted)')}>{v.count}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -247,9 +301,7 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
 
           {/* Últimos erros */}
           <div>
-            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              Últimos erros
-            </div>
+            <SectionTitle>Últimos erros</SectionTitle>
             {!svc.errors || svc.errors.length === 0 ? (
               <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>Nenhum erro registrado ✓</div>
             ) : (
@@ -286,6 +338,209 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
     </Card>
   );
 }
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 'var(--text-xs)',
+        fontWeight: 600,
+        color: 'var(--color-text-muted)',
+        marginBottom: '0.5rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.03em',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function th(align: 'left' | 'right' = 'left'): React.CSSProperties {
+  return { padding: '0.3rem 0.5rem', fontWeight: 600, textAlign: align };
+}
+
+function td(align: 'left' | 'right' = 'left', color?: string): React.CSSProperties {
+  return {
+    padding: '0.35rem 0.5rem',
+    textAlign: align,
+    color: color ?? 'var(--color-text-secondary)',
+  };
+}
+
+// ─── Métricas por serviço (agregadas por label) ───────
+
+function ServiceMetrics({ serviceName, counters }: { serviceName: WorkerServiceName; counters: Record<string, number | string> }) {
+  if (serviceName === 'ingestor') {
+    return <IngestorMetrics counters={counters} />;
+  }
+  return <DispatcherMetrics counters={counters} />;
+}
+
+function IngestorMetrics({ counters }: { counters: Record<string, number | string> }) {
+  const received = sumByName(counters, 'pipeline_messages_received_total');
+  const blockedByReason = rankedByLabel(counters, 'pipeline_messages_blocked_total', 'reason');
+  const blockedTotal = blockedByReason.reduce((acc, x) => acc + x.value, 0);
+  const published = sumByName(counters, 'pipeline_send_events_published_total');
+  const imageByResult = aggregateByLabel(counters, 'pipeline_image_fetch_total', 'result');
+  const imageTotal = (imageByResult.found ?? 0) + (imageByResult.not_found ?? 0);
+  const missingFallback = sumByName(counters, 'pipeline_image_missing_fallback_total');
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.5rem' }}>
+      <MetricTile label="Mensagens recebidas" value={received} />
+      <div>
+        <MetricTile
+          label="Bloqueadas"
+          value={blockedTotal}
+          accent={blockedTotal > 0 ? 'var(--color-warning)' : undefined}
+        />
+        {blockedByReason.length > 0 && (
+          <Breakdown items={blockedByReason} labelName="reason" />
+        )}
+      </div>
+      <MetricTile label="Eventos publicados" value={published} accent="var(--color-primary)" />
+      <div>
+        <MetricTile label="Busca de imagem" value={imageTotal} />
+        {imageTotal > 0 && (
+          <Breakdown
+            items={[
+              { label: 'found', value: imageByResult.found ?? 0 },
+              { label: 'not_found', value: imageByResult.not_found ?? 0 },
+            ]}
+            labelName="result"
+          />
+        )}
+      </div>
+      {missingFallback > 0 && (
+        <MetricTile label="Sem imagem (fallback)" value={missingFallback} accent="var(--color-text-muted)" />
+      )}
+    </div>
+  );
+}
+
+function DispatcherMetrics({ counters }: { counters: Record<string, number | string> }) {
+  const received = sumByName(counters, 'sender_events_received_total');
+  const sentByMarketplace = aggregateByLabel(counters, 'sender_messages_sent_total', 'marketplace');
+  const sentTotal = Object.values(sentByMarketplace).reduce((a, b) => a + b, 0);
+  const sentWithImage = sumByName(counters, 'sender_messages_sent_with_image_total');
+  const skippedByReason = rankedByLabel(counters, 'sender_messages_skipped_total', 'reason');
+  const skippedTotal = skippedByReason.reduce((a, b) => a + b.value, 0);
+  const failuresByType = rankedByLabel(counters, 'sender_failures_total', 'type');
+  const failuresTotal = failuresByType.reduce((a, b) => a + b.value, 0);
+
+  if (isEmpty(received, sentTotal, skippedTotal, failuresTotal) && sentWithImage === 0) {
+    return (
+      <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', textAlign: 'center', padding: '0.75rem' }}>
+        Nenhuma atividade registrada ainda — aguarde o envio da primeira mensagem.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.5rem' }}>
+      <MetricTile label="SendEvents recebidos" value={received} />
+      <div>
+        <MetricTile label="Enviadas" value={sentTotal} accent="var(--color-success)" />
+        {Object.keys(sentByMarketplace).length > 0 && (
+          <Breakdown
+            items={Object.entries(sentByMarketplace).map(([label, value]) => ({ label, value }))}
+            labelName="marketplace"
+            customLabel={marketplaceLabel}
+          />
+        )}
+      </div>
+      {sentWithImage > 0 && <MetricTile label="Com imagem" value={sentWithImage} />}
+      <div>
+        <MetricTile
+          label="Descartadas"
+          value={skippedTotal}
+          accent={skippedTotal > 0 ? 'var(--color-warning)' : undefined}
+        />
+        {skippedByReason.length > 0 && <Breakdown items={skippedByReason} labelName="reason" />}
+      </div>
+      <div>
+        <MetricTile
+          label="Falhas"
+          value={failuresTotal}
+          accent={failuresTotal > 0 ? 'var(--color-error)' : 'var(--color-success)'}
+        />
+        {failuresByType.length > 0 && <Breakdown items={failuresByType} labelName="type" />}
+      </div>
+    </div>
+  );
+}
+
+function MetricTile({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
+  return (
+    <div
+      style={{
+        padding: '0.6rem 0.75rem',
+        background: 'var(--color-bg-secondary)',
+        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--color-border-light)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 'var(--text-xs)',
+          color: 'var(--color-text-secondary)',
+          marginBottom: '0.2rem',
+          wordBreak: 'break-word',
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: accent ?? 'var(--color-primary)' }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sub-lista compacta de "X: 5" para mostrar breakdown por label.
+ * Usa o label-value-label PT-BR (ex: "Falha na conversão" em vez de "conversion_failed").
+ */
+function Breakdown({
+  items,
+  labelName,
+  customLabel,
+}: {
+  items: Array<{ label: string; value: number }>;
+  labelName: string;
+  customLabel?: (v: string) => string;
+}) {
+  return (
+    <ul
+      style={{
+        listStyle: 'none',
+        margin: '0.35rem 0 0',
+        padding: 0,
+        fontSize: '0.65rem',
+        color: 'var(--color-text-muted)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.1rem',
+      }}
+    >
+      {items.map((it) => (
+        <li
+          key={it.label}
+          style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}
+          title={`${counterLabel(labelName)} = ${it.label}`}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {customLabel ? customLabel(it.label) : labelValueLabel(labelName, it.label)}
+          </span>
+          <span style={{ fontWeight: 600, color: 'var(--color-text-secondary)' }}>{it.value}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ─── DLQ section (top-level) ──────────────────────────
 
 function DLQSection() {
   const [data, setData] = useState<DLQListResponse | null>(null);
@@ -347,10 +602,12 @@ function DLQSection() {
     <Card
       title={
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span>🗑️ Dead Letter Queue</span>
+          <span>🗑️</span>
+          <span>Dead Letter Queue</span>
           {total > 0 && <Badge variant="error">{total}</Badge>}
         </span>
       }
+      subtitle="Mensagens que falharam permanentemente após todas as tentativas"
       action={
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {total > 0 && (
@@ -358,7 +615,12 @@ function DLQSection() {
               Limpar antigos
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setExpanded((v) => !v)} icon={expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpanded((v) => !v)}
+            icon={expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          >
             {expanded ? 'Recolher' : 'Ver itens'}
           </Button>
         </div>
@@ -442,7 +704,7 @@ function DLQSection() {
   );
 }
 
-// ─── Página ─────────────────────────────────────────
+// ─── Página ──────────────────────────────────────────
 
 export function WorkerStatusPage() {
   const navigate = useNavigate();
@@ -450,6 +712,7 @@ export function WorkerStatusPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -457,6 +720,7 @@ export function WorkerStatusPage() {
       const res = await fetch('/api/worker/status');
       const json = (await res.json()) as AggregatedWorkerStatus;
       setData(json);
+      setLastUpdate(new Date());
     } catch {
       setError('Erro de conexão ao buscar status do worker');
     }
@@ -488,6 +752,11 @@ export function WorkerStatusPage() {
         onBack={() => navigate('/')}
         actions={
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            {lastUpdate && (
+              <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+                Atualizado {relativeTime(lastUpdate.toISOString())}
+              </span>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Auto</span>
               <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
@@ -516,6 +785,8 @@ export function WorkerStatusPage() {
       {data && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <PipelineView data={data} />
+
+          <HealthSummary data={data} />
 
           {!anyReachable && (
             <Card>
