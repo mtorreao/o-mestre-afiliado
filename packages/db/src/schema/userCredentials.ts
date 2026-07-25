@@ -7,8 +7,11 @@ import { users } from './users.ts';
  * Uma única linha por usuário, contendo todas as credenciais
  * de marketplace que não usam OAuth (ex: Shopee App ID/Secret).
  *
- * Credenciais OAuth (Mercado Livre) ficam na tabela ml_affiliates,
- * vinculadas via user_id.
+ * Credenciais OAuth (Mercado Livre, Amazon) ficam em tabelas dedicadas:
+ *   - Mercado Livre → `ml_affiliates` (vinculada via user_id)
+ *   - Amazon        → `amazon_affiliates` (vinculada 1:1 via user_id UNIQUE)
+ *
+ * Tracking IDs Amazon ficam em `amazon_affiliates.tracking_ids` (jsonb).
  */
 export const userCredentials = omestre.table('user_credentials', {
   id: serial('id').primaryKey(),
@@ -21,9 +24,6 @@ export const userCredentials = omestre.table('user_credentials', {
   // Shopee
   shopeeAppId: text('shopee_app_id'),
   shopeeAppSecret: text('shopee_app_secret'),
-
-  // Amazon
-  amazonTrackingId: text('amazon_tracking_id'),
 
   // Metadados
   createdAt: timestamp('created_at').notNull().defaultNow(),
