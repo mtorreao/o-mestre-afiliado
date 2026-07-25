@@ -7,11 +7,12 @@
  * FILOSOFIA: Só notificar o que o USUÁRIO pode corrigir.
  *
  * Tipos que GERAM notificação (user-fixable):
- *   - cookie_expired           → 'Reimporte os cookies pela extensão Chrome'
- *   - refresh_token_expired    → 'Reconecte sua conta ML'
- *   - invalid_shopee_creds     → 'Verifique credenciais Shopee'
- *   - ml_account_not_linked    → 'Conecte-se primeiro'
- *   - evolution_api_offline    → 'Evolution API está offline — verifique o container'
+ *   - cookie_expired                → 'Reimporte os cookies pela extensão Chrome'
+ *   - refresh_token_expired         → 'Reconecte sua conta ML'
+ *   - invalid_shopee_creds          → 'Verifique credenciais Shopee'
+ *   - invalid_amazon_tracking_id    → 'Configure seu tracking ID da Amazon'
+ *   - ml_account_not_linked         → 'Conecte-se primeiro'
+ *   - evolution_api_offline         → 'Evolution API está offline — verifique o container'
  *
  * Tipos que NUNCA geram notificação (silenciosos):
  *   - network_timeout          → transiente
@@ -45,6 +46,7 @@ export type UserFixableType =
   | 'cookie_expired'
   | 'refresh_token_expired'
   | 'invalid_shopee_creds'
+  | 'invalid_amazon_tracking_id'
   | 'ml_account_not_linked'
   | 'evolution_api_offline';
 
@@ -65,6 +67,9 @@ const NOTIFICATION_MESSAGES: Record<UserFixableType, string> = {
   invalid_shopee_creds:
     '⚠️ Credenciais da Shopee (App ID/Secret) inválidas.\n' +
     'Verifique suas credenciais no painel.',
+  invalid_amazon_tracking_id:
+    '🛒 Tracking ID da Amazon não configurado.\n' +
+    'Cadastre seu tracking ID no painel para receber comissões de ofertas Amazon.',
   ml_account_not_linked:
     '🔗 Nenhuma conta do Mercado Livre vinculada.\n' +
     'Conecte-se primeiro no painel.',
@@ -77,6 +82,7 @@ const NOTIFICATION_LABELS: Record<UserFixableType, string> = {
   cookie_expired: 'cookie expirado',
   refresh_token_expired: 'token expirado',
   invalid_shopee_creds: 'credenciais Shopee inválidas',
+  invalid_amazon_tracking_id: 'tracking Amazon não configurado',
   ml_account_not_linked: 'conta ML não vinculada',
   evolution_api_offline: 'Evolution API offline',
 };
@@ -122,6 +128,73 @@ function evolutionHeaders(): Record<string, string> {
     'Content-Type': 'application/json',
     apikey: EVOLUTION_API_KEY,
   };
+}
+
+// ─── Telegram Bot API ────────────────────────────────────────────────────
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+
+async function sendTelegramNotification(
+  chatId: string,
+  text: string,
+): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      service: 'notifier',
+      message: 'TELEGRAM_BOT_TOKEN não configurado — pulando envio Telegram',
+      targetJid: chatId,
+    }));
+    return false;
+  }
+
+  try {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true,
+      }),
+    });
+
+    if (res.ok) {
+      console.log(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        service: 'notifier',
+        message: `Notificação enviada via Telegram para ${chatId}`,
+        targetJid: chatId,
+      }));
+      return true;
+    }
+
+    const body = await res.text();
+    console.warn(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      service: 'notifier',
+      message: 'Falha ao enviar notificação Telegram',
+      status: res.status,
+      body: body.slice(0, 200),
+      targetJid: chatId,
+    }));
+    return false;
+  } catch (err) {
+    console.warn(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      service: 'notifier',
+      message: 'Erro ao enviar notificação Telegram',
+      error: err instanceof Error ? err.message : String(err),
+      targetJid: chatId,
+    }));
+    return false;
+  }
 }
 
 // ─── Classificação ───────────────────────────────────────────────────────
@@ -182,14 +255,14 @@ export function classifyConversionError(
   }
 
   if (marketplace === 'amazon') {
-    if (
-      err.includes('tracking') ||
-      err.includes('tag') ||
-      err.includes('invalid')
-    ) {
-      return 'invalid_shopee_creds';
+      if (
+        err.includes('tracking') ||
+        err.includes('tag') ||
+        err.includes('invalid')
+      ) {
+        return 'invalid_amazon_tracking_id';
+      }
     }
-  }
 
   if (
     err.includes('fetch failed') ||
@@ -212,6 +285,7 @@ export function getNotifiableType(type: FailureType): UserFixableType | null {
     'cookie_expired',
     'refresh_token_expired',
     'invalid_shopee_creds',
+    'invalid_amazon_tracking_id',
     'ml_account_not_linked',
     'evolution_api_offline',
   ]);
@@ -462,25 +536,17 @@ export async function processFailure(
   }
 
   let sent = false;
-  if (channel === 'whatsapp') {
-    sent = await sendWhatsAppNotification(instanceName, notificationText, targetJid);
-  } else if (channel === 'telegram') {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      service: 'notifier',
-      message: `[NOTIFICAÇÃO] Canal Telegram não implementado. Mensagem: ${notificationText.replace(/\n/g, ' | ')}`,
-      instanceName,
-      targetJid,
-    }));
-    sent = true;
-  }
+    if (channel === 'whatsapp') {
+      sent = await sendWhatsAppNotification(instanceName, notificationText, targetJid);
+    } else if (channel === 'telegram') {
+      sent = await sendTelegramNotification(targetJid, notificationText);
+    }
 
-  if (sent) {
-    await setCooldown(notifiableType, instanceName);
-    await resetOccurrences(notifiableType, instanceName);
+    if (sent) {
+      await setCooldown(notifiableType, instanceName);
+      await resetOccurrences(notifiableType, instanceName);
+    }
   }
-}
 
 export async function notifyDirect(
   instanceName: string,
@@ -520,18 +586,10 @@ export async function notifyDirect(
   let sent = false;
 
   if (channel === 'whatsapp') {
-    sent = await sendWhatsAppNotification(instanceName, text, targetJid);
-  } else if (channel === 'telegram') {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      service: 'notifier',
-      message: `[NOTIFICAÇÃO] Canal Telegram não implementado. Mensagem: ${text.replace(/\n/g, ' | ')}`,
-      instanceName,
-      targetJid,
-    }));
-    sent = true;
-  }
+      sent = await sendWhatsAppNotification(instanceName, text, targetJid);
+    } else if (channel === 'telegram') {
+      sent = await sendTelegramNotification(targetJid, text);
+    }
 
   if (sent) {
     await setCooldown(type, instanceName);

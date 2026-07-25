@@ -55,3 +55,5 @@ export {
   trackError,
 } from './metrics-server.ts';
 export type { StepTrackers, StatusResponse } from './metrics-server.ts';
+
+export { parsePromCounter } from './metrics-parser.ts';
