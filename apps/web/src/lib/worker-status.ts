@@ -51,6 +51,114 @@ export interface DLQEntry {
   reprocessed: boolean;
   reprocessedAt?: string;
   reprocessResult?: string;
+  /** Evento original (RawMessageEvent da Queue A ou SendEvent da Queue B) */
+  event?: DLQEvent;
+}
+
+/** Subconjunto dos campos que o backend serializa. Discriminated union por `kind`. */
+export type DLQEvent =
+  | {
+      kind: 'raw';
+      messageId: string;
+      instanceName: string;
+      sourceGroupJid: string;
+      sourceGroupName?: string;
+      text?: string;
+      timestamp?: number;
+      affiliateId?: number;
+      mirrorId?: number;
+    }
+  | {
+      kind: 'send';
+      id: string;
+      sourceMessageId: string;
+      sourceGroupJid: string;
+      mirrorId: number;
+      text: string;
+      imageUrl: string;
+      marketplace: string;
+      originalUrl: string;
+      convertedUrl: string;
+    };
+
+/**
+ * Normaliza o `event` cru do backend (que vem como objeto union sem discriminator)
+ * para o tipo `DLQEvent` discriminado. Retorna undefined se o evento não tem
+ * a forma esperada.
+ */
+export function normalizeDLQEvent(raw: unknown): DLQEvent | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const e = raw as Record<string, unknown>;
+  // RawMessageEvent tem 'messageId' (da Queue A / Ingestor)
+  if (typeof e.messageId === 'string') {
+    return {
+      kind: 'raw',
+      messageId: e.messageId,
+      instanceName: typeof e.instanceName === 'string' ? e.instanceName : '',
+      sourceGroupJid: typeof e.sourceGroupJid === 'string' ? e.sourceGroupJid : '',
+      sourceGroupName: typeof e.sourceGroupName === 'string' ? e.sourceGroupName : undefined,
+      text: typeof e.text === 'string' ? e.text : undefined,
+      timestamp: typeof e.timestamp === 'number' ? e.timestamp : undefined,
+      affiliateId: typeof e.affiliateId === 'number' ? e.affiliateId : undefined,
+      mirrorId: typeof e.mirrorId === 'number' ? e.mirrorId : undefined,
+    };
+  }
+  // SendEvent tem 'sourceMessageId' (da Queue B / Dispatcher)
+  if (typeof e.sourceMessageId === 'string' && typeof e.mirrorId === 'number') {
+    return {
+      kind: 'send',
+      id: typeof e.id === 'string' ? e.id : '',
+      sourceMessageId: e.sourceMessageId,
+      sourceGroupJid: typeof e.sourceGroupJid === 'string' ? e.sourceGroupJid : '',
+      mirrorId: e.mirrorId,
+      text: typeof e.text === 'string' ? e.text : '',
+      imageUrl: typeof e.imageUrl === 'string' ? e.imageUrl : '',
+      marketplace: typeof e.marketplace === 'string' ? e.marketplace : '',
+      originalUrl: typeof e.originalUrl === 'string' ? e.originalUrl : '',
+      convertedUrl: typeof e.convertedUrl === 'string' ? e.convertedUrl : '',
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Mapeia `failureReason` (string genérica do backend) para:
+ *   - `queue`: 'A' (Ingestor) ou 'B' (Dispatcher)
+ *   - `stage`: nome legível da etapa que falhou
+ *
+ * Usado para renderizar "Fila: Queue A · Etapa: Conversão" no card.
+ */
+export const FAILURE_REASON_META: Record<string, { queue: 'A' | 'B'; stage: string }> = {
+  // Ingestor (Queue A)
+  conversion_failed:           { queue: 'A', stage: 'Conversão de link' },
+  no_url:                      { queue: 'A', stage: 'Extração de URL' },
+  multiple_product_links:      { queue: 'A', stage: 'Extração de URL' },
+  shopee_shortlink_only:       { queue: 'A', stage: 'Resolução Shopee' },
+  coupon_only:                 { queue: 'A', stage: 'Detecção de cupom' },
+  global_blacklist:            { queue: 'A', stage: 'Blacklist' },
+  global_whitelist:            { queue: 'A', stage: 'Whitelist' },
+  affiliate_link_mismatch:     { queue: 'A', stage: 'Validação de afiliado' },
+  // Dispatcher (Queue B)
+  send_failed:                 { queue: 'B', stage: 'Envio (Evolution)' },
+  rate_limited:                { queue: 'B', stage: 'Rate limit' },
+  group_rate_limited:          { queue: 'B', stage: 'Rate limit do grupo' },
+  // Genéricos / compartilhados
+  unknown:                     { queue: 'A', stage: 'Desconhecida' },
+};
+
+export function getFailureMeta(reason: string): { queue: 'A' | 'B'; stage: string } {
+  if (FAILURE_REASON_META[reason]) return FAILURE_REASON_META[reason];
+  // Heurística de fallback: prefixos de Dispatcher (Queue B) são raros
+  // e bem distintos dos de Ingestor (Queue A).
+  const lower = reason.toLowerCase();
+  if (lower.startsWith('send_') || lower.startsWith('rate_') || lower.includes('group_')) {
+    return { queue: 'B', stage: humanize(reason) };
+  }
+  return { queue: 'A', stage: humanize(reason) };
+}
+
+function humanize(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export interface DLQListResponse {

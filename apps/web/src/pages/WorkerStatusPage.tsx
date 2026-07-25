@@ -31,6 +31,8 @@ import {
   relativeTime,
   labelValueLabel,
   marketplaceLabel,
+  normalizeDLQEvent,
+  getFailureMeta,
 } from '../lib/worker-status.ts';
 import { sumByName, aggregateByLabel, rankedByLabel } from '../lib/worker-counters.ts';
 import type {
@@ -38,6 +40,7 @@ import type {
   ServiceStatus,
   DLQListResponse,
   DLQEntry,
+  DLQEvent,
   WorkerServiceName,
 } from '../lib/worker-status.ts';
 
@@ -540,6 +543,236 @@ function Breakdown({
   );
 }
 
+// ─── DLQ item (com expansão inline por item) ──────────
+
+function DLQItem({
+  item,
+  busy,
+  onRequeue,
+  onRemove,
+}: {
+  item: DLQEntry;
+  busy: boolean;
+  onRequeue: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const meta = getFailureMeta(item.failureReason);
+  const event = normalizeDLQEvent(item.event);
+  const hasDetails = event !== undefined;
+
+  return (
+    <div
+      style={{
+        padding: '0.75rem',
+        background: 'var(--color-bg-secondary)',
+        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--color-border-light)',
+      }}
+    >
+      {/* Linha 1: badges + timestamp relativo (com tooltip absoluto) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.4rem' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <Badge variant="error">{item.failureReason}</Badge>
+            <Badge variant={meta.queue === 'A' ? 'info' : 'warning'}>Queue {meta.queue}</Badge>
+            {item.marketplace && <Badge variant="neutral">{item.marketplace}</Badge>}
+            {item.reprocessed && <Badge variant="success">reprocessado</Badge>}
+          </div>
+        </div>
+        <span
+          title={formatDate(item.failedAt)}
+          style={{
+            fontSize: '0.65rem',
+            color: 'var(--color-text-muted)',
+            whiteSpace: 'nowrap',
+            cursor: 'help',
+            borderBottom: '1px dotted var(--color-border-light)',
+          }}
+        >
+          {relativeTime(item.failedAt)}
+        </span>
+      </div>
+
+      {/* Linha 2: etapa legível (humanizada) + última mensagem de erro */}
+      <div style={{ fontSize: 'var(--text-xs)', marginBottom: '0.4rem' }}>
+        <span style={{ color: 'var(--color-text-muted)' }}>Etapa:</span>{' '}
+        <span style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{meta.stage}</span>
+      </div>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', marginBottom: '0.4rem', wordBreak: 'break-word' }}>
+        {item.lastError}
+      </div>
+
+      {item.originalUrl && (
+        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginBottom: '0.4rem', wordBreak: 'break-all' }}>
+          🔗 {item.originalUrl}
+        </div>
+      )}
+
+      {/* Linha 3: ações + toggle de detalhes */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+        <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
+          {item.attempts} tentativa(s)
+        </span>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
+          {hasDetails && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded((v) => !v)}
+              icon={expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              aria-expanded={expanded}
+            >
+              {expanded ? 'Ocultar body' : 'Ver body'}
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onRequeue(item.id)}
+            loading={busy}
+            icon={<RotateCcw size={13} />}
+          >
+            Re-enfileirar
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onRemove(item.id)}
+            disabled={busy}
+            icon={<Trash2 size={13} />}
+          >
+            Remover
+          </Button>
+        </div>
+      </div>
+
+      {/* Detalhes expansíveis: corpo do evento original */}
+      {expanded && event && <DLQItemDetails event={event} />}
+    </div>
+  );
+}
+
+function DLQItemDetails({ event }: { event: DLQEvent }) {
+  if (event.kind === 'raw') {
+    return (
+      <div
+        style={{
+          marginTop: '0.5rem',
+          paddingTop: '0.5rem',
+          borderTop: '1px solid var(--color-border-light)',
+          fontSize: 'var(--text-xs)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.35rem',
+        }}
+      >
+        <DetailRow label="messageId" value={event.messageId} mono />
+        {event.instanceName && <DetailRow label="instanceName" value={event.instanceName} mono />}
+        {event.sourceGroupJid && <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />}
+        {event.sourceGroupName && <DetailRow label="sourceGroupName" value={event.sourceGroupName} />}
+        {event.affiliateId != null && <DetailRow label="affiliateId" value={String(event.affiliateId)} />}
+        {event.mirrorId != null && <DetailRow label="mirrorId" value={String(event.mirrorId)} />}
+        {event.timestamp != null && (
+          <DetailRow
+            label="timestamp"
+            value={`${event.timestamp} (${formatDate(new Date(event.timestamp * 1000).toISOString())})`}
+            mono
+          />
+        )}
+        {event.text && (
+          <div>
+            <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.2rem' }}>text (mensagem original)</div>
+            <pre
+              style={{
+                margin: 0,
+                padding: '0.5rem',
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border-light)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.7rem',
+                fontFamily: 'var(--font-mono, monospace)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: 200,
+                overflow: 'auto',
+              }}
+            >
+              {event.text}
+            </pre>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // event.kind === 'send'
+  return (
+    <div
+      style={{
+        marginTop: '0.5rem',
+        paddingTop: '0.5rem',
+        borderTop: '1px solid var(--color-border-light)',
+        fontSize: 'var(--text-xs)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.35rem',
+      }}
+    >
+      <DetailRow label="id" value={event.id} mono />
+      <DetailRow label="sourceMessageId" value={event.sourceMessageId} mono />
+      {event.sourceGroupJid && <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />}
+      <DetailRow label="mirrorId" value={String(event.mirrorId)} />
+      <DetailRow label="marketplace" value={event.marketplace} />
+      <DetailRow label="originalUrl" value={event.originalUrl} mono />
+      {event.convertedUrl && event.convertedUrl !== event.originalUrl && (
+        <DetailRow label="convertedUrl" value={event.convertedUrl} mono />
+      )}
+      {event.imageUrl && <DetailRow label="imageUrl" value={event.imageUrl} mono />}
+      {event.text && (
+        <div>
+          <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.2rem' }}>text (template resolvido)</div>
+          <pre
+            style={{
+              margin: 0,
+              padding: '0.5rem',
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border-light)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.7rem',
+              fontFamily: 'var(--font-mono, monospace)',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              maxHeight: 200,
+              overflow: 'auto',
+            }}
+          >
+            {event.text}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'baseline' }}>
+      <span style={{ color: 'var(--color-text-muted)', minWidth: 130, flexShrink: 0 }}>{label}</span>
+      <span
+        style={{
+          color: 'var(--color-text-primary)',
+          wordBreak: 'break-all',
+          fontFamily: mono ? 'var(--font-mono, monospace)' : undefined,
+          fontSize: mono ? '0.7rem' : 'var(--text-xs)',
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 // ─── DLQ section (top-level) ──────────────────────────
 
 function DLQSection() {
@@ -639,64 +872,13 @@ function DLQSection() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {items.map((item) => (
-            <div
+            <DLQItem
               key={item.id}
-              style={{
-                padding: '0.75rem',
-                background: 'var(--color-bg-secondary)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border-light)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    <Badge variant="error">{item.failureReason}</Badge>
-                    {item.marketplace && <Badge variant="neutral">{item.marketplace}</Badge>}
-                    {item.reprocessed && <Badge variant="success">reprocessado</Badge>}
-                  </div>
-                </div>
-                <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                  {relativeTime(item.failedAt)}
-                </span>
-              </div>
-
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', marginBottom: '0.4rem', wordBreak: 'break-word' }}>
-                {item.lastError}
-              </div>
-
-              {item.originalUrl && (
-                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginBottom: '0.4rem', wordBreak: 'break-all' }}>
-                  🔗 {item.originalUrl}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
-                  {item.attempts} tentativa(s)
-                </span>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleRequeue(item.id)}
-                    loading={busyId === item.id}
-                    icon={<RotateCcw size={13} />}
-                  >
-                    Re-enfileirar
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemove(item.id)}
-                    disabled={busyId === item.id}
-                    icon={<Trash2 size={13} />}
-                  >
-                    Remover
-                  </Button>
-                </div>
-              </div>
-            </div>
+              item={item}
+              busy={busyId === item.id}
+              onRequeue={handleRequeue}
+              onRemove={handleRemove}
+            />
           ))}
         </div>
       )}
