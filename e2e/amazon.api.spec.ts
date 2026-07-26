@@ -16,7 +16,7 @@ import {
   authPut,
   authPatch,
   authDelete,
-} from './helpers';
+} from './helpers.ts';
 
 const VALID_TAG = 'meusite-20';
 const VALID_TAG_2 = 'meusite-tg-20';
