@@ -178,7 +178,7 @@ test.describe('Mirror Flow — Instance (via Simulator)', () => {
   });
 });
 
-test.describe('Mirror Flow — Groups Config', () => {
+test.describe('Mirror Flow — Groups + Mirror CRUD (via Simulator)', () => {
   test('GET /api/whatsapp/groups deve retornar grupos do simulador', async () => {
     const { token } = await createUserWithConnectedWhatsApp();
 
@@ -191,69 +191,10 @@ test.describe('Mirror Flow — Groups Config', () => {
     expect(groups[0]?.name).toBeTruthy();
   });
 
-  test('POST /api/affiliate/groups-config — valida sourceGroups vazio', async () => {
-    const { token } = await createUserWithConnectedWhatsApp();
-
-    const { status, body } = await authPostMirror(
-      '/api/affiliate/groups-config',
-      token,
-      { sourceGroups: [], targetGroups: [{ jid: '120363000000000003@g.us', name: 'Destino' }] },
-    );
-    expect(body.success).toBe(false);
-    expect(body.error).toContain('pelo menos 1');
-  });
-
-  test('POST /api/affiliate/groups-config — valida sourceGroups > 3', async () => {
-    const { token } = await createUserWithConnectedWhatsApp();
-
-    const manyGroups = Array.from({ length: 5 }, (_, i) => ({
-      jid: `12036300000000000${i}@g.us`,
-      name: `Grupo ${i}`,
-    }));
-
-    const { status, body } = await authPostMirror(
-      '/api/affiliate/groups-config',
-      token,
-      { sourceGroups: manyGroups, targetGroups: [{ jid: '120363000000000003@g.us', name: 'Destino' }] },
-    );
-    expect(body.success).toBe(false);
-    expect(body.error).toContain('Máximo de 3');
-  });
-
-  test('POST /api/affiliate/groups-config — valida targetGroups vazio', async () => {
-    const { token } = await createUserWithConnectedWhatsApp();
-
-    const { status, body } = await authPostMirror(
-      '/api/affiliate/groups-config',
-      token,
-      {
-        sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Grupo 1' }],
-        targetGroups: null,
-      },
-    );
-    expect(body.success).toBe(false);
-    expect(body.error).toMatch(/pelo menos 1|Selecione pelo menos/);
-  });
-
-  test('POST /api/affiliate/groups-config — valida ofertas com sucesso (simulador retorna 50%+ links)', async () => {
-    const { token } = await createUserWithConnectedWhatsApp();
-
-    // O simulador retorna 6/7 mensagens com links de marketplace no grupo 1 (~86%)
-    // Configurando este grupo como source, a validação deve passar
-    const { status, body } = await authPostMirror(
-      '/api/affiliate/groups-config',
-      token,
-      {
-        sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
-        targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
-      },
-    );
-    expect(status).toBe(200);
-    expect(body.success).toBe(true);
-    expect(body.affiliateId).toBeDefined();
-    expect(body.sourceGroups).toBeDefined();
-    expect(body.targetGroups).toBeDefined();
-  });
+  // NOTA: a API legada POST /api/affiliate/groups-config validava que
+  // sourceGroups >= 1 e <= 3 e exigia validação de ofertas via Evolution API.
+  // Substituído por POST /api/mirrors, que aceita sourceGroups/targetGroups vazios
+  // e sem caps. Cobertura de validação de caps está em mirrors.api.spec.ts.
 });
 
 test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
@@ -268,9 +209,10 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // Configura grupos: sourceGroup = grupo 1 (tem 86% links de marketplace),
     // targetGroup = grupo 3
     const configRes = await authPostMirror(
-      '/api/affiliate/groups-config',
+      '/api/mirrors',
       token,
       {
+        name: 'E2E Test Mirror (oferta)',
         sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
         targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
       },
@@ -327,7 +269,8 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     const { token } = await createUserWithConnectedWhatsApp();
 
     // Configura grupos
-    await authPostMirror('/api/affiliate/groups-config', token, {
+    await authPostMirror('/api/mirrors', token, {
+      name: 'E2E Test Mirror',
       sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
       targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     });
@@ -368,7 +311,8 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     const { token } = await createUserWithConnectedWhatsApp();
 
     // Configura grupos
-    await authPostMirror('/api/affiliate/groups-config', token, {
+    await authPostMirror('/api/mirrors', token, {
+      name: 'E2E Test Mirror',
       sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
       targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     });
@@ -407,7 +351,8 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
   test('Mensagem fromMe (enviada pelo próprio bot) é ignorada', async () => {
     const { token } = await createUserWithConnectedWhatsApp();
 
-    await authPostMirror('/api/affiliate/groups-config', token, {
+    await authPostMirror('/api/mirrors', token, {
+      name: 'E2E Test Mirror',
       sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
       targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     });
