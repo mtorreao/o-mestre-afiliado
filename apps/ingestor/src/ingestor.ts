@@ -969,8 +969,30 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
 
   const selectedProduct = productResolved[0]!;
   const originalUrl = selectedProduct.originalUrl;
-  const resolvedUrl = selectedProduct.resolvedUrl;
+  let resolvedUrl = selectedProduct.resolvedUrl;
   const marketplace = selectedProduct.marketplace;
+
+  // ── 3.5. Resolução de /social/<id> → produto real ──
+  // Páginas /social/<id> do ML são social commerce: o Link Builder rejeita
+  // essas URLs (erro 111). Precisamos extrair a URL real do produto (/p/MLB<id>)
+  // navegando na página e clicando em "Ir para o Produto".
+  if (marketplace === 'mercadolivre' && /^\/social\/[a-zA-Z0-9]+\/?$/i.test(new URL(resolvedUrl).pathname)) {
+    const { resolveSocialProductUrl } = await import('./resolve-social-product.ts');
+    const realProductUrl = await resolveSocialProductUrl(resolvedUrl);
+    if (realProductUrl) {
+      log('info', '/social/ resolvido para produto real', {
+        messageId,
+        socialUrl: resolvedUrl,
+        productUrl: realProductUrl,
+      });
+      resolvedUrl = realProductUrl;
+    } else {
+      log('warn', '/social/ não pôde ser resolvido para produto — tentando Link Builder mesmo assim', {
+        messageId,
+        socialUrl: resolvedUrl,
+      });
+    }
+  }
 
   // ── 4. Reconstrução do texto ──
   // Substitui URLs originais pelas resolvidas no texto sanitizado:

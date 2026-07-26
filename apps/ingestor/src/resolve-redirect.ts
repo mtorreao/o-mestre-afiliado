@@ -290,8 +290,14 @@ async function resolveMeliShortlink(url: string): Promise<ResolvedMeliRedirect |
     return { url: absoluteUrl, isProduct: false, reason: 'external_domain' };
   }
 
-  // Strip params de tracking injetados por outro afiliado
-  const { url: cleanUrl, dropped } = stripMeliTrackingParams(absoluteUrl);
+  // Strip params de tracking injetados por outro afiliado.
+  // EXCEÇÃO: URLs /social/<id> precisam dos params (matt_word, matt_tool,
+  // forceInApp, ref) para o botão "Ir para o Produto" aparecer na página.
+  // O strip só é necessário para URLs que vão direto pro Link Builder.
+  const isSocialUrl = /^\/social\/[a-zA-Z0-9]+\/?$/i.test(parsed.pathname);
+  const { url: cleanUrl, dropped } = isSocialUrl
+    ? { url: absoluteUrl, dropped: [] as string[] }
+    : stripMeliTrackingParams(absoluteUrl);
   const isProduct = isMeliProductUrl(cleanUrl);
 
   let reason: string | undefined;
@@ -360,9 +366,14 @@ async function resolveMeliSecLink(url: string): Promise<string | null> {
 
     if (!/mercadolivre\.com\.br/i.test(parsed.hostname)) return null;
 
-    // Strip query params e fragment — o destino é informativo
-    parsed.search = '';
-    parsed.hash = '';
+    // Strip query params e fragment — EXCETO para /social/<id> que precisa
+    // dos params (matt_word, matt_tool, forceInApp, ref) para o botão
+    // "Ir para o Produto" aparecer na página.
+    const isSocial = /^\/social\/[a-zA-Z0-9]+\/?$/i.test(parsed.pathname);
+    if (!isSocial) {
+      parsed.search = '';
+      parsed.hash = '';
+    }
     return parsed.toString();
   } catch {
     return null;

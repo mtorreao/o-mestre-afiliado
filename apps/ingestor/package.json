@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "build": "bun build src/index.ts --outdir=dist --target=bun",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --external playwright-core",
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit"
   },
@@ -14,7 +14,8 @@
     "@omestre/db": "workspace:*",
     "@omestre/worker-common": "workspace:*",
     "drizzle-orm": "^0.38.0",
-    "ioredis": "^5.4.1"
+    "ioredis": "^5.4.1",
+    "playwright-core": "^1.61.1"
   },
   "devDependencies": {
     "@types/bun": "latest"

@@ -21,6 +21,7 @@
         "@omestre/converters": "workspace:*",
         "@omestre/db": "workspace:*",
         "@omestre/shared": "workspace:*",
+        "@omestre/worker-common": "workspace:*",
         "elysia": "^1.2.25",
         "ioredis": "^5.11.1",
       },
@@ -52,6 +53,7 @@
         "@omestre/worker-common": "workspace:*",
         "drizzle-orm": "^0.38.0",
         "ioredis": "^5.4.1",
+        "playwright-core": "^1.61.1",
       },
       "devDependencies": {
         "@types/bun": "latest",

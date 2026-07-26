@@ -174,6 +174,14 @@ async function shutdown(signal: string): Promise<void> {
 
   stopMlCookieRevalidator();
 
+  // Encerra o headless browser (se foi iniciado para resolver /social/)
+  try {
+    const { closeBrowser } = await import('./resolve-social-product.ts');
+    await closeBrowser();
+  } catch {
+    // silencia
+  }
+
   try {
     if (redis) {
       await redis.quit();
