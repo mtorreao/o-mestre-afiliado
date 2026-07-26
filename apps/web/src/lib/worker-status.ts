@@ -165,6 +165,8 @@ export interface DLQListResponse {
   success: boolean;
   items: DLQEntry[];
   total: number;
+  /** Total APÓS filtros server-side (queue/reason/since). Igual a `total` quando não há filtro. */
+  totalFiltered: number;
   offset: number;
   limit: number;
 }

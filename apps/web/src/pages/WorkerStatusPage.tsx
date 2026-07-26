@@ -809,6 +809,19 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
 
 type QueueFilter = 'all' | 'A' | 'B';
 
+/** Preset de tempo para o filtro since. '' = sem filtro. */
+type SincePreset = '' | '1h' | '24h' | '7d' | '30d';
+
+const SINCE_PRESETS: { value: SincePreset; label: string }[] = [
+  { value: '', label: 'Tudo' },
+  { value: '1h', label: 'Última 1h' },
+  { value: '24h', label: 'Últimas 24h' },
+  { value: '7d', label: 'Últimos 7 dias' },
+  { value: '30d', label: 'Últimos 30 dias' },
+];
+
+const DLQ_REFRESH_MS = 30_000;
+
 function DLQSection() {
   const [data, setData] = useState<DLQListResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -817,22 +830,49 @@ function DLQSection() {
   const [purging, setPurging] = useState(false);
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
   const [reasonFilter, setReasonFilter] = useState<string | null>(null);
+  const [sincePreset, setSincePreset] = useState<SincePreset>('');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  /**
+   * Monta a query string server-side a partir do estado de filtros.
+   * Quando há qualquer filtro, o backend aumenta o limit pra 100 (vide
+   * worker-metrics.ts:listDlqItems) — então a UI vê items suficientes
+   * pra mostrar chip counts e o "Mostrando X de Y".
+   */
+  const buildQuery = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set('limit', '100');
+    if (queueFilter !== 'all') params.set('queue', queueFilter);
+    if (reasonFilter) params.set('reason', reasonFilter);
+    if (sincePreset) params.set('since', sincePreset);
+    return params.toString();
+  }, [queueFilter, reasonFilter, sincePreset]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/worker/dlq?limit=20');
+      const res = await fetch(`/api/worker/dlq?${buildQuery()}`);
       const json = (await res.json()) as DLQListResponse;
       setData(json);
+      setLastRefresh(new Date());
     } catch {
-      // ignora
+      // ignora — UI continua mostrando último estado conhecido
     }
     setLoading(false);
-  }, []);
+  }, [buildQuery]);
 
+  // Recarrega quando os filtros mudam (auto-refresh + re-query imediato)
   useEffect(() => {
     load();
   }, [load]);
+
+  // Auto-refresh 30s (independente do /api/worker/status que tem switch próprio)
+  useEffect(() => {
+    if (!autoRefresh || !expanded) return;
+    const interval = setInterval(load, DLQ_REFRESH_MS);
+    return () => clearInterval(interval);
+  }, [autoRefresh, expanded, load]);
 
   async function handleRequeue(id: string) {
     setBusyId(id);
@@ -865,10 +905,14 @@ function DLQSection() {
   }
 
   const items: DLQEntry[] = data?.items ?? [];
+  // `total` é o zcard global — sempre o badge do header.
+  // `totalFiltered` é o que sobrou APÓS aplicar os filtros server-side.
   const total = data?.total ?? 0;
+  const totalFiltered = data?.totalFiltered ?? 0;
 
-  // Contagem por failureReason (sobre a lista carregada, não sobre o total geral).
-  // Usada para popular os chips de filtro com valores reais do que o usuário está vendo.
+  // Chips de reason vêm do `items` carregado (até 100).
+  // Se um filter está ativo, mostramos só o chip correspondente
+  // (evita poluir a UI com chips que retornariam 0 resultados).
   const reasonCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of items) {
@@ -879,23 +923,11 @@ function DLQSection() {
       .sort((a, b) => b.count - a.count);
   }, [items]);
 
-  // Filtro client-side: queueFilter usa o tipo do evento cru;
-  // reasonFilter é comparação exata de string.
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      if (reasonFilter && item.failureReason !== reasonFilter) return false;
-      if (queueFilter !== 'all') {
-        const meta = getFailureMeta(item.failureReason);
-        if (meta.queue !== queueFilter) return false;
-      }
-      return true;
-    });
-  }, [items, queueFilter, reasonFilter]);
-
-  const hasActiveFilter = queueFilter !== 'all' || reasonFilter !== null;
+  const hasActiveFilter = queueFilter !== 'all' || reasonFilter !== null || sincePreset !== '';
   function clearFilters() {
     setQueueFilter('all');
     setReasonFilter(null);
+    setSincePreset('');
   }
 
   return (
@@ -934,8 +966,6 @@ function DLQSection() {
         <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
           {total} {total === 1 ? 'item com' : 'itens com'} falha permanente. Clique em "Ver itens" para gerenciar.
         </div>
-      ) : loading && !data ? (
-        <Loading text="Carregando DLQ..." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <DLQFilterBar
@@ -944,13 +974,19 @@ function DLQSection() {
             reasonCounts={reasonCounts}
             reasonFilter={reasonFilter}
             onReasonFilterChange={setReasonFilter}
+            sincePreset={sincePreset}
+            onSincePresetChange={setSincePreset}
             onClearFilters={clearFilters}
             hasActiveFilter={hasActiveFilter}
-            totalShown={filteredItems.length}
+            totalShown={totalFiltered}
             totalLoaded={items.length}
+            autoRefresh={autoRefresh}
+            onAutoRefreshChange={setAutoRefresh}
+            lastRefresh={lastRefresh}
+            loading={loading}
           />
 
-          {filteredItems.length === 0 ? (
+          {totalFiltered === 0 ? (
             <div style={{ textAlign: 'center', padding: '0.75rem', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
               Nenhum item corresponde aos filtros.{' '}
               <button
@@ -969,7 +1005,7 @@ function DLQSection() {
               </button>
             </div>
           ) : (
-            filteredItems.map((item) => (
+            items.map((item) => (
               <DLQItem
                 key={item.id}
                 item={item}
@@ -993,20 +1029,32 @@ function DLQFilterBar({
   reasonCounts,
   reasonFilter,
   onReasonFilterChange,
+  sincePreset,
+  onSincePresetChange,
   onClearFilters,
   hasActiveFilter,
   totalShown,
   totalLoaded,
+  autoRefresh,
+  onAutoRefreshChange,
+  lastRefresh,
+  loading,
 }: {
   queueFilter: QueueFilter;
   onQueueFilterChange: (q: QueueFilter) => void;
   reasonCounts: Array<{ reason: string; count: number }>;
   reasonFilter: string | null;
   onReasonFilterChange: (r: string | null) => void;
+  sincePreset: SincePreset;
+  onSincePresetChange: (s: SincePreset) => void;
   onClearFilters: () => void;
   hasActiveFilter: boolean;
   totalShown: number;
   totalLoaded: number;
+  autoRefresh: boolean;
+  onAutoRefreshChange: (b: boolean) => void;
+  lastRefresh: Date | null;
+  loading: boolean;
 }) {
   return (
     <div
@@ -1026,10 +1074,30 @@ function DLQFilterBar({
         <SegmentedButton active={queueFilter === 'A'} onClick={() => onQueueFilterChange('A')} label="Queue A" />
         <SegmentedButton active={queueFilter === 'B'} onClick={() => onQueueFilterChange('B')} label="Queue B" />
 
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600, marginLeft: '0.4rem' }}>Período:</span>
+        <select
+          value={sincePreset}
+          onChange={(e) => onSincePresetChange(e.target.value as SincePreset)}
+          style={{
+            fontSize: 'var(--text-xs)',
+            padding: '0.15rem 0.4rem',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--color-border-light)',
+            background: 'var(--color-bg-secondary)',
+            color: 'var(--color-text-primary)',
+            fontFamily: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          {SINCE_PRESETS.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+
         <div style={{ flex: 1 }} />
 
         <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
-          Mostrando {totalShown} de {totalLoaded}
+          {loading ? 'Carregando…' : `Mostrando ${totalShown} de ${totalLoaded}`}
         </span>
 
         {hasActiveFilter && (
@@ -1039,10 +1107,14 @@ function DLQFilterBar({
         )}
       </div>
 
-      {reasonCounts.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600 }}>Motivo:</span>
-          {reasonCounts.map(({ reason, count }) => {
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600 }}>Motivo:</span>
+        {reasonCounts.length === 0 ? (
+          <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+            {loading ? '—' : 'nenhum motivo no resultado atual'}
+          </span>
+        ) : (
+          reasonCounts.map(({ reason, count }) => {
             const active = reasonFilter === reason;
             const meta = getFailureMeta(reason);
             return (
@@ -1081,9 +1153,19 @@ function DLQFilterBar({
                 </span>
               </button>
             );
-          })}
+          })
+        )}
+
+        <div style={{ flex: 1 }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+            {lastRefresh ? `refresh ${relativeTime(lastRefresh.toISOString())}` : '—'}
+          </span>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Auto</span>
+          <Switch checked={autoRefresh} onCheckedChange={onAutoRefreshChange} />
         </div>
-      )}
+      </div>
     </div>
   );
 }
