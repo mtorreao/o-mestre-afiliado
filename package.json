@@ -31,6 +31,8 @@
     "healthcheck:alert": "bun run scripts/healthcheck.ts --alert",
     "typecheck": "bun run scripts/typecheck-all.ts",
     "typecheck:root": "tsc --noEmit",
+    "test:unit": "bun run scripts/test-unit.ts",
+    "test:all": "bun run test:unit && bun run test:e2e",
     "setup:hooks": "bun run scripts/setup-hooks.sh"
   },
   "engines": {

@@ -174,7 +174,7 @@ Torna os hooks executáveis e configura o Git para usá-los.
 | ------------ | -------------------- | ----------------------------------------------------------------------------------- |
 | `pre-commit` | Antes de cada commit | Roda prettier --check, lint-notifier e typecheck (só dos apps/packages modificados) |
 | `commit-msg` | Antes de cada commit | Valida mensagem contra conventional commits                                         |
-| `pre-push`   | Antes de cada push   | Roda typecheck completo + build                                                     |
+| `pre-push`   | Antes de cada push   | Roda typecheck + test:unit + build + test:e2e (E2E opt-out via `SKIP_E2E=1`)        |
 
 ### Conventional commits
 
@@ -221,6 +221,8 @@ Os mesmos guards rodam em `.github/workflows/ci.yml` (typecheck + build + pretti
 | `bun run build`                                                          | Compila todos os apps (api + worker + web)                                                                    |
 | `bun run typecheck`                                                      | Typecheck de todos os subprojetos (via `scripts/typecheck-all.ts`)                                            |
 | `bun run typecheck:root`                                                 | Typecheck só dos arquivos de tooling (scripts/, e2e/, deploy/)                                                |
+| `bun run test:unit`                                                      | Roda `bun test` em cada subprojeto que tem `*.test.ts` (~5s, 117 testes)                                      |
+| `bun run test:e2e`                                                       | Roda Playwright (sobe stack E2E própria, ~60-120s)                                                            |
 | `bun run db:generate`                                                    | Gerar migrations Drizzle                                                                                      |
 | `bun run db:migrate`                                                     | Aplicar migrations                                                                                            |
 | `bun run db:push`                                                        | Push rápido (dev)                                                                                             |

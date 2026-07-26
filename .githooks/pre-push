@@ -1,42 +1,22 @@
 #!/usr/bin/env bash
-# Pre-push hook — bloqueia push de código que não builda.
+# Pre-push hook — bloqueia push de código que não builda/testa.
 #
-# Roda typecheck + build completo antes de aceitar o push.
+# Roda, em ordem:
+#   1. typecheck (todos os subprojetos)
+#   2. test:unit (unit tests, ~5s)
+#   3. build (todos os apps)
+#   4. test:e2e (Playwright, ~60-120s) — opt-out via SKIP_E2E=1
+#
 # Cobre o caso de CI falhar por código que compilava em --noEmit
-# mas quebra no build (e.g. imports faltando, paths errados em runtime).
+# mas quebra no build, ou passa typecheck mas quebra em runtime.
+#
+# Skip automático se nenhum arquivo de apps/ ou packages/ mudou
+# (commits só de docs, scripts, configs).
 
 set -e
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
-
-# Detecta se há commits a serem enviados para refs/heads/main
-# (skip se push é só de tag, force-push, etc.)
-while read -r local_ref local_sha remote_ref remote_sha; do
-  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
-    # Branch nova — todos os commits são a verificar
-    RANGE="$local_sha..$local_sha"
-    # Quando remote_sha é zero, significa push de branch nova —
-    # precisamos de um range a partir do upstream
-    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-      RANGE=""
-    else
-      RANGE="$remote_sha..$local_sha"
-    fi
-  else
-    RANGE="$remote_sha..$local_sha"
-  fi
-
-  # Conta commits staged no range
-  if [ -z "$RANGE" ] || [ "$RANGE" = "..$local_sha" ]; then
-    COMMIT_COUNT=$(git rev-list --count "$local_sha" 2>/dev/null || echo "1")
-  else
-    COMMIT_COUNT=$(git rev-list --count "$RANGE" 2>/dev/null || echo "0")
-  fi
-  if [ "$COMMIT_COUNT" = "0" ]; then
-    continue
-  fi
-done
 
 # Verifica se algum arquivo de apps/ ou packages/ mudou em algum
 # commit que ainda não foi pro remote
@@ -47,12 +27,13 @@ if [ -z "$APPS_OR_PKGS_CHANGED" ]; then
   exit 0
 fi
 
+CHANGED_COUNT=$(echo "$APPS_OR_PKGS_CHANGED" | wc -l)
 echo ""
-echo "🪝 pre-push: $(echo "$APPS_OR_PKGS_CHANGED" | wc -l) arquivo(s) em apps/packages modificados"
+echo "🪝 pre-push: $CHANGED_COUNT arquivo(s) em apps/packages modificados"
 echo ""
 
 # ── 1. Typecheck ────────────────────────────────────────────────
-echo "▶ [1/2] bun run typecheck..."
+echo "▶ [1/4] bun run typecheck..."
 if ! bun run typecheck; then
   echo ""
   echo "❌ Typecheck falhou. Corrija antes de pushar."
@@ -60,14 +41,40 @@ if ! bun run typecheck; then
   exit 1
 fi
 
-# ── 2. Build ────────────────────────────────────────────────────
+# ── 2. Unit tests ──────────────────────────────────────────────
 echo ""
-echo "▶ [2/2] bun run build..."
+echo "▶ [2/4] bun run test:unit..."
+if ! bun run test:unit; then
+  echo ""
+  echo "❌ Unit tests falharam. Corrija antes de pushar."
+  echo "   (use 'git push --no-verify' apenas em emergências)"
+  exit 1
+fi
+
+# ── 3. Build ────────────────────────────────────────────────────
+echo ""
+echo "▶ [3/4] bun run build..."
 if ! bun run build; then
   echo ""
   echo "❌ Build falhou. Corrija antes de pushar."
   echo "   (use 'git push --no-verify' apenas em emergências)"
   exit 1
+fi
+
+# ── 4. E2E tests (opt-out via SKIP_E2E=1) ──────────────────────
+if [ "${SKIP_E2E:-0}" = "1" ]; then
+  echo ""
+  echo "▶ [4/4] E2E: pulado (SKIP_E2E=1)"
+else
+  echo ""
+  echo "▶ [4/4] bun run test:e2e (pode demorar ~60-120s; use SKIP_E2E=1 para pular)..."
+  if ! bun run test:e2e; then
+    echo ""
+    echo "❌ E2E tests falharam. Corrija antes de pushar."
+    echo "   Para pular em emergência: SKIP_E2E=1 git push"
+    echo "   (use 'git push --no-verify' apenas em emergências)"
+    exit 1
+  fi
 fi
 
 echo ""
