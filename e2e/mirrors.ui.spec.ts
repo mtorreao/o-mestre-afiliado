@@ -33,7 +33,7 @@ async function loginDirect(page: Page): Promise<string> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, name: TEST_NAME, password }),
   });
-  const data = await res.json() as { success: boolean; token: string; user: { id: number } };
+  const data = (await res.json()) as { success: boolean; token: string; user: { id: number } };
   const { token } = data;
 
   // Set token in localStorage
@@ -192,7 +192,8 @@ test.describe('Mirrors UI — Lista e Ações', () => {
     await navigateToMirrors(page);
 
     await page.locator('input[placeholder="Digite o nome do espelhamento..."]').fill('Encontrável');
-    await page.locator('button:has-text("Buscar")').click();
+    // FilterBar desktop (viewport 1280px) não tem botão Buscar; submete via Enter
+    await page.locator('input[placeholder="Digite o nome do espelhamento..."]').press('Enter');
     await page.waitForTimeout(500);
 
     await expect(page.locator('text=Encontrável')).toBeVisible();
@@ -201,8 +202,10 @@ test.describe('Mirrors UI — Lista e Ações', () => {
   test('6.1 — Busca sem resultados exibe mensagem', async ({ page }) => {
     await navigateToMirrors(page);
 
-    await page.locator('input[placeholder="Digite o nome do espelhamento..."]').fill('ZZZ_NAO_EXISTE');
-    await page.locator('button:has-text("Buscar")').click();
+    await page
+      .locator('input[placeholder="Digite o nome do espelhamento..."]')
+      .fill('ZZZ_NAO_EXISTE');
+    await page.locator('input[placeholder="Digite o nome do espelhamento..."]').press('Enter');
     await page.waitForTimeout(500);
 
     await expect(page.locator('text=Nenhum espelhamento encontrado para esta busca')).toBeVisible();
@@ -213,7 +216,7 @@ test.describe('Mirrors UI — Lista e Ações', () => {
     await navigateToMirrors(page);
 
     await page.locator('input[placeholder="Digite o nome do espelhamento..."]').fill('ZZZ');
-    await page.locator('button:has-text("Buscar")').click();
+    await page.locator('input[placeholder="Digite o nome do espelhamento..."]').press('Enter');
     await page.waitForTimeout(500);
 
     await page.locator('button:has-text("Limpar")').click();

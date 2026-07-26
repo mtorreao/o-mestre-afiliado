@@ -140,14 +140,10 @@ test.describe('UI - Dashboard', () => {
     // Recarregar — agora deve estar autenticado
     await page.reload();
 
-    // Deve mostrar o dashboard com as seções
-    await expect(page.locator('text=Atalhos Rápidos')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('text=O Mestre Afiliado')).toBeVisible();
-
-    // Seções do dashboard
-    await expect(page.locator('text=🛒 Shopee')).toBeVisible();
-    await expect(page.locator('text=📦 Mercado Livre')).toBeVisible();
-    await expect(page.locator('text=🧪 Testar Conversão')).toBeVisible();
+    // Deve mostrar o dashboard com as seções (DashboardPage atual usa MetricCards sem emojis)
+    await expect(page.locator('text=Atalhos Rápidos')).toBeVisible();
+    await expect(page.locator('text=Marketplaces')).toBeVisible();
+    await expect(page.locator('text=WhatsApp').first()).toBeVisible();
     await expect(page.locator('text=Sair')).toBeVisible();
   });
 
@@ -161,14 +157,15 @@ test.describe('UI - Dashboard', () => {
     });
     const data = (await res.json()) as { token: string };
 
-    // Autenticar via localStorage
+    // Autenticar via localStorage e navegar para Configurações
     await page.goto('/');
     await page.evaluate(
       (t: string) => localStorage.setItem('omestre_auth_token', t),
       data.token,
     );
-    await page.reload();
-    await page.waitForSelector('text=🛒 Shopee');
+    await page.goto('/configuracoes');
+    // Aguardar AppShell carregar (sidebar visível)
+    await page.waitForSelector('text=Configurações', { timeout: 15_000 });
 
     // Preencher credenciais Shopee pelos placeholders
     const appIdInput = page.locator('input[placeholder="Seu App ID da Shopee"]');
