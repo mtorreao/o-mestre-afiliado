@@ -68,15 +68,21 @@ function stripMeliTrackingParams(url: string): { url: string; dropped: string[] 
 
 /**
  * Detecta se a URL do Mercado Livre é uma página de PRODUTO.
- * URLs válidas: /p/MLB<id> ou /<slug>/p/MLB<id>.
- * Rejeitadas: /social/<id>, /sec/<id>, /coupons/<id>, /up/<id>, etc.
+ * URLs válidas:
+ *   - /p/MLB<id> ou /<slug>/p/MLB<id>  → página clássica de produto
+ *   - /social/<id>                      → página de social commerce (produto
+ *     com preço, vendedor e botão "Ir para produto")
+ * Rejeitadas: /sec/<id>, /coupons/<id>, /up/<id>, /ofertas, etc.
  */
 export function isMeliProductUrl(url: string): boolean {
   try {
     const u = new URL(url);
     if (!/mercadolivre\.com\.br/i.test(u.hostname)) return false;
-    const m = u.pathname.match(/\/p\/MLB\d+/i);
-    return !!m;
+    // Página clássica de produto: /p/MLB<id>
+    if (/\/p\/MLB\d+/i.test(u.pathname)) return true;
+    // Social commerce: /social/<id> — página de produto com preço e CTA
+    if (/^\/social\/[a-zA-Z0-9]+\/?$/i.test(u.pathname)) return true;
+    return false;
   } catch {
     return false;
   }
@@ -292,7 +298,7 @@ async function resolveMeliShortlink(url: string): Promise<ResolvedMeliRedirect |
   if (!isProduct) {
     // Diagnosticar o tipo de URL para log
     if (/^\/social\//i.test(parsed.pathname)) {
-      reason = 'social_profile';
+      reason = 'social_listing';
     } else if (/^\/sec\//i.test(parsed.pathname)) {
       reason = 'category_listing';
     } else if (/^\/coupons?\//i.test(parsed.pathname)) {

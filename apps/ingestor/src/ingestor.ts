@@ -442,10 +442,11 @@ async function convertShopeeForAffiliate(
  * Resolve um link curto meli.la/XXX para a URL de produto real do ML.
  *
  * IMPORTANTE: muitos meli.la escondem PERFIS SOCIAIS ou LISTAS de outros
- * afiliados (ex: /social/om895584) — esses NÃO são produtos elegíveis e
- * o Link Builder rejeita com erro 111. Use `resolveMeliRedirect` (em
- * ./resolve-redirect.ts) que já trata isso: segue o redirect, faz strip
- * de params de tracking (matt_word/matt_tool/ref) e retorna isProduct.
+ * afiliados (ex: /social/om895584/lists) — esses NÃO são produtos elegíveis.
+ * Porém /social/<id> (sem sub-path) É uma página de produto (social commerce).
+ * Use `resolveMeliRedirect` (em ./resolve-redirect.ts) que já trata isso:
+ * segue o redirect, faz strip de params de tracking (matt_word/matt_tool/ref)
+ * e retorna isProduct.
  */
 
 async function convertMlForAffiliate(
