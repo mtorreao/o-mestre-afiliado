@@ -343,6 +343,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           )}
         </Card>
 
+        {/* ─── TEMPLATE DA MENSAGEM (DESATIVADO TEMPORARIAMENTE) ────────
         <Card title="💬 Template da Mensagem" style={{ marginBottom: '1.5rem' }}>
           <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: '0.75rem' }}>
             Personalize a mensagem enviada para o grupo de destino.
@@ -363,6 +364,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
             targetGroupName={targetGroups[0]?.name}
           />
         </Card>
+        ─────────────────────────────────────────────────────────────── */}
 
         {/* ─── Rate Limit Info Banner ─────────────────────────────── */}
         <Card

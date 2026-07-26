@@ -257,7 +257,8 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
       <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de origem: </span><span style={{ color: 'var(--color-text-primary)' }}>{r.sourceGroups?.length ? r.sourceGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</span></div>
       <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de destino: </span><span style={{ color: 'var(--color-text-primary)' }}>{r.targetGroups?.length ? r.targetGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</span></div>
-      {r.messageTemplate && <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Template: </span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>{r.messageTemplate}</span></div>}
+      {/* Template: feature desativada temporariamente */}
+      {false && r.messageTemplate && <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Template: </span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>{r.messageTemplate}</span></div>}
       {(r.subRateLimitMaxMsgs != null || r.subRateLimitWindowSec != null) && <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Limite: </span><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>{r.subRateLimitMaxMsgs ?? 5} msg / {r.subRateLimitWindowSec ?? 300}s</span></div>}
       <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Última atualização: {formatDate(r.updatedAt)}</span></div>
     </div>

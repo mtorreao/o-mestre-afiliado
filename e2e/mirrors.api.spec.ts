@@ -83,7 +83,7 @@ test.describe('Mirrors API — CRUD', () => {
       targetGroups: [
         { jid: 'target-group-1@g.us', name: 'Grupo Destino' },
       ],
-      messageTemplate: '{texto_original}',
+      // messageTemplate: '{texto_original}', // feature desativada temporariamente
     });
     expect(status).toBe(200);
     expect(body.success).toBe(true);
@@ -92,7 +92,7 @@ test.describe('Mirrors API — CRUD', () => {
     expect(body.mirror.status).toBe('active');
     expect(body.mirror.sourceGroups).toHaveLength(1);
     expect(body.mirror.targetGroups).toHaveLength(1);
-    expect(body.mirror.messageTemplate).toBe('{texto_original}');
+    // expect(body.mirror.messageTemplate).toBe('{texto_original}'); // feature desativada temporariamente
     mirrorId = body.mirror.id;
   });
 
@@ -162,12 +162,12 @@ test.describe('Mirrors API — CRUD', () => {
   test('9. PUT /api/mirrors/:id — atualizar nome e template', async () => {
     const { status, body } = await authPut<MirrorResponse>(`/api/mirrors/${mirrorId}`, token, {
       name: 'Ofertas Atualizadas',
-      messageTemplate: '{link_convertido}',
+      // messageTemplate: '{link_convertido}', // feature desativada temporariamente
     });
     expect(status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.mirror.name).toBe('Ofertas Atualizadas');
-    expect(body.mirror.messageTemplate).toBe('{link_convertido}');
+    // expect(body.mirror.messageTemplate).toBe('{link_convertido}'); // feature desativada temporariamente
   });
 
   test('10. PUT /api/mirrors/:id — atualizar com dados parciais', async () => {

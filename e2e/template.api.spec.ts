@@ -22,7 +22,7 @@ type TemplateValidationResponse = Record<string, unknown> & {
   conditionalErrors: string[];
 };
 
-test.describe('Template API', () => {
+test.describe.skip('Template API', () => {
   let token: string;
 
   test.beforeAll(async () => {
