@@ -132,10 +132,7 @@ test.describe('UI - Dashboard', () => {
 
     // Injetar token no localStorage antes de navegar
     await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      token,
-    );
+    await page.evaluate((t: string) => localStorage.setItem('omestre_auth_token', t), token);
 
     // Recarregar — agora deve estar autenticado
     await page.reload();
@@ -159,10 +156,7 @@ test.describe('UI - Dashboard', () => {
 
     // Autenticar via localStorage e navegar para Configurações
     await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
+    await page.evaluate((t: string) => localStorage.setItem('omestre_auth_token', t), data.token);
     await page.goto('/configuracoes');
     // Aguardar AppShell carregar (sidebar visível)
     await page.waitForSelector('text=Configurações', { timeout: 15_000 });
@@ -191,10 +185,7 @@ test.describe('UI - Dashboard', () => {
     const data = (await res.json()) as { token: string };
 
     await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
+    await page.evaluate((t: string) => localStorage.setItem('omestre_auth_token', t), data.token);
     await page.reload();
     await page.waitForSelector('text=🧪 Testar Conversão');
 
@@ -219,10 +210,7 @@ test.describe('UI - Dashboard', () => {
     const data = (await res.json()) as { token: string };
 
     await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
+    await page.evaluate((t: string) => localStorage.setItem('omestre_auth_token', t), data.token);
     await page.reload();
     await page.waitForSelector('text=Sair');
 
