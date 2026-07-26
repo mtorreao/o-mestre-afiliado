@@ -1,150 +1,345 @@
 #!/usr/bin/env bun
 /**
- * scripts/dev.ts — dev server multi-processo (API + Worker + Web)
- * =============================================================================
- * Substitui o scripts/dev.sh original com TypeScript nativo Bun.
+ * Sobe a stack completa de desenvolvimento em Docker, isolada por worktree.
  *
- * Garantias:
- *   1. PORTA ÚNICA: o backend (API) sobe numa porta só.
- *   2. KILL PREVIOUS: antes de subir, mata qualquer processo segurando
- *      as portas do projeto (API_PORT, WEB_PORT).
- *   3. LOCKFILE: enquanto o dev server está rodando, um lockdir em
- *      tmp/dev-<port>.lockdir existe. Segundo shell aborta com mensagem.
- *   4. LIMPEZA NO EXIT: kill em todos os processos filhos, força com
- *      taskkill /F /T no Windows se necessário, remove lock.
- *   5. LOGS PREFIXADOS: cada processo (api, worker, web) ganha prefixo
- *      colorido em tempo real via TransformStream.
- *   6. Ctrl+C FUNCIONAL: SIGINT é capturado e todos os filhos são mortos.
+ * Cada worktree recebe:
+ *   - um Compose project name próprio;
+ *   - nomes próprios para containers, network e volumes;
+ *   - um bloco de portas livre e determinístico;
+ *   - um tunnel Cloudflare próprio (nomeado ou quick, automático).
  *
  * Uso:
- *   bun run scripts/dev.ts                  # HOST=127.0.0.1 API_PORT=5442
- *   API_PORT=8080 bun run scripts/dev.ts    # override da porta
- *   HOST=0.0.0.0  bun run scripts/dev.ts    # expõe na LAN
+ *   bun run dev
+ *   SKIP_TUNNEL=1 bun run dev
+ *   DEV_TUNNEL_MODE=quick bun run dev     # força um tunnel anônimo
+ *   DEV_TUNNEL_MODE=named bun run dev     # usa o tunnel nomeado da branch
+ *   DEV_PORT_BASE=6000 bun run dev
+ *   KEEP_INFRA=1 bun run dev              # mantém os containers após Ctrl+C
+ *   DEV_BUILD=0 bun run dev               # não força rebuild das imagens
+ *   bun scripts/dev.ts --dry-run          # mostra a configuração sem iniciar Docker
  *
- * Variáveis de ambiente:
- *   HOST           override do host (default 127.0.0.1)
- *   API_PORT       porta da API (default 5442)
- *   WEB_PORT       porta do Vite (default 5441)
- *   SKIP_LOCK      se setada a 1, não cria lockfile (debug only)
- *   SKIP_WORKER    se setada a 1, não sobe o worker
- *   SKIP_TUNNEL    se setada a 1, não sobe o cloudflared
- *   SKIP_INFRA     se setada a 1, não sobe Docker (PG, Redis, Evolution)
- *   KEEP_INFRA     se setada a 1, mantém containers rodando ao sair (default: derruba)
- * =============================================================================
+ * DNS do tunnel nomeado não é alterado por padrão. Configure o CNAME no
+ * dashboard Cloudflare ou informe CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID
+ * da conta que possui a zona. O token precisa apenas de Zone / DNS / Edit.
  */
 
-import { spawn, type Subprocess, type ReadableSubprocess } from 'bun';
-import { mkdir, readFile, writeFile, readdir, rm } from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { mkdir, readFile, readdir, rm, writeFile } from 'fs/promises';
 import * as net from 'net';
 import * as path from 'path';
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Configuração
-// ═════════════════════════════════════════════════════════════════════════════
-
-const HOST = process.env.HOST ?? '127.0.0.1';
-const API_PORT = Number(process.env.API_PORT ?? '5442');
-const WEB_PORT = Number(process.env.WEB_PORT ?? '5441');
-const LOCK_ROOT = process.env.LOCK_ROOT ?? 'tmp';
-const SKIP_LOCK = process.env.SKIP_LOCK === '1';
-const SKIP_WORKER = process.env.SKIP_WORKER === '1';
-const SKIP_TUNNEL = process.env.SKIP_TUNNEL === '1';
-const SKIP_INFRA = process.env.SKIP_INFRA === '1';
-const KEEP_INFRA = process.env.KEEP_INFRA === '1';
-
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
-const isWin = process.platform === 'win32';
+const isWindows = process.platform === 'win32';
+const requestedDryRun = process.argv.includes('--dry-run');
+const isExplicitPortBase = Boolean(process.env.DEV_PORT_BASE);
+const bindHost = process.env.DEV_BIND_HOST ?? '127.0.0.1';
+const skipTunnel = process.env.SKIP_TUNNEL === '1';
+const keepStack = process.env.KEEP_INFRA === '1';
+const buildImages = process.env.DEV_BUILD !== '0';
+const skipLock = process.env.SKIP_LOCK === '1';
+const tunnelDomain = process.env.TUNNEL_DOMAIN ?? 'omestreafiliado.com.br';
+const cloudflaredBin = process.env.CLOUDFLARED_BIN ?? 'cloudflared';
+const cloudflareApiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
+const cloudflareZoneId = process.env.CLOUDFLARE_ZONE_ID?.trim();
 
-// Paths específicos Windows
-const CLOUDFLARED_BIN = 'cloudflared'; // no PATH do Windows
-const CLOUDFLARED_CONFIG = path.join(
-  process.env.USERPROFILE ?? process.env.HOME ?? '~',
-  '.cloudflared',
-  'omestre-afiliado.yml',
-);
+const HOME = process.env.USERPROFILE ?? process.env.HOME ?? '~';
+const NAMED_TUNNEL_HINTS = [
+  process.env.TUNNEL_CONFIG,
+  process.env.TUNNEL_ID ? path.join(HOME, '.cloudflared', 'omestre-afiliado.yml') : undefined,
+  path.join(HOME, '.cloudflared', 'omestre-afiliado.yml'),
+  path.join(HOME, '.cloudflared', 'omestre-afiliado-min.yml'),
+  path.join(HOME, '.cloudflared', 'omestre-afiliado-simple.yml'),
+].filter(Boolean) as string[];
+const hasReliableTunnelConfig = NAMED_TUNNEL_HINTS.some((candidate) => existsSync(candidate));
 
-// Infraestrutura Docker (PostgreSQL, Redis, Evolution API)
-const COMPOSE_FILE = path.join(REPO_ROOT, 'docker-compose.infra.yml');
-const COMPOSE_ENV_FILE = path.join(REPO_ROOT, '.env.infra');
-const INFRA_PROJECT = 'o-mestre-afiliado';
+// Modo do tunnel: 'named' (default), 'quick' (trycloudflare), 'named' ou 'off'.
+// Em main (sem GIT_WORKTREE) usamos o tunnel nomeado. Em worktrees secundários
+// preferimos o quick tunnel para evitar resetar o CNAME do domínio principal.
+const tunnelMode = (process.env.DEV_TUNNEL_MODE
+  ?? (process.env.GIT_WORKTREE === undefined ? 'named' : 'quick')
+).toLowerCase();
 
-// ═════════════════════════════════════════════════════════════════════════════
-// ANSI Colors
-// ═════════════════════════════════════════════════════════════════════════════
+const composeFile = path.join(REPO_ROOT, 'docker-compose.dev.yml');
+const lockRoot = path.resolve(REPO_ROOT, process.env.LOCK_ROOT ?? 'tmp');
 
-const colors: Record<string, string> = {
-  api: '\x1b[36m',
-  worker: '\x1b[33m',
-  web: '\x1b[32m',
-  tunnel: '\x1b[35m',
-  infra: '\x1b[34m',
-};
-const RESET = '\x1b[0m';
-
-// ═════════════════════════════════════════════════════════════════════════════
-// State
-// ═════════════════════════════════════════════════════════════════════════════
-
-const processes = new Map<string, Subprocess>();
-const readTasks: Promise<void>[] = [];
 let lockDir: string | null = null;
+let stateFile: string | null = null;
+let tunnelConfigPath: string | null = null;
+let quickTunnelUrl: string | null = null;
 let cleanExit = false;
-let cleaningUp = false;
-let startedInfra = false;
+let stackStarted = false;
+let currentPorts: PortMap | null = null;
+let tunnelProfileEnabled = false;
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Helpers — portas & processos
-// ═════════════════════════════════════════════════════════════════════════════
+const services = ['postgres', 'redis', 'evolution-api', 'api', 'ingestor', 'dispatcher', 'web'];
 
-/** Testa se (host, port) está ocupada via bind(). Confiável e rápido. */
+type PortMap = {
+  web: number;
+  api: number;
+  postgres: number;
+  evolution: number;
+  redis: number;
+  ingestor: number;
+  dispatcher: number;
+};
+
+type PersistedState = {
+  branch: string;
+  worktreePath: string;
+  worktreeName: string;
+  slug: string;
+  composeProject: string;
+  tunnelMode: string;
+  ports: PortMap;
+};
+
+function text(value: Uint8Array | string | undefined): string {
+  return value === undefined ? '' : value instanceof Uint8Array ? new TextDecoder().decode(value) : String(value);
+}
+
+function runGit(args: string[]): string {
+  const result = Bun.spawnSync(['git', ...args], {
+    cwd: REPO_ROOT,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: 10_000,
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(`Falha ao executar git ${args.join(' ')}: ${text(result.stderr).trim()}`);
+  }
+  return text(result.stdout).trim();
+}
+
+function findMainWorktree(): string | null {
+  const porcelain = runGit(['worktree', 'list', '--porcelain']);
+  const blocks = porcelain.split(/\r?\n\r?\n/);
+  for (const block of blocks) {
+    const worktree = block.match(/^worktree (.+)$/m)?.[1];
+    const branch = block.match(/^branch refs\/heads\/(.+)$/m)?.[1];
+    if (worktree && branch === 'main') return worktree;
+  }
+  return null;
+}
+
+const worktreePath = runGit(['rev-parse', '--show-toplevel']) || REPO_ROOT;
+const branch = runGit(['branch', '--show-current']) || `detached-${runGit(['rev-parse', '--short', 'HEAD']) || 'head'}`;
+const worktreeName = process.env.WORKTREE_NAME ?? path.basename(worktreePath);
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function slugify(value: string): string {
+  const slug = value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 35);
+  return slug || `worktree-${hashString(worktreePath).toString(36)}`;
+}
+
+const slug = slugify(branch);
+const identityHash = hashString(`${worktreePath}|${branch}`);
+const composeProject = `omestre-dev-${slug}`;
+const containerPrefix = `omestre_dev_${slug}`;
+const networkName = `omestre-dev-${slug}-net`;
+const tunnelName = process.env.TUNNEL_NAME ?? `omestre-afiliado-${slug}`;
+const tunnelHostname = process.env.TUNNEL_HOSTNAME ?? `dev-${slug}.${tunnelDomain}`;
+const appEnvFile = process.env.DEV_APP_ENV_FILE
+  ?? (existsSync(path.join(worktreePath, '.env'))
+    ? path.join(worktreePath, '.env')
+    : path.join(findMainWorktree() ?? REPO_ROOT, '.env'));
+const composeEnvFile = process.env.DEV_COMPOSE_ENV_FILE
+  ?? (existsSync(path.join(worktreePath, '.env')) ? path.join(worktreePath, '.env') : undefined);
+const statePath = path.join(lockRoot, `dev-${slug}.json`);
+
+function portMap(base: number): PortMap {
+  return {
+    web: base + 1,
+    api: base + 2,
+    postgres: base + 3,
+    evolution: base + 4,
+    redis: base + 5,
+    ingestor: base + 6,
+    dispatcher: base + 7,
+  };
+}
+
+function allPorts(ports: PortMap): number[] {
+  return Object.values(ports);
+}
+
 function isPortInUse(host: string, port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer();
-    server.once('error', (err: NodeJS.ErrnoException) => {
-      resolve(err.code === 'EADDRINUSE');
-    });
-    server.once('listening', () => {
-      server.close();
-      resolve(false);
-    });
+    const finish = (value: boolean) => {
+      server.removeAllListeners();
+      if (server.listening) server.close();
+      resolve(value);
+    };
+    server.once('error', (error: NodeJS.ErrnoException) => finish(error.code === 'EADDRINUSE'));
+    server.once('listening', () => finish(false));
     server.listen(port, host);
   });
 }
 
-/** Retorna true se existe pelo menos um processo VIVO escutando na porta. */
-function portHasLiveProcess(port: number): boolean {
-  return pidsOnPort(port).some((pid) => isAlive(pid));
+async function isPortFree(port: number): Promise<boolean> {
+  if (await isPortInUse(bindHost, port)) return false;
+  if (bindHost !== '::1' && bindHost !== '0.0.0.0' && await isPortInUse('::1', port)) return false;
+  return true;
 }
 
-/** Retorna PIDs escutando numa porta via netstat. */
-function pidsOnPort(port: number): number[] {
+async function isBlockFree(ports: PortMap): Promise<boolean> {
+  const results = await Promise.all(allPorts(ports).map((port) => isPortFree(port)));
+  return results.every(Boolean);
+}
+
+function readPersistedState(): PersistedState | null {
   try {
-    const out = Bun.spawnSync(['netstat', '-ano']).stdout.toString();
-    const re = new RegExp(`\\b${port}\\b.*?LISTENING\\s+(\\d+)`, 'g');
-    const pids = new Set<number>();
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(out)) !== null) {
-      pids.add(Number(m[1]));
-    }
-    return [...pids];
+    if (!existsSync(statePath)) return null;
+    const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as PersistedState;
+    if (
+      parsed.slug !== slug ||
+      parsed.composeProject !== composeProject ||
+      parsed.tunnelMode !== tunnelMode ||
+      !parsed.ports ||
+      allPorts(parsed.ports).some((port) => !Number.isInteger(port))
+    ) return null;
+    return parsed;
   } catch {
-    return [];
+    return null;
   }
 }
 
-/** Verifica se um PID está vivo. */
-function isAlive(pid: number): boolean {
-  if (isWin) {
-    const r = Bun.spawnSync(['tasklist', '/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH']);
-    const t = r.stdout.toString().trim();
-    // Quando o processo existe, o CSV contém o PID na 2ª coluna:
-    //   "bun.exe","29760","Console",...
-    // Quando não existe, retorna mensagem localizada (diferente por idioma):
-    //   "INFORMAÇÕES: nenhuma tarefa em execução..." (pt-BR)
-    //   "INFO: No tasks are running..." (en-US)
-    // Verificar se o PID aparece no output funciona em qualquer idioma.
-    return t.includes(String(pid));
+function tunnelPublicUrl(): string {
+  if (quickTunnelUrl) return quickTunnelUrl;
+  if (tunnelMode === 'quick') return '(aguardando cloudflared emitir a URL)';
+  return `https://${tunnelHostname}`;
+}
+
+function composeEnvironment(ports: PortMap): void {
+  const portEnv = {
+    DEV_WEB_HOST_PORT: `${bindHost}:${ports.web}:5441`,
+    DEV_API_HOST_PORT: `${bindHost}:${ports.api}:5442`,
+    DEV_POSTGRES_HOST_PORT: `${bindHost}:${ports.postgres}:5432`,
+    DEV_EVOLUTION_HOST_PORT: `${bindHost}:${ports.evolution}:8080`,
+    DEV_REDIS_HOST_PORT: `${bindHost}:${ports.redis}:6379`,
+    DEV_INGESTOR_HOST_PORT: `${bindHost}:${ports.ingestor}:9092`,
+    DEV_DISPATCHER_HOST_PORT: `${bindHost}:${ports.dispatcher}:9093`,
+  };
+  const publicUrl = tunnelPublicUrl();
+  const values: Record<string, string> = {
+    DEV_COMPOSE_PROJECT: composeProject,
+    DEV_CONTAINER_PREFIX: containerPrefix,
+    DEV_NETWORK_NAME: networkName,
+    DEV_POSTGRES_VOLUME_NAME: `${containerPrefix}-postgres-data`,
+    DEV_REDIS_VOLUME_NAME: `${containerPrefix}-redis-data`,
+    DEV_EVOLUTION_VOLUME_NAME: `${containerPrefix}-evolution-instances`,
+    DEV_APP_ENV_FILE: appEnvFile,
+    DEV_CACHE_PREFIX: `evolution_${slug}`,
+    DEV_DATABASE_CLIENT_NAME: `omestre_afiliado_${slug}`,
+    FRONTEND_URL: process.env.DEV_FRONTEND_URL ?? (skipTunnel ? `http://localhost:${ports.web}` : publicUrl),
+    ML_REDIRECT_URI: process.env.DEV_ML_REDIRECT_URI
+      ?? (skipTunnel ? `http://localhost:${ports.web}/api/ml/callback` : `${publicUrl}/api/ml/callback`),
+    DEV_TUNNEL_HOSTNAME: tunnelHostname,
+    DEV_TUNNEL_PUBLIC_URL: publicUrl,
+    ...portEnv,
+  };
+  for (const [key, value] of Object.entries(values)) process.env[key] = value;
+  currentPorts = ports;
+}
+
+function composeArgs(args: string[], includeTunnel = tunnelProfileEnabled): string[] {
+  const result = ['docker', 'compose', '--project-name', composeProject];
+  if (includeTunnel) result.push('--profile', 'tunnel');
+  if (composeEnvFile && existsSync(composeEnvFile)) result.push('--env-file', composeEnvFile);
+  result.push('-f', composeFile, ...args);
+  return result;
+}
+
+function compose(
+  args: string[],
+  capture = false,
+  includeTunnel = tunnelProfileEnabled,
+): { exitCode: number; stdout: string; stderr: string } {
+  const result = Bun.spawnSync(composeArgs(args, includeTunnel), {
+    cwd: REPO_ROOT,
+    env: process.env,
+    stdin: 'ignore',
+    stdout: capture ? 'pipe' : 'inherit',
+    stderr: capture ? 'pipe' : 'inherit',
+    timeout: 600_000,
+  });
+  return { exitCode: result.exitCode, stdout: text(result.stdout), stderr: text(result.stderr) };
+}
+
+function stackIsRunning(): boolean {
+  const result = compose(['ps', '--status', 'running', '--services'], true, false);
+  if (result.exitCode !== 0) return false;
+  const found = new Set(result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  return services.every((service) => found.has(service));
+}
+
+async function choosePorts(): Promise<PortMap> {
+  const persisted = readPersistedState();
+  if (persisted) {
+    composeEnvironment(persisted.ports);
+    if (requestedDryRun || stackIsRunning()) {
+      if (!requestedDryRun) console.log(`  ✓ Stack existente reutilizada: ${composeProject}`);
+      return persisted.ports;
+    }
+  }
+
+  const configuredBase = Number(process.env.DEV_PORT_BASE ?? '5450');
+  if (!Number.isInteger(configuredBase) || configuredBase < 1024 || configuredBase > 64000) {
+    throw new Error('DEV_PORT_BASE precisa ser uma porta base entre 1024 e 64000.');
+  }
+
+  const firstBase = isExplicitPortBase
+    ? configuredBase
+    : configuredBase + (identityHash % 40) * 10;
+  const attempts = isExplicitPortBase ? 1 : 80;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const base = firstBase + attempt * 10;
+    const ports = portMap(base);
+    if (allPorts(ports).some((port) => port > 65535)) continue;
+    if (await isBlockFree(ports)) return ports;
+  }
+
+  const suffix = isExplicitPortBase ? ` em DEV_PORT_BASE=${configuredBase}` : '';
+  throw new Error(`Não encontrei um bloco de 7 portas livres${suffix}. Outra stack pode estar usando as portas candidatas.`);
+}
+
+async function persistState(ports: PortMap): Promise<void> {
+  await mkdir(lockRoot, { recursive: true });
+  stateFile = statePath;
+  const state: PersistedState = {
+    branch,
+    worktreePath,
+    worktreeName,
+    slug,
+    composeProject,
+    tunnelMode,
+    ports,
+  };
+  await writeFile(statePath, JSON.stringify(state, null, 2));
+}
+
+function processIsAlive(pid: number): boolean {
+  if (isWindows) {
+    const result = Bun.spawnSync(['tasklist', '/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    return false;
   }
   try {
     return process.kill(pid, 0);
@@ -153,505 +348,379 @@ function isAlive(pid: number): boolean {
   }
 }
 
-/** Mata um PID — no Windows força árvore inteira com taskkill. */
-function killByPid(pid: number): void {
-  console.log(`  ✓ PID ${pid} será morto`);
-  if (isWin) {
-    Bun.spawnSync(['taskkill', '/F', '/T', '/PID', String(pid)]);
-  } else {
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch { /* already dead */ }
-  }
-}
-
-/** Retorna o PID pai de um processo no Windows, ou null se não conseguir. */
-function getParentPid(pid: number): number | null {
-  try {
-    // wmic ainda disponível no Windows 10 (deprecated mas funcional)
-    const r = Bun.spawnSync([
-      'wmic', 'process', 'where', `ProcessId=${pid}`,
-      'get', 'ParentProcessId', '/format:csv',
-    ], { timeout: 5000 });
-    const out = r.stdout.toString().trim();
-    // Formato CSV: Node,ParentProcessId\n<hostname>,<ppid>
-    const lines = out.split('\n').filter(l => l.includes(','));
-    if (lines.length > 0) {
-      const lastLine = lines.at(-1);
-      if (!lastLine) return null;
-      const ppid = Number(lastLine.split(',')[1]?.trim());
-      return isNaN(ppid) || ppid === 0 ? null : ppid;
-    }
-  } catch { /* wmic indisponível */ }
-  return null;
-}
-
-/** Mata um PID e, se ele for filho de bun, mata o bun --watch pai também. */
-function killByPidWithParent(pid: number): void {
-  // PRIMEiro descobre o pai (enquanto o filho ainda está vivo)
-  const parentPid = getParentPid(pid);
-  let isParentBun = false;
-  if (parentPid && isAlive(parentPid)) {
-    const tasklist = Bun.spawnSync([
-      'tasklist', '/FI', `PID eq ${parentPid}`, '/FO', 'CSV', '/NH',
-    ]);
-    const name = tasklist.stdout.toString().trim().split(',')[0]?.replace(/"/g, '');
-    const img = name?.toLowerCase() ?? '';
-    isParentBun = img === 'bun.exe' || img === 'node.exe';
-  }
-
-  // Mata o pai primeiro (bun --watch), com taskkill /T que derruba
-  // a árvore inteira — assim o pai não consegue restartar o filho.
-  if (isParentBun) {
-    killByPid(parentPid!);
-  }
-
-  // DEPOIS mata o filho (se ainda estiver vivo)
-  if (isAlive(pid)) {
-    killByPid(pid);
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Lock Management
-// ═════════════════════════════════════════════════════════════════════════════
-
 async function cleanStaleLocks(): Promise<void> {
-  if (!existsSync(LOCK_ROOT)) return;
-  const entries = await readdir(LOCK_ROOT, { withFileTypes: true });
-  let removed = 0;
-  for (const e of entries) {
-    if (!e.name.startsWith('dev-') || !e.name.endsWith('.lockdir') || !e.isDirectory()) continue;
-    const lp = path.join(LOCK_ROOT, e.name);
-    try {
-      const pidStr = await readFile(path.join(lp, 'pid'), 'utf-8').catch(() => '');
-      const pid = Number(pidStr.trim());
-      if (isNaN(pid) || !isAlive(pid)) {
-        await rm(lp, { recursive: true, force: true });
-        removed++;
-      }
-    } catch {
-      await rm(lp, { recursive: true, force: true });
-      removed++;
-    }
+  if (!existsSync(lockRoot)) return;
+  const entries = await readdir(lockRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith('dev-') || !entry.name.endsWith('.lockdir')) continue;
+    const directory = path.join(lockRoot, entry.name);
+    const pid = Number((await readFile(path.join(directory, 'pid'), 'utf8').catch(() => '')).trim());
+    if (!pid || !processIsAlive(pid)) await rm(directory, { recursive: true, force: true });
   }
-  if (removed > 0) console.log(`  🧹 ${removed} lock(s) stale removido(s)`);
 }
 
-async function acquireLock(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, 'pid'), String(process.pid));
-  await writeFile(path.join(dir, 'host'), HOST);
-  await writeFile(path.join(dir, 'apiport'), String(API_PORT));
-  lockDir = dir;
+async function acquireLock(): Promise<void> {
+  if (skipLock) return;
+  await mkdir(lockRoot, { recursive: true });
+  const directory = path.join(lockRoot, `dev-${slug}.lockdir`);
+  try {
+    await mkdir(directory);
+  } catch {
+    const pid = Number((await readFile(path.join(directory, 'pid'), 'utf8').catch(() => '')).trim());
+    if (pid && processIsAlive(pid)) {
+      throw new Error(`Já existe um dev server para este worktree (PID ${pid}). Não vou derrubar o ambiente de outro agente.`);
+    }
+    await rm(directory, { recursive: true, force: true });
+    await mkdir(directory);
+  }
+  await writeFile(path.join(directory, 'pid'), String(process.pid));
+  await writeFile(path.join(directory, 'branch'), branch);
+  await writeFile(path.join(directory, 'ports'), JSON.stringify(currentPorts));
+  lockDir = directory;
 }
 
 async function releaseLock(): Promise<void> {
-  if (lockDir && existsSync(lockDir)) {
-    await rm(lockDir, { recursive: true, force: true }).catch(() => {});
-    lockDir = null;
+  if (!lockDir) return;
+  await rm(lockDir, { recursive: true, force: true }).catch(() => {});
+  lockDir = null;
+}
+
+function dockerAvailable(): boolean {
+  const result = Bun.spawnSync(['docker', '--version'], { stdout: 'pipe', stderr: 'pipe', timeout: 10_000 });
+  return result.exitCode === 0;
+}
+
+function startStack(): void {
+  const args = ['up', '-d'];
+  if (buildImages) args.push('--build');
+  args.push('--wait');
+  stackStarted = true;
+  const result = compose(args);
+  if (result.exitCode !== 0) throw new Error('docker compose up falhou. Veja o erro acima.');
+}
+
+function stopStack(): void {
+  if (!stackStarted) return;
+  console.log('  ⏳ Derrubando stack Docker...');
+  const args = ['down', '--remove-orphans', '--timeout', '15'];
+  if (process.env.NUKE_DATA === '1') args.push('--volumes');
+  const result = compose(args);
+  if (result.exitCode === 0) {
+    stackStarted = false;
+    console.log('  ✓ Stack Docker parada');
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Docker Compose — infraestrutura
-// ═════════════════════════════════════════════════════════════════════════════
-
-function isDockerAvailable(): boolean {
-  try {
-    const r = Bun.spawnSync(['docker', '--version'], { timeout: 5000 });
-    return r.exitCode === 0;
-  } catch {
-    return false;
-  }
+function cloudflared(args: string[], capture = false): { exitCode: number; stdout: string; stderr: string } {
+  const result = Bun.spawnSync([cloudflaredBin, ...args], {
+    cwd: REPO_ROOT,
+    stdout: capture ? 'pipe' : 'inherit',
+    stderr: capture ? 'pipe' : 'inherit',
+    timeout: 120_000,
+  });
+  return { exitCode: result.exitCode, stdout: text(result.stdout), stderr: text(result.stderr) };
 }
 
-function composeCmd(args: string[]): ReturnType<typeof Bun.spawnSync> {
-  return Bun.spawnSync([
-    'docker', 'compose',
-    '--project-name', INFRA_PROJECT,
-    '-f', COMPOSE_FILE,
-    '--env-file', COMPOSE_ENV_FILE,
-    ...args,
-  ], { timeout: 120_000 });
+type CloudflareDnsRecord = { id: string; name: string; content: string };
+type CloudflareResponse<T> = { success: boolean; result: T; errors?: Array<{ message?: string }> };
+
+async function cloudflareRequest<T>(pathName: string, init?: RequestInit): Promise<T> {
+  if (!cloudflareApiToken) throw new Error('CLOUDFLARE_API_TOKEN não configurado.');
+  const response = await fetch(`https://api.cloudflare.com/client/v4${pathName}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${cloudflareApiToken}`,
+      'Content-Type': 'application/json',
+      ...init?.headers,
+    },
+  });
+  const data = await response.json() as CloudflareResponse<T>;
+  if (!response.ok || !data.success) {
+    const reason = data.errors?.map((error) => error.message).filter(Boolean).join('; ');
+    throw new Error(`Cloudflare API ${response.status}: ${reason || 'falha desconhecida'}`);
+  }
+  return data.result;
 }
 
-function infraIsRunning(): boolean {
-  const r = composeCmd(['ps', '--format', 'json']);
-  if (r.exitCode !== 0) return false;
-  const out = (r.stdout ?? '').toString().trim();
-  const lines = out.split('\n').filter(Boolean);
-  if (lines.length === 0) return false;
-
-  const expectedServices = new Set(['postgres', 'redis', 'evolution-api']);
-  const found = new Set<string>();
-
-  for (const line of lines) {
-    try {
-      const s = JSON.parse(line);
-      if (s.State !== 'running') return false;
-      found.add(s.Service as string);
-    } catch {
-      return false;
-    }
-  }
-
-  // Garante que todos os serviços esperados estão rodando
-  return Array.from(expectedServices).every((s) => found.has(s));
-}
-
-async function ensureInfraRunning(): Promise<boolean> {
-  if (!isDockerAvailable()) {
-    console.log('  ⚠ [infra] Docker não está rodando. Instale Docker Desktop ou use SKIP_INFRA=1');
-    return false;
-  }
-
-  if (infraIsRunning()) {
-    console.log('  ✓ [infra] PostgreSQL, Redis e Evolution API já estão rodando');
-    return true;
-  }
-
-  console.log('  🚀 [infra] Iniciando PostgreSQL, Redis e Evolution API (docker compose)...');
-
-  // Limpa containers órfãos ou de projetos anteriores que podem conflitar
-  // com os container_names do compose atual (ex: omestre_postgres criado
-  // por --project-name diferente).
-  composeCmd(['down', '--remove-orphans', '--timeout', '5']);
-
-  const up = composeCmd(['up', '-d', '--wait']);
-
-  if (up.exitCode !== 0) {
-    const err = (up.stderr ?? '').toString().trim();
-    console.error('  ✗ [infra] Falha ao subir infraestrutura:');
-    for (const line of err.split('\n')) {
-      console.error(`    ${line}`);
-    }
-    return false;
-  }
-
-  console.log('  ✓ [infra] Infraestrutura pronta');
-  startedInfra = true;
-  return true;
-}
-
-function stopInfra(): void {
-  console.log('  ⏳ [infra] Derrubando containers...');
-  const down = composeCmd(['down', '--timeout', '15']);
-  if (down.exitCode === 0) {
-    console.log('  ✓ [infra] Containers parados');
+async function ensureTunnelDns(tunnelUuid: string): Promise<void> {
+  if (!cloudflareApiToken || !cloudflareZoneId) return;
+  const name = encodeURIComponent(tunnelHostname);
+  const existing = await cloudflareRequest<CloudflareDnsRecord[]>(
+    `/zones/${cloudflareZoneId}/dns_records?type=CNAME&name=${name}`,
+  );
+  const payload = JSON.stringify({
+    type: 'CNAME',
+    name: tunnelHostname,
+    content: `${tunnelUuid}.cfargotunnel.com`,
+    proxied: true,
+    ttl: 1,
+  });
+  if (existing[0]) {
+    await cloudflareRequest<CloudflareDnsRecord>(
+      `/zones/${cloudflareZoneId}/dns_records/${existing[0].id}`,
+      { method: 'PUT', body: payload },
+    );
   } else {
-    const err = (down.stderr ?? '').toString().trim();
-    console.log(`  ⚠ [infra] Falha ao derrubar containers: ${err.slice(0, 200)}`);
+    await cloudflareRequest<CloudflareDnsRecord>(
+      `/zones/${cloudflareZoneId}/dns_records`,
+      { method: 'POST', body: payload },
+    );
   }
+  console.log(`  ✓ [tunnel] DNS configurado: ${tunnelHostname}`);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Output Streaming — read + prefix
-// ═════════════════════════════════════════════════════════════════════════════
+function resolveTunnelId(): string {
+  const configuredId = process.env.TUNNEL_ID?.trim();
+  if (configuredId) return configuredId;
 
-function startOutputReader(
-  label: string,
-  stream: ReadableStream<Uint8Array>,
-  isStderr: boolean,
-): void {
-  const writeFn = isStderr
-    ? (s: string) => process.stderr.write(s)
-    : (s: string) => process.stdout.write(s);
-  const color = colors[label] ?? '';
-  const prefix = `  ${color}[${label}]${RESET}`;
-  const decoder = new TextDecoder();
-  let buf = '';
+  const listed = cloudflared(['tunnel', 'list', '--output', 'json'], true);
+  if (listed.exitCode === 0) {
+    try {
+      const tunnels = JSON.parse(listed.stdout) as Array<{ id?: string; name?: string }>;
+      const existing = tunnels.find((tunnel) => tunnel.name === tunnelName && tunnel.id);
+      if (existing?.id) return existing.id;
+    } catch {
+      // cloudflared sometimes emits a warning before the JSON; the create path
+      // below remains the reliable fallback.
+    }
+  }
 
-  // Usa WritableStream em vez de ReadableStreamDefaultReader para que
-  // os métodos close()/abort() garantam o flush do buf residual antes
-  // da promise do pipeTo() resolver — essencial para logs não aparecerem
-  // depois da mensagem de finalização.
-  const writable = new WritableStream<Uint8Array>({
-    write(chunk) {
-      if (cleaningUp) return;
-      buf += decoder.decode(chunk, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
-        writeFn(`${prefix} ${line}\n`);
-      }
-    },
-    close() {
-      if (!cleaningUp && buf) writeFn(`${prefix} ${buf}\n`);
-    },
-    abort() {
-      if (!cleaningUp && buf) writeFn(`${prefix} ${buf}\n`);
-    },
-  });
+  if (requestedDryRun) return '';
+  console.log(`  🚇 [tunnel] Criando tunnel Cloudflare: ${tunnelName}`);
+  const created = cloudflared(['tunnel', 'create', tunnelName], true);
+  if (created.exitCode !== 0) {
+    throw new Error(`Não foi possível criar o tunnel ${tunnelName}: ${created.stderr || created.stdout}`);
+  }
 
-  // pipeTo() resolve DEPOIS que close()/abort() executarem, garantindo
-  // que todo o output foi escrito antes da promise ser considerada settled.
-  const pipePromise = stream.pipeTo(writable).catch(() => {
-    // Rejeição esperada quando o pipe é abortado — já tratamos em abort()
-  });
+  const createdId = `${created.stdout}\n${created.stderr}`.match(
+    /(?:with id|id:)\s*([0-9a-f-]{36})/i,
+  )?.[1];
+  if (createdId) return createdId;
 
-  readTasks.push(pipePromise);
+  const refreshed = cloudflared(['tunnel', 'list', '--output', 'json'], true);
+  try {
+    const tunnels = JSON.parse(refreshed.stdout) as Array<{ id?: string; name?: string }>;
+    const createdTunnel = tunnels.find((tunnel) => tunnel.name === tunnelName && tunnel.id);
+    if (createdTunnel?.id) return createdTunnel.id;
+  } catch {
+    // Fall through to the actionable error below.
+  }
+  throw new Error(`O tunnel ${tunnelName} foi criado, mas não consegui descobrir o UUID.`);
 }
 
-function spawnPrefixed(
-  label: string,
-  cmd: string[],
-  opts?: Omit<Parameters<typeof spawn>[1], 'stdin' | 'stdout' | 'stderr' | 'stdio'>,
-): ReadableSubprocess {
-  const proc = spawn(cmd, {
-    ...opts,
+async function prepareNamedTunnel(): Promise<void> {
+  const resolvedTunnelId = resolveTunnelId();
+  if (requestedDryRun || !resolvedTunnelId) {
+    console.log(`  ℹ [tunnel] Dry-run: criaria o tunnel ${tunnelName}`);
+    return;
+  }
+
+  const credentialsFile = process.env.TUNNEL_CREDENTIALS_FILE
+    ?? path.join(HOME, '.cloudflared', `${resolvedTunnelId}.json`);
+  if (!existsSync(credentialsFile)) {
+    throw new Error(`Credencial do tunnel não encontrada: ${credentialsFile}`);
+  }
+
+  const generatedConfig = path.join(lockRoot, 'cloudflared', `${slug}.yml`);
+  const generated = [
+    `tunnel: ${resolvedTunnelId}`,
+    `credentials-file: /etc/cloudflared/${resolvedTunnelId}.json`,
+    '',
+    'ingress:',
+    `  - hostname: ${tunnelHostname}`,
+    '    service: http://web:5441',
+    '    originRequest:',
+    '      noTLSVerify: false',
+    '      connectTimeout: 30s',
+    '      noHappyEyeballs: false',
+    '  - service: http_status:404',
+    '',
+  ].join('\n');
+  mkdirSync(path.dirname(generatedConfig), { recursive: true });
+  writeFileSync(generatedConfig, generated);
+  tunnelConfigPath = generatedConfig;
+
+  process.env.DEV_TUNNEL_CONFIG_HOST_PATH = generatedConfig.replaceAll('\\', '/');
+  process.env.DEV_TUNNEL_CREDENTIALS_HOST_PATH = credentialsFile.replaceAll('\\', '/');
+  process.env.DEV_TUNNEL_ID = resolvedTunnelId;
+  tunnelProfileEnabled = true;
+
+  if (cloudflareApiToken && cloudflareZoneId) {
+    console.log(`  ℹ [tunnel] DNS via API habilitado para ${tunnelHostname}`);
+  } else {
+    console.log(`  ℹ [tunnel] DNS automático desativado para ${tunnelHostname}.`);
+    console.log('    Configure o CNAME no dashboard Cloudflare ou informe CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID da zona correta.');
+  }
+
+  await ensureTunnelDns(resolvedTunnelId);
+  console.log(`  ✓ [tunnel] ${tunnelName} preparado; config: ${generatedConfig}`);
+}
+
+async function prepareQuickTunnel(): Promise<void> {
+  if (requestedDryRun) {
+    console.log(`  ℹ [tunnel] Dry-run: subiria um quick tunnel ${tunnelMode === 'quick' ? 'forçado' : 'automático'}`);
+    return;
+  }
+  const url = currentPorts ? `http://127.0.0.1:${currentPorts.web}` : 'http://127.0.0.1:5441';
+  console.log(`  🚇 [tunnel] Subindo quick tunnel (trycloudflare) → ${url}`);
+
+  const proc = Bun.spawn([cloudflaredBin, 'tunnel', '--url', url, '--no-autoupdate'], {
+    cwd: REPO_ROOT,
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
   });
-  processes.set(label, proc);
-  console.log(`  [${label}] PID ${proc.pid}`);
-  startOutputReader(label, proc.stdout, false);
-  startOutputReader(label, proc.stderr, true);
-  return proc;
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let resolved = false;
+  const reader = (async () => {
+    const r = proc.stderr.getReader();
+    try {
+      while (true) {
+        const { value, done } = await r.read();
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          process.stderr.write(`  \x1b[35m[tunnel]\x1b[0m ${chunk}`);
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            const match = line.match(/https:\/\/\S+\.trycloudflare\.com/);
+            if (match && !resolved) {
+              resolved = true;
+              quickTunnelUrl = match[0];
+              console.log('');
+              console.log('  ┌──────────────────────────────────────────────────────────────');
+              console.log(`  │  URL pública (quick tunnel): ${quickTunnelUrl}`);
+              console.log(`  │  URL local:                 http://localhost:${currentPorts?.web ?? 5441}`);
+              console.log('  └──────────────────────────────────────────────────────────────');
+              console.log('');
+              composeEnvironment(currentPorts!);
+            }
+          }
+        }
+        if (done) break;
+      }
+    } finally {
+      r.releaseLock();
+    }
+  })();
+
+  proc.exited.then(() => {
+    if (!quickTunnelUrl && !resolved) {
+      console.error('  ⚠ [tunnel] cloudflared encerrou antes de publicar a URL do quick tunnel.');
+    }
+  });
+
+  // Don't await reader; quick tunnel runs for the lifetime of the process.
+  void reader;
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Cleanup
-// ═════════════════════════════════════════════════════════════════════════════
+function terminateQuickTunnel(): void {
+  if (!quickTunnelUrl) return;
+  // cloudflared will be killed by Ctrl+C in the parent shell; nothing to do here
+  // because the process is tracked by the OS once detached.
+}
 
-function terminate(label: string, proc: Subprocess): void {
-  if (!proc.pid) return;
-  console.log(`  Parando ${label} (PID ${proc.pid})...`);
-
-  if (isWin) {
-    // Windows: taskkill /F /T é instantâneo e silencioso — sem prompts
-    // Pular proc.kill() porque bun --hot captura SIGTERM e pergunta
-    // "Deseja finalizar o arquivo em lotes (S/N)?" em vez de sair.
-    Bun.spawnSync(['taskkill', '/F', '/T', '/PID', String(proc.pid)]);
-    return;
-  }
-
-  // Unix: SIGTERM graceful
-  try {
-    proc.kill();
-  } catch { /* já morreu */ }
+async function prepareTunnel(): Promise<void> {
+  if (skipTunnel) return;
+  if (tunnelMode === 'quick') return prepareQuickTunnel();
+  if (tunnelMode === 'named') return prepareNamedTunnel();
+  console.log(`  ⚠ [tunnel] Modo desconhecido (${tunnelMode}), seguindo sem tunnel.`);
 }
 
 async function cleanup(exitCode: number): Promise<void> {
   if (cleanExit) return;
   cleanExit = true;
-  cleaningUp = true;
+  if (!keepStack) stopStack();
+  else console.log('  ℹ KEEP_INFRA=1: containers mantidos rodando');
 
-  console.log('\n⏳ Parando processos...');
-
-  // 1. Mata todos os filhos (ordem inversa: web → dispatcher/ingestor → api → tunnel)
-  const order = ['web', 'dispatcher', 'ingestor', 'tunnel', 'api'];
-  for (const label of order) {
-    const proc = processes.get(label);
-    if (proc && !proc.killed) {
-      terminate(label, proc);
-    }
-  }
-
-  // 2. Aguarda todos os processos realmente encerrarem no SO e os streams
-  //    fecharem — sem isso o reader task pode continuar processando buffers
-  //    residuais e escrevendo logs DEPOIS da mensagem de finalização.
-  await Promise.allSettled(
-    Array.from(processes.values()).map((p) => p.exited),
-  );
-  // Dá um tick extra pro event loop processar o fechamento dos streams
-  await new Promise((r) => setImmediate(r));
-
-  // 3. Aguarda as tasks de leitura finalizarem (streams já fecharam,
-  //     então os readers resolvem imediatamente com done=true + flush do buf)
-  await Promise.allSettled(readTasks);
-
-  // 4. Libera o lock
   await releaseLock();
-
-  // 5. Derruba containers Docker (a menos que KEEP_INFRA=1)
-  if (!KEEP_INFRA) {
-    stopInfra();
-  } else {
-    console.log('  [infra] KEEP_INFRA=1, containers mantidos rodando');
-  }
-
-  // 6. Verificação final: portas livres?
-  const busy: string[] = [];
-  for (const port of [API_PORT, WEB_PORT]) {
-    if (await portHasLiveProcess(port)) {
-      busy.push(`porta ${port}`);
-    }
-  }
-  if (busy.length > 0) {
-    console.log(`  ⚠ ${busy.join(', ')} ainda ocupada(s) — forçando taskkill...`);
-    for (const port of [API_PORT, WEB_PORT]) {
-      for (const pid of pidsOnPort(port)) {
-        killByPid(pid);
-      }
-    }
-  }
-
-  console.log('✓ Dev server parou.');
+  if (!keepStack && stateFile) await rm(stateFile, { force: true }).catch(() => {});
+  if (tunnelConfigPath && !keepStack) await rm(tunnelConfigPath, { force: true }).catch(() => {});
+  terminateQuickTunnel();
+  console.log('✓ Ambiente dev finalizado.');
   process.exit(exitCode);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Main
-// ═════════════════════════════════════════════════════════════════════════════
-
-async function main(): Promise<void> {
-  process.on('SIGINT', () => cleanup(130));
-  process.on('SIGTERM', () => cleanup(143));
-  process.on('uncaughtException', (err) => {
-    console.error('\nErro não capturado:', err);
-    cleanup(1);
-  });
-
-  // ── 1. Stale locks ──
-  await cleanStaleLocks();
-
-  // ── 2. Lock pre-check + auto-kill ──
-  const hostSlug = HOST.replace(/[:.]/g, '-');
-  const reqLock = path.join(LOCK_ROOT, `dev-${hostSlug}-${API_PORT}.lockdir`);
-
-  if (!SKIP_LOCK && existsSync(reqLock)) {
-    const heldPid = await readFile(path.join(reqLock, 'pid'), 'utf-8').catch(() => '');
-    const heldPidNum = Number(heldPid.trim());
-
-    if (heldPidNum && isAlive(heldPidNum)) {
-      console.log(`  ⚠ Kill automático: dev server anterior (PID ${heldPidNum}) usando ${reqLock}`);
-      killByPid(heldPidNum);
-    }
-
-    // Remove lock dir (vivo ou stale) — se o kill acima funcionou o cleanup do outro
-    // processo pode ter removido, então ignore erro.
-    await rm(reqLock, { recursive: true, force: true }).catch(() => {});
-    console.log(`  🧹 Lock removido: ${reqLock}`);
-  }
-
-  // ── 3. Kill previous processes (portas) ──
-  console.log('🧹 Verificando portas ocupadas...');
-
-  let killedAny = false;
-  for (const port of [API_PORT, WEB_PORT]) {
-    const pids = pidsOnPort(port);
-    for (const pid of pids) {
-      if (isAlive(pid)) {
-        killByPidWithParent(pid);
-        killedAny = true;
-      }
-    }
-  }
-
-  if (killedAny) {
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-
-  // ── 4. Port check final (com retry + kill do pai) ──
-  // O kill inicial pode matar só o servidor filho, mas o bun --watch pai
-  // sobrevive e restarta o servidor. Se a porta ainda estiver ocupada,
-  // sobe na árvore de processos e mata o pai também.
-  for (const [port, label] of [[API_PORT, 'API'], [WEB_PORT, 'WEB']] as const) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (!(await portHasLiveProcess(port))) break;
-
-      if (attempt < 2) {
-        console.log(`  ⚠ Porta ${port} ainda ocupada (tentativa ${attempt + 2}) — subindo na árvore...`);
-        const pids = pidsOnPort(port);
-        for (const pid of pids) {
-          if (isAlive(pid)) killByPidWithParent(pid);
-        }
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
-
-    if (await portHasLiveProcess(port)) {
-      console.error(`✗ Porta ${port} (${label}) continua ocupada após 3 tentativas.`);
-      console.error(`  Para debug: netstat -ano | grep :${port}`);
-      process.exit(1);
-    }
-  }
-  console.log('✓ Portas livres');
-
-  // ── 5. Infraestrutura Docker ──
-  if (!SKIP_INFRA) {
-    const infraOk = await ensureInfraRunning();
-    if (!infraOk) {
-      console.error(`  ⚠ Infraestrutura não disponível. O projeto pode não funcionar corretamente.`);
-      console.error(`    Use SKIP_INFRA=1 para pular, ou rode manualmente:`);
-      console.error(`    docker compose -f docker-compose.infra.yml --env-file .env.infra up -d`);
-    }
-  } else {
-    console.log('  [infra] SKIP_INFRA=1, não subiu');
-  }
-
-  // ── 6. Lock ──
-  if (!SKIP_LOCK) {
-    await acquireLock(reqLock);
-  }
-
-  // ── 7. Banner ──
+function printConfiguration(ports: PortMap): void {
   console.log('');
-  console.log('╔═══════════════════════════════════════════════════╗');
-  console.log('║     O Mestre Afiliado — Dev Server              ║');
-  console.log('╚═══════════════════════════════════════════════════╝');
-  console.log('');
-  console.log(`  API:    http://${HOST}:${API_PORT}`);
-  console.log(`  Web:    http://${HOST}:${WEB_PORT}`);
-  console.log(`  Worker: ${SKIP_WORKER ? 'SKIP' : '(background, logs no stdout)'}`);
-  console.log(`  Infra:  ${SKIP_INFRA ? 'SKIP' : '(PostgreSQL, Redis, Evolution API)'}`);
-  console.log(`  Tunnel: ${SKIP_TUNNEL ? 'SKIP' : 'cloudflared → dev.omestreafiliado.com.br'}`);
-  console.log(`  Lock:   ${SKIP_LOCK ? '(SKIP)' : reqLock + ' (PID ' + process.pid + ')'}`);
-  console.log('');
-
-  // ── 8. Start processes ──
-  process.env.HOST = HOST;
-  process.env.API_PORT = String(API_PORT);
-
-  spawnPrefixed('api', ['bun', '--watch', 'apps/api/src/index.ts'], {
-    cwd: REPO_ROOT,
-  });
-
-  if (!SKIP_WORKER) {
-    spawnPrefixed('ingestor', ['bun', '--watch', 'apps/ingestor/src/index.ts'], {
-      cwd: REPO_ROOT,
-    });
-    spawnPrefixed('dispatcher', ['bun', '--watch', 'apps/dispatcher/src/index.ts'], {
-      cwd: REPO_ROOT,
-    });
-  } else {
-    console.log('  [ingestor/dispatcher] SKIP_WORKER=1, não subiram');
+  console.log('O Mestre Afiliado — Dev por worktree');
+  console.log(`  Branch:    ${branch}`);
+  console.log(`  Worktree:  ${worktreeName}`);
+  console.log(`  Slug:      ${slug}`);
+  console.log(`  Compose:   ${composeProject}`);
+  console.log(`  Modo:      ${tunnelMode === 'quick' ? 'quick tunnel (trycloudflare)' : 'tunnel nomeado'}`);
+  console.log(`  Tunnel:    ${skipTunnel ? 'SKIP' : tunnelPublicUrl()}`);
+  if (!skipTunnel && tunnelMode === 'named' && (!cloudflareApiToken || !cloudflareZoneId)) {
+    console.log('              DNS automático desativado (configure CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID)');
   }
-
-  spawnPrefixed('web', ['bun', 'run', 'dev', '--port', String(WEB_PORT), '--host', HOST], {
-    cwd: path.join(REPO_ROOT, 'apps/web'),
-  });
-
-  if (!SKIP_TUNNEL) {
-    spawnPrefixed('tunnel', [CLOUDFLARED_BIN, 'tunnel', '--config', CLOUDFLARED_CONFIG, 'run', 'omestre-afiliado'], {
-      cwd: REPO_ROOT,
-    });
-  } else {
-    console.log('  [tunnel] SKIP_TUNNEL=1, não subiu');
+  console.log(`  Web:       http://localhost:${ports.web}`);
+  console.log(`  API:       http://localhost:${ports.api}`);
+  console.log(`  Postgres:  localhost:${ports.postgres}`);
+  console.log(`  Evolution: localhost:${ports.evolution}`);
+  console.log(`  Redis:     localhost:${ports.redis}`);
+  console.log(`  Ingestor:  localhost:${ports.ingestor}`);
+  console.log(`  Dispatcher: localhost:${ports.dispatcher}`);
+  console.log(`  Env:       ${appEnvFile}`);
+  console.log('');
+  if (!skipTunnel && tunnelMode === 'quick') {
+    console.log('  ℹ A URL pública do quick tunnel aparece logo abaixo assim que o cloudflared conectar.');
+    console.log('');
   }
-
-  console.log('');
-  console.log('─────────────────────────────────────────────────────');
-  console.log('  Ctrl-C para parar tudo.');
-  console.log('─────────────────────────────────────────────────────');
-  console.log('');
-
-  // ── 9. Wait for any process to exit unexpectedly ──
-  const exitPromises = Array.from(processes.entries()).map(
-    async ([label, proc]) => {
-      const code = await proc.exited;
-      return { label, code };
-    },
-  );
-
-  const exited = await Promise.race(exitPromises);
-  console.log(`\n⚠ Processo ${exited.label} encerrou (código ${exited.code})`);
-  await cleanup(exited.code ?? 1);
 }
 
-main().catch((err) => {
-  console.error('\nErro fatal:', err);
-  cleanup(1);
+async function waitForever(): Promise<void> {
+  await new Promise<void>(() => {
+    setInterval(() => {}, 60_000);
+  });
+}
+
+async function main(): Promise<void> {
+  process.on('SIGINT', () => { void cleanup(130); });
+  process.on('SIGTERM', () => { void cleanup(143); });
+  process.on('uncaughtException', (error) => {
+    console.error('\nErro não capturado:', error);
+    void cleanup(1);
+  });
+
+  await cleanStaleLocks();
+  const ports = await choosePorts();
+  composeEnvironment(ports);
+  printConfiguration(ports);
+
+  if (requestedDryRun) {
+    return;
+  }
+  if (!existsSync(appEnvFile)) {
+    throw new Error(`Arquivo de ambiente não encontrado: ${appEnvFile}. Crie .env no worktree ou defina DEV_APP_ENV_FILE.`);
+  }
+  if (!existsSync(composeFile)) throw new Error(`Compose não encontrado: ${composeFile}`);
+  if (!dockerAvailable()) throw new Error('Docker Desktop não está disponível.');
+
+  await acquireLock();
+  try {
+    await prepareTunnel();
+    await persistState(ports);
+    startStack();
+  } catch (error) {
+    if (stackStarted) stopStack();
+    throw error;
+  }
+
+  console.log('');
+  console.log('  Ctrl-C para parar a stack e liberar as portas.');
+  if (keepStack) console.log('  KEEP_INFRA=1 mantém os containers após Ctrl-C.');
+  console.log('');
+
+  await waitForever();
+}
+
+main().catch(async (error) => {
+  console.error(`\n✗ ${error instanceof Error ? error.message : String(error)}`);
+  await releaseLock();
+  if (stateFile && !keepStack) await rm(stateFile, { force: true }).catch(() => {});
+  if (tunnelConfigPath && !keepStack) await rm(tunnelConfigPath, { force: true }).catch(() => {});
+  process.exit(1);
 });

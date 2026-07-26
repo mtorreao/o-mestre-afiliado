@@ -106,28 +106,30 @@ Backend armazena no PostgreSQL (tabela ml_affiliates.session_cookies)
 | Comando | Descrição |
 |---------|-----------|
 | `bun install` | Instala todas as dependências do monorepo |
-| `bun run dev` | Sobe todos os apps em paralelo (API :5442, Web :5441) |
-| `bun run dev:api` | Sobe apenas a API em modo hot-reload |
-| `bun run dev:worker` | Sobe apenas o worker |
-| `bun run dev:web` | Sobe apenas o web app |
-| `bun run shopee <url>` | Executa conversor Shopee via CLI |
+| `bun run dev` | Sobe `docker-compose.dev.yml` em um ambiente isolado pela branch atual |
+| `bun run scripts/dev.ts --dry-run` | Mostra slug e portas calculadas sem subir Docker |
+| `SKIP_TUNNEL=1 bun run dev` | Sobe a stack da branch sem Cloudflare Tunnel |
+| `DEV_BUILD=0 bun run dev` | Reutiliza as imagens Docker existentes |
+| `DEV_PORT_BASE=6000 bun run dev` | Força o bloco de portas 6001–6007 |
+| `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev` | Cria/atualiza o CNAME da branch na zona correta |
 | `bun run ml <url>` | Executa conversor Mercado Livre via CLI |
 | `bun run build` | Compila todos os apps |
-| `SKIP_INFRA=1 bun run dev` | Sobe apps sem Docker (PG, Redis, Evolution) |
 
 ### Portas
 
-| App | Porta | Descrição |
-|-----|-------|-----------|
-| API | 5442 | Elysia REST API |
-| Web | 5441 | Vite dev server + Cloudflare Tunnel |
-| Evolution API | 5444 | WhatsApp |
-| PostgreSQL | 5443 | Banco de dados |
-| Redis | 5445 | Cache/fila |
+O script escolhe um bloco de sete portas livre e determinístico por branch. A saída de `bun run dev` (ou `--dry-run`) mostra as portas efetivas:
 
-### Hot-reload
+| Offset do bloco | Serviço |
+|-----------------|---------|
+| `base + 1` | Web |
+| `base + 2` | API |
+| `base + 3` | PostgreSQL |
+| `base + 4` | Evolution API |
+| `base + 5` | Redis |
+| `base + 6` | Ingestor metrics |
+| `base + 7` | Dispatcher metrics |
 
-Cada app usa `bun --hot` para reload automático. **Nota:** arquivos de pacotes (`packages/`) não são monitorados pelo hot-reload — ao alterar um pacote, reinicie o app manualmente.
+Use `DEV_PORT_BASE=6000` para fixar o bloco 6001–6007. Cada ambiente usa builds Docker; para reduzir o tempo de restart, use `DEV_BUILD=0`.
 
 ---
 
