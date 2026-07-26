@@ -8,7 +8,7 @@
  *   4. Dispatcher     — métricas e latências detalhadas (com breakdown por marketplace)
  *   5. DLQ            — destaque, com expansão inline para gestão
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
@@ -24,6 +24,8 @@ import {
   ChevronUp,
   X,
   ExternalLink,
+  Copy,
+  Check,
 } from 'lucide-react';
 import {
   counterLabel,
@@ -680,77 +682,110 @@ function DLQItem({
       </div>
 
       {/* Detalhes expansíveis: corpo do evento original */}
-      {expanded && event && <DLQItemDetails event={event} />}
+      {expanded && event && <DLQItemDetails item={item} event={event} />}
     </div>
   );
 }
 
-function DLQItemDetails({ event }: { event: DLQEvent }) {
-  if (event.kind === 'raw') {
-    return (
-      <div
-        style={{
-          marginTop: '0.5rem',
-          paddingTop: '0.5rem',
-          borderTop: '1px solid var(--color-border-light)',
-          fontSize: 'var(--text-xs)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.35rem',
-        }}
-      >
-        <DetailRow label="messageId" value={event.messageId} mono />
-        {event.instanceName && <DetailRow label="instanceName" value={event.instanceName} mono />}
-        {event.sourceGroupJid && <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />}
-        {event.sourceGroupName && <DetailRow label="sourceGroupName" value={event.sourceGroupName} />}
-        {event.affiliateId != null && <DetailRow label="affiliateId" value={String(event.affiliateId)} />}
-        {event.mirrorId != null && <DetailRow label="mirrorId" value={String(event.mirrorId)} />}
-        {event.timestamp != null && (
-          <DetailRow
-            label="timestamp"
-            value={`${event.timestamp} (${formatDate(new Date(event.timestamp * 1000).toISOString())})`}
-            mono
-          />
-        )}
-        {event.text && (
-          <div>
-            <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.2rem' }}>text (mensagem original)</div>
-            <pre
-              style={{
-                margin: 0,
-                padding: '0.5rem',
-                background: 'var(--color-bg)',
-                border: '1px solid var(--color-border-light)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.7rem',
-                fontFamily: 'var(--font-mono, monospace)',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                maxHeight: 200,
-                overflow: 'auto',
-              }}
-            >
-              {event.text}
-            </pre>
-          </div>
-        )}
-      </div>
-    );
+function DLQItemDetails({ item, event }: { item: DLQEntry; event: DLQEvent }) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+
+  async function handleCopyJson() {
+    const payload = {
+      id: item.id,
+      failureReason: item.failureReason,
+      failedAt: item.failedAt,
+      lastError: item.lastError,
+      attempts: item.attempts,
+      marketplace: item.marketplace ?? null,
+      originalUrl: item.originalUrl ?? null,
+      conversionSuccess: item.conversionSuccess ?? null,
+      reprocessed: item.reprocessed,
+      event,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(json);
+          copied = true;
+        } catch (clipErr) {
+          // Headless browsers e iframes sem permission policy bloqueiam
+          // o Clipboard API. Cai pro fallback do <textarea>+execCommand.
+        }
+      }
+      if (!copied) {
+        const ta = document.createElement('textarea');
+        ta.value = json;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        ta.style.top = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+          copied = document.execCommand('copy');
+        } catch {
+          copied = false;
+        }
+        document.body.removeChild(ta);
+      }
+      if (copied) {
+        setCopied(true);
+        setCopyError(false);
+        setTimeout(() => setCopied(false), 1500);
+      } else {
+        setCopyError(true);
+        setTimeout(() => setCopyError(false), 2000);
+      }
+    } catch {
+      setCopyError(true);
+      setTimeout(() => setCopyError(false), 2000);
+    }
   }
 
-  // event.kind === 'send'
-  return (
-    <div
-      style={{
-        marginTop: '0.5rem',
-        paddingTop: '0.5rem',
-        borderTop: '1px solid var(--color-border-light)',
-        fontSize: 'var(--text-xs)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.35rem',
-      }}
-    >
+  const bodyContent = event.kind === 'raw' ? (
+    <>
+      <DetailRow label="messageId" value={event.messageId} mono />
+      {event.instanceName && <DetailRow label="instanceName" value={event.instanceName} mono />}
+      {event.sourceGroupJid && <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />}
+      {event.sourceGroupName && <DetailRow label="sourceGroupName" value={event.sourceGroupName} />}
+      {event.affiliateId != null && <DetailRow label="affiliateId" value={String(event.affiliateId)} />}
+      {event.mirrorId != null && <DetailRow label="mirrorId" value={String(event.mirrorId)} />}
+      {event.timestamp != null && (
+        <DetailRow
+          label="timestamp"
+          value={`${event.timestamp} (${formatDate(new Date(event.timestamp * 1000).toISOString())})`}
+          mono
+        />
+      )}
+      {event.text && (
+        <div>
+          <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.2rem' }}>text (mensagem original)</div>
+          <pre
+            style={{
+              margin: 0,
+              padding: '0.5rem',
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border-light)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.7rem',
+              fontFamily: 'var(--font-mono, monospace)',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              maxHeight: 200,
+              overflow: 'auto',
+            }}
+          >
+            {event.text}
+          </pre>
+        </div>
+      )}
+    </>
+  ) : (
+    <>
       <DetailRow label="id" value={event.id} mono />
       <DetailRow label="sourceMessageId" value={event.sourceMessageId} mono />
       {event.sourceGroupJid && <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />}
@@ -783,6 +818,53 @@ function DLQItemDetails({ event }: { event: DLQEvent }) {
           </pre>
         </div>
       )}
+    </>
+  );
+
+  return (
+    <div
+      style={{
+        marginTop: '0.5rem',
+        paddingTop: '0.5rem',
+        borderTop: '1px solid var(--color-border-light)',
+        fontSize: 'var(--text-xs)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.35rem',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={handleCopyJson}
+          title="Copia o item inteiro (id + failureReason + lastError + event) como JSON formatado"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.25rem',
+            padding: '0.2rem 0.5rem',
+            fontSize: '0.7rem',
+            fontWeight: 500,
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--color-border-light)',
+            background: copied
+              ? 'var(--color-success-subtle)'
+              : copyError
+                ? 'var(--color-error-subtle)'
+                : 'var(--color-bg-secondary)',
+            color: copied
+              ? 'var(--color-success)'
+              : copyError
+                ? 'var(--color-error)'
+                : 'var(--color-text-secondary)',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          {copied ? <Check size={12} /> : copyError ? <AlertTriangle size={12} /> : <Copy size={12} />}
+          {copied ? 'Copiado!' : copyError ? 'Falhou' : 'Copiar JSON'}
+        </button>
+      </div>
+      {bodyContent}
     </div>
   );
 }
@@ -833,6 +915,11 @@ function DLQSection() {
   const [sincePreset, setSincePreset] = useState<SincePreset>('');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  // Guarda o último `total` visto para detectar crescimento e disparar
+  // uma animação no badge do header. Evita spammear se o total oscilar
+  // por arredondamento (auto-refresh trazendo o mesmo número).
+  const previousTotalRef = useRef(0);
+  const [badgeBump, setBadgeBump] = useState(0);
 
   /**
    * Monta a query string server-side a partir do estado de filtros.
@@ -910,6 +997,15 @@ function DLQSection() {
   const total = data?.total ?? 0;
   const totalFiltered = data?.totalFiltered ?? 0;
 
+  // Detecta crescimento do total entre polls. Quando cresce, dispara
+  // bump key que re-monta a animação do badge (3 pulsos de 0.6s).
+  useEffect(() => {
+    if (total > previousTotalRef.current && previousTotalRef.current > 0) {
+      setBadgeBump((b) => b + 1);
+    }
+    previousTotalRef.current = total;
+  }, [total]);
+
   // Chips de reason vêm do `items` carregado (até 100).
   // Se um filter está ativo, mostramos só o chip correspondente
   // (evita poluir a UI com chips que retornariam 0 resultados).
@@ -936,7 +1032,15 @@ function DLQSection() {
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span>🗑️</span>
           <span>Dead Letter Queue</span>
-          {total > 0 && <Badge variant="error">{total}</Badge>}
+          {total > 0 && (
+            <Badge
+              key={badgeBump}
+              variant="error"
+              className="dlq-badge-bump"
+            >
+              {total}
+            </Badge>
+          )}
         </span>
       }
       subtitle="Mensagens que falharam permanentemente após todas as tentativas"
