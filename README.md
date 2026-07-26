@@ -51,6 +51,50 @@ CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev
 
 ---
 
+## 📡 Worker Monitoring
+
+A web app expõe uma **tela de monitoramento de saúde e performance** dos workers
+(`/worker-status`): pipeline de espelhamento, resumo de saúde, métricas detalhadas
+do Ingestor e do Dispatcher, e a **Dead Letter Queue (DLQ)** em destaque com gestão inline.
+
+### Endpoints de monitoramento (API)
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/api/worker/status` | Status agregado de Ingestor + Dispatcher (uptime, modo, queue size, DLQ count, step durations, erros recentes, counters Prometheus) |
+| GET | `/api/worker/dlq` | Lista a DLQ com filtros server-side (ver abaixo) |
+| POST | `/api/worker/dlq/requeue?id=ID` | Re-enfileira um item na fila original (Queue A ou B conforme origem) |
+| POST | `/api/worker/dlq/remove?id=ID` | Remove um item da DLQ |
+| POST | `/api/worker/dlq/purge` | Remove **todos** os itens da DLQ |
+
+#### `GET /api/worker/dlq` — parâmetros de filtro
+
+| Parâmetro | Tipo | Descrição |
+|-----------|------|-----------|
+| `offset` | number | Paginação (default `0`) |
+| `limit` | number | Itens por página (default `20`; sobe para `100` quando há filtro ativo) |
+| `queue` | `A` \| `B` | Filtra pela fila de origem — `A` = Ingestor (RawMessageEvent), `B` = Dispatcher (SendEvent) |
+| `reason` | string | Filtra por `failureReason` exato (ex: `conversion_failed`) |
+| `since` | ISO ou relativo | Filtra por data de falha. Aceita ISO (`2026-07-20T00:00:00Z`) ou duração relativa `Nh`/`Nd` (ex: `1h`, `24h`, `7d`) |
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "items": [ { "id": "...", "failureReason": "conversion_failed", "failedAt": "...", "event": { ... } } ],
+  "total": 800,        // total REAL da DLQ (zcard), usado pelo badge do header
+  "totalFiltered": 782, // total APÓS aplicar os filtros acima (igual a total quando sem filtro)
+  "offset": 0,
+  "limit": 100
+}
+```
+
+> A tela faz **auto-refresh a cada 30s** (switch "Auto" próprio na seção DLQ,
+> independente do auto-refresh global do header). Quando o total cresce entre
+> polls, o badge da DLQ pulsa para chamar atenção.
+
+---
+
 ## 🔧 Scripts CLI
 
 ```bash

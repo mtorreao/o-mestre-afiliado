@@ -116,10 +116,13 @@ o-mestre-afiliado/
 
 ### Web (React)
 
-- Componente único `App.tsx` com estado local (useState).
+- **React Router** (`react-router-dom`) com rotas `/`, `/espelhamentos`, `/configuracoes`, `/logs`, `/worker-status`.
+- `App.tsx` define `ProtectedRoute` / `GuestRoute` e o layout (sidebar + topbar).
+- Páginas em `apps/web/src/pages/` (ex: `WorkerStatusPage.tsx`).
 - Proxy Vite em `/api` para API local em `:5442`.
-- Sem roteador (SPA de página única).
-- Estilo inline (sem CSS modules ou Tailwind).
+- Design system em `apps/web/src/components/ui/` (Card, Badge, Button, Loading, Switch, Select...). **Usar CSS vars do design system, nunca cores hardcoded.**
+- Estilo inline ou CSS modules — sem Tailwind.
+- Estado de autenticação em `apps/web/src/hooks/useAuth.ts` (token em `localStorage` sob a chave `omestre_auth_token`).
 
 ### Converters
 
@@ -285,6 +288,59 @@ Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch(
 10. **Subir extensão Chrome** — após alterar arquivos da extensão, recarregar em `chrome://extensions/`.
 
 11. **Link curto vs URL params** — link curto (`meli.la`) é preferível mas requer cookies de sessão. URL params funcionam sempre, independente de login.
+
+---
+
+## 📊 Worker Monitoring
+
+Tela web de **saúde e performance** dos workers de espelhamento, em
+`apps/web/src/pages/WorkerStatusPage.tsx` (rota `/worker-status`, protegida).
+
+### Estrutura da página (5 seções)
+
+1. **🔗 Pipeline** — visualização do fluxo `Queue A → Ingestor → Queue B → Dispatcher → Evolution` com XLEN das filas Redis.
+2. **📊 Resumo de Saúde** — grid com Uptime, Modo, Queue size, DLQ count e erros distintos de cada worker.
+3. **📥 Ingestor** — Recebidas, Bloqueadas (breakdown por `reason`), Publicadas, latência por etapa, últimos erros.
+4. **📤 Dispatcher** — Enviadas (por `marketplace`), Descartadas (por `reason`), Falhas (por `type`), latência por etapa, últimos erros.
+5. **🗑️ DLQ** — destaque, com expansão inline por item (body original, fila/etapa de falha, link "Ver espelhamento") e gestão (re-enfileirar / remover / limpar).
+
+### Backend (API)
+
+Endpoints em `apps/api/src/index.ts`:
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/api/worker/status` | Status agregado (Ingestor + Dispatcher) — `getAggregatedWorkerStatus()` |
+| GET | `/api/worker/dlq` | Lista DLQ com filtros server-side |
+| POST | `/api/worker/dlq/requeue?id=ID` | Re-enfileira item (Queue A ou B conforme origem) |
+| POST | `/api/worker/dlq/remove?id=ID` | Remove item da DLQ |
+| POST | `/api/worker/dlq/purge` | Remove todos os itens da DLQ |
+
+**`GET /api/worker/dlq`** aceita query params: `offset`, `limit`, `queue` (`A`/`B`),
+`reason` (failureReason exato) e `since` (ISO ou `Nh`/`Nd`). Responde com `total`
+(zcard global da DLQ, usado no badge do header) e `totalFiltered` (após filtros).
+A implementação está em `apps/api/src/services/worker-metrics.ts` (`listDlqItems`)
+sobre `packages/worker-common/src/dead-letter-queue.ts` (`listDLQ`).
+
+### Helpers de UI
+
+- `apps/web/src/lib/worker-status.ts` — tipos (`WorkerStatus`, `DLQEntry`, `DLQListResponse`),
+  dicionários PT-BR (`COUNTER_LABELS`, `STEP_LABELS`, `LABEL_LABELS`) e `getFailureMeta(reason)`
+  (mapeia reason → fila/etapa de falha).
+- `apps/web/src/lib/worker-counters.ts` — `parseCounterKey`, `sumByName`, `aggregateByLabel`,
+  `rankedByLabel` para agregar counters Prometheus por label.
+
+### Convenções da página
+
+- **Auto-refresh:** header com switch "Auto" (poll global). A seção DLQ tem switch "Auto"
+  próprio de 30s, independente do global.
+- **Indicador de frescor:** dot verde/amarelo/vermelho conforme idade do último dado.
+- **Badge pulsante:** quando `total` da DLQ cresce entre polls, o badge do header pulsa
+  (keyframe `.dlq-badge-bump` em `apps/web/src/styles/globals.css`).
+- **Copiar JSON:** botão "Copiar JSON" no body expandido copia o item completo
+  (id + failureReason + failedAt + lastError + attempts + marketplace + originalUrl +
+  conversionSuccess + reprocessed + event) via Clipboard API com fallback `<textarea>`+`execCommand`.
+- **PT-BR obrigatório** em todos os labels.
 
 ---
 
