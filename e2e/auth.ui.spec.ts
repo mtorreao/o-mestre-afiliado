@@ -73,7 +73,7 @@ test.describe('UI - Register Page', () => {
     await page.click('button:has-text("Criar Conta")');
 
     // Aguardar redirecionamento para o dashboard
-    await expect(page.locator('text=Olá,')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('text=Atalhos Rápidos')).toBeVisible({ timeout: 15_000 });
     await expect(page.locator(`text=${TEST_NAME}`)).toBeVisible();
   });
 
@@ -141,7 +141,7 @@ test.describe('UI - Dashboard', () => {
     await page.reload();
 
     // Deve mostrar o dashboard com as seções
-    await expect(page.locator('text=Olá,')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('text=Atalhos Rápidos')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('text=O Mestre Afiliado')).toBeVisible();
 
     // Seções do dashboard
