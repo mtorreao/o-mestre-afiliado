@@ -24,16 +24,16 @@
 
 ### 1.1 Containers Docker (docker-compose.dev.yml)
 
-| Container | Status | Porta |
-|---|---|---|
-| `omestre_dev_api` | Up 12h (healthy) | 5452 |
-| `omestre_dev_ingestor` | Up 11h | 9092 |
-| `omestre_dev_dispatcher` | Up 12h | 9093 |
-| `omestre_dev_evolution` | Up 19h | 5454 |
-| `omestre_dev_postgres` | Up 19h (healthy) | 5453 |
-| `omestre_dev_redis` | Up 19h (healthy) | 5455 |
-| `omestre_dev_tunnel` | Up 46h | — |
-| `omestre_dev_web` | Up 12h | 5451 |
+| Container                | Status           | Porta |
+| ------------------------ | ---------------- | ----- |
+| `omestre_dev_api`        | Up 12h (healthy) | 5452  |
+| `omestre_dev_ingestor`   | Up 11h           | 9092  |
+| `omestre_dev_dispatcher` | Up 12h           | 9093  |
+| `omestre_dev_evolution`  | Up 19h           | 5454  |
+| `omestre_dev_postgres`   | Up 19h (healthy) | 5453  |
+| `omestre_dev_redis`      | Up 19h (healthy) | 5455  |
+| `omestre_dev_tunnel`     | Up 46h           | —     |
+| `omestre_dev_web`        | Up 12h           | 5451  |
 
 ### 1.2 Health checks
 
@@ -324,6 +324,7 @@ result: {"success":false,"error":"URL Invalid."}
 ### 5.2 `generateViaUrlParams` (verificação técnica do argumento de `a45dfa0`)
 
 Script Node:
+
 ```js
 const u = new URL('https://x.com/social/foo?matt_word=ORIGINAL&matt_tool=999');
 u.searchParams.set('matt_word', 'NOVO');
@@ -337,9 +338,10 @@ console.log(u.searchParams.getAll('matt_word'));
 **Resultado: `URLSearchParams.set()` SUBSTITUI, não adiciona.** Não há dois `matt_word` conflitantes.
 
 A premissa do commit `a45dfa0` (mensagem do commit):
+
 > "O fallback generateViaUrlParams estava enviando para o WhatsApp links como:
->   https://www.mercadolivre.com.br/social/om895584?matt_word=om895584
->   &matt_tool=50805475&matt_word=mtorreao&matt_tool=71835809"
+> https://www.mercadolivre.com.br/social/om895584?matt_word=om895584
+> &matt_tool=50805475&matt_word=mtorreao&matt_tool=71835809"
 
 …**não corresponde ao comportamento real do código** (`packages/converters/src/mercadolivre.ts:240-265`). O `generateViaUrlParams` sempre produziu URLs com um único `matt_word` substituindo o anterior.
 
@@ -347,7 +349,10 @@ A premissa do commit `a45dfa0` (mensagem do commit):
 
 ```js
 // 1. Resolve meli.la via redirect
-const r = await fetch('https://meli.la/2WLGuW9', { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' } });
+const r = await fetch('https://meli.la/2WLGuW9', {
+  redirect: 'follow',
+  headers: { 'User-Agent': 'Mozilla/5.0' },
+});
 const resolved = r.url;
 // → 'https://www.mercadolivre.com.br/social/om895584/lists'
 
@@ -355,7 +360,10 @@ const resolved = r.url;
 const u = new URL(resolved);
 const dropped = [];
 for (const p of ['matt_word', 'matt_tool', 'ref', 'forceInApp']) {
-  if (u.searchParams.has(p)) { u.searchParams.delete(p); dropped.push(p); }
+  if (u.searchParams.has(p)) {
+    u.searchParams.delete(p);
+    dropped.push(p);
+  }
 }
 // → dropped: []  (essa URL específica não tinha params extras além dos removidos)
 // → URL canônica: 'https://www.mercadolivre.com.br/social/om895584/lists'
@@ -380,7 +388,7 @@ const creds = await new UserCredentialsRepository().findByUserId(1);
 // shopeeAppId='18339760660', shopeeAppSecret (32 chars)
 
 const cases = [
-  'https://s.shopee.com.br/2g9nwk9ce1',  // veio do Promozone
+  'https://s.shopee.com.br/2g9nwk9ce1', // veio do Promozone
   'https://s.shopee.com.br/AAFqRD6KKY',
   'https://s.shopee.com.br/W5KuwSyaV',
   'https://s.shopee.com.br/2BDXRoRt6J',
@@ -436,13 +444,13 @@ qiBOMzJyr  → https://shopee.com.br/opaanlp/532455428/58257688023?...&mmp_pid=a
 8fR2ilYwBJ → https://shopee.com.br/user/voucher-wallet?mmp_pid=an_18339760660
 ```
 
-| Convertido | Destino real | Categoria |
-|---|---|---|
-| 6pzOXOccJp | `Ventilador-De-Teto-LED-E27-40W-...-i.1182228888.58259889781` | ✅ PRODUTO REAL |
-| 5LAakdiKMe | `/opaanlp/968302991/23198369308` | ❌ landing genérica |
-| qiBOMzJyr | `/opaanlp/532455428/58257688023` | ❌ landing genérica |
-| 8V7cWSaoF1 | `/user/voucher-wallet` | ❌ cupom/afiliado |
-| 8fR2ilYwBJ | `/user/voucher-wallet` | ❌ cupom/afiliado |
+| Convertido | Destino real                                                  | Categoria           |
+| ---------- | ------------------------------------------------------------- | ------------------- |
+| 6pzOXOccJp | `Ventilador-De-Teto-LED-E27-40W-...-i.1182228888.58259889781` | ✅ PRODUTO REAL     |
+| 5LAakdiKMe | `/opaanlp/968302991/23198369308`                              | ❌ landing genérica |
+| qiBOMzJyr  | `/opaanlp/532455428/58257688023`                              | ❌ landing genérica |
+| 8V7cWSaoF1 | `/user/voucher-wallet`                                        | ❌ cupom/afiliado   |
+| 8fR2ilYwBJ | `/user/voucher-wallet`                                        | ❌ cupom/afiliado   |
 
 **Taxa de produto real: 1/5 (20%).** Todos têm `mmp_pid=an_18339760660` (seu app_id), então a atribuição de comissão está correta Shopee-side — mas o link final 80% das vezes não é produto.
 
@@ -523,7 +531,7 @@ O commit `a45dfa0` é o suspeito principal — ele removeu `generateViaUrlParams
 O pipeline atual (`apps/ingestor/src/ingestor.ts:convertMlForAffiliate`, após `a45dfa0`):
 
 1. Recebe `https://meli.la/XXX` (ou similar)
-2. `resolveMeliRedirect()` segue o redirect → `/social/<outro>` 
+2. `resolveMeliRedirect()` segue o redirect → `/social/<outro>`
 3. Detecta `isProduct = false` (URL canônica não tem `/p/MLB` nem `/social/<id>/lists/<produto>`)
 4. **Bloqueia** com `success: false, error: "meli.la não redireciona para produto"`
 5. Nenhum SendEvent criado
@@ -554,6 +562,7 @@ Os shortlinks observados nos logs recentes (`2BDXRoRt6J`, `AAFqRD6KKY`, etc.) **
 ### 7.3 Bug latente: `resolveRedirectUrl` não conhece Promozone
 
 `apps/ingestor/src/resolve-redirect.ts`:
+
 - `resolveRedirectUrl()` testa só `redirect: 'follow'` HTTP padrão
 - `go.promozone.ai` é SPA — não redireciona via HTTP 30x, apenas via JS
 - Resultado: o resolver recebe a própria URL do Promozone de volta, marca como "não resolveu"
@@ -566,14 +575,14 @@ A solução documentada na skill `omestre-mirror-safety` §"Resolução de redir
 
 ## 8. Cenários e suas consequências
 
-| Mensagem recebida | Comportamento atual | Esperado pelo usuário |
-|---|---|---|
-| `meli.la/XXX` → `/social/<outro>` | ❌ bloqueado (§1.9a) | ✅ enviar com `matt_word=mtorreao` |
-| `s.shopee.com.br/XXX` → `/user/voucher-wallet` ou `/opaanlp` | ❌ bloqueado (§1.9 shopee_shortlink_only) | ⚠️ enviar (Shopee Affiliate API aceita, comissão sua) |
-| `s.shopee.com.br/XXX` → produto real | ❌ bloqueado (§1.9) — resolver falha | ✅ enviar |
-| `go.promozone.ai/*` | ❌ bloqueado como `coupon` (§1.6) | ⚠️ resolver via API interna → tratar como o destino |
-| Amazon `dp/ASIN?tag=achadin0c048b-20` | ❌ bloqueado (sem tracking ID Amazon do user 1) | ❌ bloqueado (correto — sem credencial) |
-| Cupom em texto livre (`"Use o cupom: XXX"`) | ✅ texto preservado no template | ✅ preservado |
+| Mensagem recebida                                            | Comportamento atual                             | Esperado pelo usuário                                 |
+| ------------------------------------------------------------ | ----------------------------------------------- | ----------------------------------------------------- |
+| `meli.la/XXX` → `/social/<outro>`                            | ❌ bloqueado (§1.9a)                            | ✅ enviar com `matt_word=mtorreao`                    |
+| `s.shopee.com.br/XXX` → `/user/voucher-wallet` ou `/opaanlp` | ❌ bloqueado (§1.9 shopee_shortlink_only)       | ⚠️ enviar (Shopee Affiliate API aceita, comissão sua) |
+| `s.shopee.com.br/XXX` → produto real                         | ❌ bloqueado (§1.9) — resolver falha            | ✅ enviar                                             |
+| `go.promozone.ai/*`                                          | ❌ bloqueado como `coupon` (§1.6)               | ⚠️ resolver via API interna → tratar como o destino   |
+| Amazon `dp/ASIN?tag=achadin0c048b-20`                        | ❌ bloqueado (sem tracking ID Amazon do user 1) | ❌ bloqueado (correto — sem credencial)               |
+| Cupom em texto livre (`"Use o cupom: XXX"`)                  | ✅ texto preservado no template                 | ✅ preservado                                         |
 
 ---
 
@@ -582,6 +591,7 @@ A solução documentada na skill `omestre-mirror-safety` §"Resolução de redir
 As opções que o usuário (Matheus) precisa decidir antes de qualquer correção:
 
 ### A) Reverter o `generateViaUrlParams` no ML
+
 - **Pro:** restaura o comportamento de 2026-07-24 15h–19h35 (194 mensagens enviadas)
 - **Pro:** `URLSearchParams.set()` garante que não há conflito de `matt_word` (testado em §5.2)
 - **Contra:** gera URLs `/social/<outro>` no grupo destino — UX questionável (página de perfil vs produto)
@@ -589,23 +599,27 @@ As opções que o usuário (Matheus) precisa decidir antes de qualquer correçã
 - **Escopo:** `apps/ingestor/src/ingestor.ts:convertMlForAffiliate()` — reintroduzir o fallback entre o Link Builder e o bloqueio final
 
 ### B) Investigar por que o Link Builder ML parou
+
 - **Pro:** se cookies estão parcialmente válidos, reimportar via extensão Chrome pode resolver
 - **Pro:** testar com `meli.la` direto resolve (precisa do redirect primeiro)
 - **Pro:** ou pode ser mudança da API do ML (não tem fix do nosso lado)
 - **Escopo:** `extensions/chrome-cookie-importer/` + diagnóstico manual com Playwright abrindo `https://www.mercadolivre.com.br/afiliados/linkbuilder`
 
 ### C) Implementar resolução de `go.promozone.ai` via API interna
+
 - **Pro:** destrava ~30% das mensagens (todas as do grupo Promozone #156)
 - **Pro:** código documentado em `omestre-mirror-safety`, falta apenas portar pra `resolve-redirect.ts`
 - **Escopo:** adicionar `resolvePromozone()` em `apps/ingestor/src/resolve-redirect.ts`
 
 ### D) Validar Shopee pós-conversão (follow-up do shortlink)
+
 - **Pro:** filtra os 80% que viram `/opaanlp` ou `/voucher-wallet` após conversão
 - **Pro:** mantém os 20% que viram produto real
 - **Contra:** adiciona 1 fetch HTTP por mensagem Shopee (~200ms)
 - **Escopo:** em `apps/ingestor/src/ingestor.ts` após `convertShopeeUrlWithCredentials`
 
 ### E) Aceitar o estado atual e trocar grupo fonte
+
 - **Pro:** simples
 - **Contra:** o sistema está bloqueando corretamente o conteúdo que chega; trocar de grupo resolve se houver grupo melhor
 
@@ -697,6 +711,7 @@ for (const url of cases) {
 ```
 
 Execução:
+
 ```bash
 cd apps/ingestor && \
   ENCRYPTION_KEY='7d9168d8b1c8a679734dee9947ef4e7a0592ede2f5221b811b7c411bcc64f7f8' \

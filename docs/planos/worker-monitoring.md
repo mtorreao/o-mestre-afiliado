@@ -38,17 +38,17 @@ permitir inspeção e gestão da DLQ.
 
 ## Commits entregues
 
-| # | Hash | Título | O que entregou |
-|---|------|--------|----------------|
-| 1 | `22c0cb5` | feat(web): add worker counter helpers and complete PT-BR labels | `lib/worker-counters.ts` (parseCounterKey, sumByName, aggregateByLabel, rankedByLabel) + dicionários PT-BR completos em `lib/worker-status.ts` |
-| 2 | `7fb2b6a` | feat(web): rewrite WorkerStatusPage as operational dashboard | 5 seções (Pipeline, Resumo Saúde, Ingestor, Dispatcher, DLQ) com cores distintas e indicador de frescor |
-| 3 | `0148eb2` | feat(web): add freshness indicator and skeleton loading | dot verde/amarelo/vermelho por idade + skeletons |
-| 4 | `396e35c` | feat(web): enrich DLQ item with queue/stage/body details | inferência de fila (A/B), etapa de falha, body original expansível, tooltip de dados |
-| 5 | `3c7c100` | feat(web): add Queue and failureReason filters to DLQ | filtros client-side iniciais (depois substituídos por server-side) |
-| 6 | `e3643fc` | feat(web): add 'Ver espelhamento' shortcut chip to DLQ items | atalho que abre `/mirror-form/:id` |
-| 7 | `0ee6958` | feat(api): add queue/reason/since filters to GET /api/worker/dlq | **backend**: `listDLQ` aceita filtros; `listDlqItems` + rota parseiam query string; resposta com `total` + `totalFiltered` |
-| 8 | `e4315c1` | feat(web): server-side DLQ filters, period filter, and 30s auto-refresh | migra filtros p/ server-side, dropdown "Período" (1h/24h/7d/30d/ISO), auto-refresh 30s com switch próprio |
-| 9 | `b206df9` | feat(web): DLQ polish — copy JSON button + badge bump on new item | botão "Copiar JSON" (Clipboard API + fallback) e badge pulsante no crescimento do total |
+| #   | Hash      | Título                                                                  | O que entregou                                                                                                                                 |
+| --- | --------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `22c0cb5` | feat(web): add worker counter helpers and complete PT-BR labels         | `lib/worker-counters.ts` (parseCounterKey, sumByName, aggregateByLabel, rankedByLabel) + dicionários PT-BR completos em `lib/worker-status.ts` |
+| 2   | `7fb2b6a` | feat(web): rewrite WorkerStatusPage as operational dashboard            | 5 seções (Pipeline, Resumo Saúde, Ingestor, Dispatcher, DLQ) com cores distintas e indicador de frescor                                        |
+| 3   | `0148eb2` | feat(web): add freshness indicator and skeleton loading                 | dot verde/amarelo/vermelho por idade + skeletons                                                                                               |
+| 4   | `396e35c` | feat(web): enrich DLQ item with queue/stage/body details                | inferência de fila (A/B), etapa de falha, body original expansível, tooltip de dados                                                           |
+| 5   | `3c7c100` | feat(web): add Queue and failureReason filters to DLQ                   | filtros client-side iniciais (depois substituídos por server-side)                                                                             |
+| 6   | `e3643fc` | feat(web): add 'Ver espelhamento' shortcut chip to DLQ items            | atalho que abre `/mirror-form/:id`                                                                                                             |
+| 7   | `0ee6958` | feat(api): add queue/reason/since filters to GET /api/worker/dlq        | **backend**: `listDLQ` aceita filtros; `listDlqItems` + rota parseiam query string; resposta com `total` + `totalFiltered`                     |
+| 8   | `e4315c1` | feat(web): server-side DLQ filters, period filter, and 30s auto-refresh | migra filtros p/ server-side, dropdown "Período" (1h/24h/7d/30d/ISO), auto-refresh 30s com switch próprio                                      |
+| 9   | `b206df9` | feat(web): DLQ polish — copy JSON button + badge bump on new item       | botão "Copiar JSON" (Clipboard API + fallback) e badge pulsante no crescimento do total                                                        |
 
 ---
 
@@ -72,13 +72,13 @@ permitir inspeção e gestão da DLQ.
 
 ### Filtros da DLQ (`GET /api/worker/dlq`)
 
-| Param | Tipo | Descrição |
-|-------|------|-----------|
-| `offset` | number | paginação (default 0) |
-| `limit` | number | itens/página (default 20; → 100 quando há filtro ativo) |
-| `queue` | `A`\|`B` | fila de origem (A=Ingestor/RawMessageEvent, B=Dispatcher/SendEvent) |
-| `reason` | string | failureReason exato |
-| `since` | ISO \| `Nh`\|`Nd` | data de falha (ISO ou relativo, ex: `24h`, `7d`) |
+| Param    | Tipo              | Descrição                                                           |
+| -------- | ----------------- | ------------------------------------------------------------------- |
+| `offset` | number            | paginação (default 0)                                               |
+| `limit`  | number            | itens/página (default 20; → 100 quando há filtro ativo)             |
+| `queue`  | `A`\|`B`          | fila de origem (A=Ingestor/RawMessageEvent, B=Dispatcher/SendEvent) |
+| `reason` | string            | failureReason exato                                                 |
+| `since`  | ISO \| `Nh`\|`Nd` | data de falha (ISO ou relativo, ex: `24h`, `7d`)                    |
 
 Resposta: `{ success, items[], total, totalFiltered, offset, limit }`.
 

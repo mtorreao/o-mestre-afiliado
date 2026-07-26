@@ -71,13 +71,13 @@ Evolution API webhook (messages.upsert)
 
 ### Queue A — Raw Messages
 
-| Propriedade | Valor |
-|---|---|
-| Nome do stream | `omestre:mirror:raw` |
-| Consumer group | `mirror-raw` |
-| Payload | `RawMessageEvent` (sem afiliado resolvido) |
-| COUNT | 10 |
-| BLOCK | 5000ms |
+| Propriedade    | Valor                                      |
+| -------------- | ------------------------------------------ |
+| Nome do stream | `omestre:mirror:raw`                       |
+| Consumer group | `mirror-raw`                               |
+| Payload        | `RawMessageEvent` (sem afiliado resolvido) |
+| COUNT          | 10                                         |
+| BLOCK          | 5000ms                                     |
 
 ```typescript
 interface RawMessageEvent {
@@ -100,13 +100,13 @@ interface RawMessageEvent {
 
 ### Queue B — Send Events
 
-| Propriedade | Valor |
-|---|---|
-| Nome do stream | `omestre:mirror:send` |
-| Consumer group | `mirror-send` |
-| Payload | `SendEvent` (já processado, link convertido, template montado) |
-| COUNT | 10 |
-| BLOCK | 5000ms |
+| Propriedade    | Valor                                                          |
+| -------------- | -------------------------------------------------------------- |
+| Nome do stream | `omestre:mirror:send`                                          |
+| Consumer group | `mirror-send`                                                  |
+| Payload        | `SendEvent` (já processado, link convertido, template montado) |
+| COUNT          | 10                                                             |
+| BLOCK          | 5000ms                                                         |
 
 ```typescript
 interface SendEvent {
@@ -179,7 +179,9 @@ async function handleMessageWebhook(req, res) {
   if (alreadySeen) {
     // Já está na fila — descarta duplicata de outra instância
     log('info', 'Webhook duplicado ignorado (já publicado na Queue A)', {
-      messageId, sourceGroupJid, instanceName,
+      messageId,
+      sourceGroupJid,
+      instanceName,
     });
     return res.json({ success: true, deduplicated: true });
   }
@@ -189,7 +191,14 @@ async function handleMessageWebhook(req, res) {
   await redis.setex(dedupKey, 30, '1');
 
   // Publica na Queue A
-  const event: RawMessageEvent = { messageId, instanceName, sourceGroupJid, sourceGroupName, text, timestamp };
+  const event: RawMessageEvent = {
+    messageId,
+    instanceName,
+    sourceGroupJid,
+    sourceGroupName,
+    text,
+    timestamp,
+  };
   await redis.xadd(MIRROR_RAW_STREAM, '*', 'payload', JSON.stringify(event));
 
   res.json({ success: true });
@@ -216,7 +225,8 @@ for (const config of sourceConfigs) {
   const alreadySent = await redis.get(sendDedupKey);
   if (alreadySent) {
     log('info', 'SendEvent já publicado — pulando (crash recovery)', {
-      mirrorId: config.mirrorId, messageId,
+      mirrorId: config.mirrorId,
+      messageId,
     });
     continue;
   }
@@ -239,7 +249,7 @@ for (const config of sourceConfigs) {
 | `mirror:webhook-dedup:{sourceJid}:{msgId}` | API (webhook) | 30s | Só 1 RawMessageEvent por mensagem |
 | `mirror:send-dedup:{mirrorId}:{msgId}` | Ingestor | 1h | Evita republicar SendEvent em crash recovery |
 | `mirror:send-completed:{mirrorId}:{msgId}` | Dispatcher | 24h | Evita reenvio duplicado ao grupo destino |
-| `mirror:msg-dedup:{sourceJid}:{msgId}` | *(removida)* | — | Substituída pelo dedup na API (webhook-dedup) |
+| `mirror:msg-dedup:{sourceJid}:{msgId}` | _(removida)_ | — | Substituída pelo dedup na API (webhook-dedup) |
 
 ---
 
@@ -256,12 +266,16 @@ async function processRawMessage(event: RawMessageEvent): Promise<void> {
   // ── 1. Dedup rápido (messageId + sourceGroupJid) ──
   const dedupKey = `mirror:msg-dedup:${sourceGroupJid}:${messageId}`;
   const alreadyProcessed = await redis.get(dedupKey);
-  if (alreadyProcessed) { /* ACK e skip */ return; }
+  if (alreadyProcessed) {
+    /* ACK e skip */ return;
+  }
   await redis.setex(dedupKey, 300, '1');
 
   // ── 2. Extrai URL ── (mesma lógica atual)
   const originalUrl = extractMarketplaceUrl(text);
-  if (!originalUrl) { /* blocked: no_url */ return; }
+  if (!originalUrl) {
+    /* blocked: no_url */ return;
+  }
 
   // ── 3. Blacklist / Whitelist ── (mesma lógica atual)
   // ...
@@ -275,13 +289,17 @@ async function processRawMessage(event: RawMessageEvent): Promise<void> {
 
   // ── 6. Busca imagem de capa ── (NOVO)
   const imageUrl = await fetchProductImage(marketplace, resolvedUrl);
-  if (!imageUrl) { /* blocked: no_product_image */ return; }
+  if (!imageUrl) {
+    /* blocked: no_product_image */ return;
+  }
 
   // ── 7. Busca TODOS os afiliados que monitoram este sourceGroup ──
   const sourceConfigs = await getSourceGroupConfigs(sourceGroupJid);
   // sourceConfigs: [{ affiliateId, mirrorId, instanceName, targetGroupJid, targetGroupName, messageTemplate }]
 
-  if (sourceConfigs.length === 0) { /* nenhum afiliado configurado */ return; }
+  if (sourceConfigs.length === 0) {
+    /* nenhum afiliado configurado */ return;
+  }
 
   // ── 8. Para cada afiliado (fan-out) ──
   const sendEvents: SendEvent[] = [];
@@ -295,7 +313,11 @@ async function processRawMessage(event: RawMessageEvent): Promise<void> {
     }
 
     // Verifica safety
-    const linkCheck = await verifyAffiliateLink(conversion.convertedUrl, config.affiliateId, marketplace);
+    const linkCheck = await verifyAffiliateLink(
+      conversion.convertedUrl,
+      config.affiliateId,
+      marketplace,
+    );
     if (!linkCheck.valid) {
       // blocked: affiliate_link_mismatch
       continue;
@@ -304,9 +326,13 @@ async function processRawMessage(event: RawMessageEvent): Promise<void> {
     // Monta template (1 mirror = 1 targetGroup)
     const ctx: TemplateContext = {
       originalText: text,
-      originalUrl, convertedUrl: conversion.convertedUrl,
-      marketplace, sourceGroupName, targetGroupName: config.targetGroupName,
-      timestamp: new Date(), imageUrl,
+      originalUrl,
+      convertedUrl: conversion.convertedUrl,
+      marketplace,
+      sourceGroupName,
+      targetGroupName: config.targetGroupName,
+      timestamp: new Date(),
+      imageUrl,
     };
     const templateText = buildTemplateMessage(ctx, config.messageTemplate);
 
@@ -314,7 +340,7 @@ async function processRawMessage(event: RawMessageEvent): Promise<void> {
       id: crypto.randomUUID(),
       sourceMessageId: messageId,
       sourceGroupJid,
-      mirrorId: config.mirrorId,  // ← Dispatcher resolve instanceName, targetGroup, affiliateId
+      mirrorId: config.mirrorId, // ← Dispatcher resolve instanceName, targetGroup, affiliateId
       text: templateText,
       imageUrl,
       marketplace,
@@ -383,6 +409,7 @@ interface SourceGroupConfig {
 O `SendEvent` carrega apenas `mirrorId`. O Dispatcher busca a configuração completa do mirror no Redis cache (fallback banco) para obter `instanceName`, `targetGroupJid`, `targetGroupName`, `affiliateId` e configurações de rate limit.
 
 Isso garante que:
+
 - O grupo de destino é SEMPRE o atual (se foi alterado no painel, o Dispatcher pega o novo)
 - Se o mirror foi desativado, `getMirrorConfig` retorna `null` e a mensagem é descartada
 - O SendEvent fica mais enxuto na fila
@@ -402,7 +429,7 @@ async function getMirrorSendConfig(mirrorId: number): Promise<MirrorSendConfig |
   const config = await getMirrorConfig(mirrorId);
   if (!config) return null; // mirror inativo ou não existe
   return {
-    instanceName: config.instanceName,    // resolvido do mirror
+    instanceName: config.instanceName, // resolvido do mirror
     targetGroupJid: config.targetGroupJid,
     targetGroupName: config.targetGroupName,
     affiliateId: config.affiliateId,
@@ -441,7 +468,9 @@ async function processSendEvent(event: SendEvent): Promise<boolean> {
   const alreadyCompleted = await redis.get(dedupKey);
   if (alreadyCompleted) {
     log('info', 'SendEvent já processado — pulando (reentrega do stream)', {
-      mirrorId, sourceMessageId, eventId: event.id,
+      mirrorId,
+      sourceMessageId,
+      eventId: event.id,
     });
     incrementCounter('sender_messages_skipped_total', { reason: 'deduplicated' });
     return true; // ACK na fila e segue
@@ -455,14 +484,22 @@ async function processSendEvent(event: SendEvent): Promise<boolean> {
     return false; // ACK na fila (não reenvia)
   }
 
-  const { instanceName, targetGroupJid, targetGroupName, affiliateId,
-          subRateMaxMsgs, subRateWindowSec } = mirror;
+  const {
+    instanceName,
+    targetGroupJid,
+    targetGroupName,
+    affiliateId,
+    subRateMaxMsgs,
+    subRateWindowSec,
+  } = mirror;
 
   // ── 2. Rate limit (instância) ──
   const { acquired } = await tryAcquireSlot(instanceName);
   if (!acquired) {
     const gotSlot = await waitForSlot(instanceName);
-    if (!gotSlot) { /* falha */ return false; }
+    if (!gotSlot) {
+      /* falha */ return false;
+    }
   }
 
   // ── 3. Sub-rate limit (grupo destino) ──
@@ -544,7 +581,7 @@ Queue B (XREADGROUP COUNT=10)
 export async function fetchProductImage(
   marketplace: string,
   productUrl: string,
-): Promise<string | null>
+): Promise<string | null>;
 ```
 
 ### Estratégia: código específico por marketplace
@@ -552,16 +589,16 @@ export async function fetchProductImage(
 Cada marketplace tem sua própria implementação, facilitando manutenção e ajustes independentes.
 
 ```typescript
-async function fetchShopeeImage(productUrl: string): Promise<string | null>
-async function fetchMercadoLivreImage(productUrl: string): Promise<string | null>
-async function fetchAmazonImage(productUrl: string): Promise<string | null>
+async function fetchShopeeImage(productUrl: string): Promise<string | null>;
+async function fetchMercadoLivreImage(productUrl: string): Promise<string | null>;
+async function fetchAmazonImage(productUrl: string): Promise<string | null>;
 ```
 
-| Marketplace | Estratégia |
-|---|---|
-| **Shopee** | Extrair `item_id` da URL (`/product/{shop_id}/{item_id}/`). Fetch na página + extrair `og:image`. Alternativa: API GraphQL já usada nos converters. |
-| **Mercado Livre** | Extrair `item_id` (padrão `MLB-XXXXXXXXXX`). Fetch na página + `og:image`. Alternativa: API pública `GET /items/{item_id}` → `pictures[0].url`. |
-| **Amazon** | Extrair ASIN (`/dp/ASIN` ou `/gp/product/ASIN`). Fetch + `og:image`. Amazon pode bloquear bots → usar `User-Agent` de browser + timeout 8s. |
+| Marketplace       | Estratégia                                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Shopee**        | Extrair `item_id` da URL (`/product/{shop_id}/{item_id}/`). Fetch na página + extrair `og:image`. Alternativa: API GraphQL já usada nos converters. |
+| **Mercado Livre** | Extrair `item_id` (padrão `MLB-XXXXXXXXXX`). Fetch na página + `og:image`. Alternativa: API pública `GET /items/{item_id}` → `pictures[0].url`.     |
+| **Amazon**        | Extrair ASIN (`/dp/ASIN` ou `/gp/product/ASIN`). Fetch + `og:image`. Amazon pode bloquear bots → usar `User-Agent` de browser + timeout 8s.         |
 
 ### Cache Redis
 
@@ -587,11 +624,11 @@ if (!imageUrl) {
 }
 ```
 
-| Situação | Comportamento |
-|---|---|
-| Imagem não encontrada | **Bloqueada** (`no_product_image`) |
-| Fetch timeout (8s) | **Bloqueada** |
-| Amazon 403 | **Bloqueada** |
+| Situação                | Comportamento                                                         |
+| ----------------------- | --------------------------------------------------------------------- |
+| Imagem não encontrada   | **Bloqueada** (`no_product_image`)                                    |
+| Fetch timeout (8s)      | **Bloqueada**                                                         |
+| Amazon 403              | **Bloqueada**                                                         |
 | `og:image` URL quebrada | Evolution API pode falhar ao baixar → retry → se persistir, bloqueada |
 
 ---
@@ -603,38 +640,38 @@ if (!imageUrl) {
 Cada processador expõe seu próprio endpoint `/status`:
 
 | Processador | Porta | Prefixo das métricas |
-|---|---|---|
-| Ingestor | 9092 | `pipeline_*` |
-| Sender | 9093 | `sender_*` |
+| ----------- | ----- | -------------------- |
+| Ingestor    | 9092  | `pipeline_*`         |
+| Sender      | 9093  | `sender_*`           |
 
 ### Métricas do Ingestor (Ingestor)
 
-| Nome | Tipo | Labels | O que mede |
-|---|---|---|---|
-| `pipeline_messages_received_total` | Contador | — | Mensagens que chegaram da Queue A |
-| `pipeline_messages_blocked_total` | Contador | `reason` (no_url, blacklist, whitelist, dedup, no_product_image, conversion_failed, affiliate_mismatch) | Bloqueios |
-| `pipeline_affiliates_per_message` | Histograma | — | Quantos afiliados cada mensagem gerou fan-out |
-| `pipeline_step_duration_seconds` | Histograma | `step` (dedup, extract, blacklist, whitelist, image_fetch, resolve_redirect, fan_out) | Duração por etapa |
-| `pipeline_total_duration_seconds` | Histograma | `status` (processed/blocked) | Duração total |
-| `pipeline_concurrent_count` | Gauge | — | Mensagens sendo processadas simultaneamente |
-| `pipeline_image_fetch_total` | Contador | `marketplace, result` (found/not_found/error) | Resultado da busca de imagem |
-| `pipeline_image_fetch_duration_seconds` | Histograma | `marketplace` | Tempo de fetch da imagem |
-| `pipeline_conversion_per_affiliate` | Histograma | `marketplace` | Tempo de conversão por afiliado |
-| `pipeline_send_events_published_total` | Contador | — | Eventos publicados na Queue B |
+| Nome                                    | Tipo       | Labels                                                                                                  | O que mede                                    |
+| --------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `pipeline_messages_received_total`      | Contador   | —                                                                                                       | Mensagens que chegaram da Queue A             |
+| `pipeline_messages_blocked_total`       | Contador   | `reason` (no_url, blacklist, whitelist, dedup, no_product_image, conversion_failed, affiliate_mismatch) | Bloqueios                                     |
+| `pipeline_affiliates_per_message`       | Histograma | —                                                                                                       | Quantos afiliados cada mensagem gerou fan-out |
+| `pipeline_step_duration_seconds`        | Histograma | `step` (dedup, extract, blacklist, whitelist, image_fetch, resolve_redirect, fan_out)                   | Duração por etapa                             |
+| `pipeline_total_duration_seconds`       | Histograma | `status` (processed/blocked)                                                                            | Duração total                                 |
+| `pipeline_concurrent_count`             | Gauge      | —                                                                                                       | Mensagens sendo processadas simultaneamente   |
+| `pipeline_image_fetch_total`            | Contador   | `marketplace, result` (found/not_found/error)                                                           | Resultado da busca de imagem                  |
+| `pipeline_image_fetch_duration_seconds` | Histograma | `marketplace`                                                                                           | Tempo de fetch da imagem                      |
+| `pipeline_conversion_per_affiliate`     | Histograma | `marketplace`                                                                                           | Tempo de conversão por afiliado               |
+| `pipeline_send_events_published_total`  | Contador   | —                                                                                                       | Eventos publicados na Queue B                 |
 
 ### Métricas do Dispatcher (Dispatcher)
 
-| Nome | Tipo | Labels | O que mede |
-|---|---|---|---|
-| `sender_events_received_total` | Contador | — | SendEvents recebidos da Queue B |
-| `sender_messages_sent_total` | Contador | `marketplace` | Mensagens enviadas com sucesso |
-| `sender_messages_sent_with_image_total` | Contador | — | Mensagens enviadas com imagem |
-| `sender_messages_skipped_total` | Contador | `reason` (mirror_inactive) | Mensagens descartadas sem enviar (mirror desativado, target removido) |
-| `sender_failures_total` | Contador | `type` (rate_limited, send_failed, timeout) | Falhas |
-| `sender_rate_limit_wait_duration_seconds` | Histograma | `level` (instance/group) | Tempo esperando rate limit |
-| `sender_send_duration_seconds` | Histograma | `marketplace` | Tempo de envio para Evolution API |
-| `sender_concurrent_count` | Gauge | — | Envios simultâneos |
-| `sender_dlq_count` | Gauge | — | Itens na Dead Letter Queue |
+| Nome                                      | Tipo       | Labels                                      | O que mede                                                            |
+| ----------------------------------------- | ---------- | ------------------------------------------- | --------------------------------------------------------------------- |
+| `sender_events_received_total`            | Contador   | —                                           | SendEvents recebidos da Queue B                                       |
+| `sender_messages_sent_total`              | Contador   | `marketplace`                               | Mensagens enviadas com sucesso                                        |
+| `sender_messages_sent_with_image_total`   | Contador   | —                                           | Mensagens enviadas com imagem                                         |
+| `sender_messages_skipped_total`           | Contador   | `reason` (mirror_inactive)                  | Mensagens descartadas sem enviar (mirror desativado, target removido) |
+| `sender_failures_total`                   | Contador   | `type` (rate_limited, send_failed, timeout) | Falhas                                                                |
+| `sender_rate_limit_wait_duration_seconds` | Histograma | `level` (instance/group)                    | Tempo esperando rate limit                                            |
+| `sender_send_duration_seconds`            | Histograma | `marketplace`                               | Tempo de envio para Evolution API                                     |
+| `sender_concurrent_count`                 | Gauge      | —                                           | Envios simultâneos                                                    |
+| `sender_dlq_count`                        | Gauge      | —                                           | Itens na Dead Letter Queue                                            |
 
 ### Endpoint /status enriquecido
 
@@ -669,7 +706,9 @@ class StepTracker {
   private buffer: number[] = [];
   private maxSize: number;
 
-  constructor(maxSize = 1000) { this.maxSize = maxSize; }
+  constructor(maxSize = 1000) {
+    this.maxSize = maxSize;
+  }
 
   observe(durationMs: number): void {
     this.buffer.push(durationMs);
@@ -700,14 +739,14 @@ Os contadores Prometheus em `/metrics` são mantidos para scrape futuro.
 
 ## 7. Regras de Paralelismo
 
-| Oportunidade | Processador | Paraleliza? |
-|---|---|---|
-| Mensagens de instâncias **diferentes** na Queue A | Ingestor | ✅ Sim — cada afiliado tem instância diferente |
-| Mensagens da **mesma** instância na Queue A | Ingestor | ❌ Não (não se aplica — Queue A não tem instanceName como chave de rate limit) |
-| Fan-out de afiliados de um **mesmo** sourceGroup | Ingestor | ✅ Sim — cada conversão usa API de marketplace diferente |
-| Envio para o targetGroup do mirror | Dispatcher | ❌ Não — sequencial por mirror |
-| SendEvents de instâncias **diferentes** na Queue B | Dispatcher | ✅ Sim — rate limits independentes |
-| SendEvents da **mesma** instância na Queue B | Dispatcher | ❌ Não — sequencial por instanceName |
+| Oportunidade                                       | Processador | Paraleliza?                                                                    |
+| -------------------------------------------------- | ----------- | ------------------------------------------------------------------------------ |
+| Mensagens de instâncias **diferentes** na Queue A  | Ingestor    | ✅ Sim — cada afiliado tem instância diferente                                 |
+| Mensagens da **mesma** instância na Queue A        | Ingestor    | ❌ Não (não se aplica — Queue A não tem instanceName como chave de rate limit) |
+| Fan-out de afiliados de um **mesmo** sourceGroup   | Ingestor    | ✅ Sim — cada conversão usa API de marketplace diferente                       |
+| Envio para o targetGroup do mirror                 | Dispatcher  | ❌ Não — sequencial por mirror                                                 |
+| SendEvents de instâncias **diferentes** na Queue B | Dispatcher  | ✅ Sim — rate limits independentes                                             |
+| SendEvents da **mesma** instância na Queue B       | Dispatcher  | ❌ Não — sequencial por instanceName                                           |
 
 **Estratégia no Dispatcher (sender):**
 
@@ -748,18 +787,19 @@ import { StepTracker } from '@omestre/worker-common';
 
 // Cada processador cria suas próprias instâncias:
 export const ingestorSteps = {
-  dedup: new StepTracker(),
-  extract: new StepTracker(),
-  imageFetch: new StepTracker(),
-  fanOut: new StepTracker(),
-  total: new StepTracker(),
+dedup: new StepTracker(),
+extract: new StepTracker(),
+imageFetch: new StepTracker(),
+fanOut: new StepTracker(),
+total: new StepTracker(),
 };
 
 export const dispatcherSteps = {
-  rateLimitWait: new StepTracker(),
-  send: new StepTracker(),
-  total: new StepTracker(),
+rateLimitWait: new StepTracker(),
+send: new StepTracker(),
+total: new StepTracker(),
 };
+
 ```
 
 ---
@@ -767,51 +807,55 @@ export const dispatcherSteps = {
 ## 9. Estrutura de Arquivos Final
 
 ```
+
 o-mestre-afiliado/
 ├── apps/
-│   ├── api/                      # Elysia REST API (inalterado)
-│   ├── web/                      # React + Vite (inalterado)
-│   │
-│   ├── ingestor/                 # NOVO — Ingestor (Queue A → Queue B)
-│   │   ├── src/
-│   │   │   ├── index.ts          # Entrypoint --mode=ingestor
-│   │   │   ├── ingestor.ts       # Pipeline principal
-│   │   │   ├── product-image.ts  # Fetch de imagem de capa
-│   │   │   ├── resolve-redirect.ts
-│   │   │   ├── conversion-cache.ts
-│   │   │   └── __tests__/
-│   │   ├── Dockerfile
-│   │   └── package.json          # deps: shared, db, converters, worker-common, ioredis
-│   │
-│   └── dispatcher/               # NOVO — Dispatcher (Queue B → Evolution API)
-│       ├── src/
-│       │   ├── index.ts          # Entrypoint --mode=dispatcher
-│       │   ├── dispatcher.ts     # Rate limit + envio
-│       │   ├── rate-limiter.ts
-│       │   └── __tests__/
-│       ├── Dockerfile
-│       └── package.json          # deps: shared, db, worker-common, ioredis (só)
+│ ├── api/ # Elysia REST API (inalterado)
+│ ├── web/ # React + Vite (inalterado)
+│ │
+│ ├── ingestor/ # NOVO — Ingestor (Queue A → Queue B)
+│ │ ├── src/
+│ │ │ ├── index.ts # Entrypoint --mode=ingestor
+│ │ │ ├── ingestor.ts # Pipeline principal
+│ │ │ ├── product-image.ts # Fetch de imagem de capa
+│ │ │ ├── resolve-redirect.ts
+│ │ │ ├── conversion-cache.ts
+│ │ │ └── **tests**/
+│ │ ├── Dockerfile
+│ │ └── package.json # deps: shared, db, converters, worker-common, ioredis
+│ │
+│ └── dispatcher/ # NOVO — Dispatcher (Queue B → Evolution API)
+│ ├── src/
+│ │ ├── index.ts # Entrypoint --mode=dispatcher
+│ │ ├── dispatcher.ts # Rate limit + envio
+│ │ ├── rate-limiter.ts
+│ │ └── **tests**/
+│ ├── Dockerfile
+│ └── package.json # deps: shared, db, worker-common, ioredis (só)
 │
 ├── packages/
-│   ├── shared/                   # Tipos RawMessageEvent, SendEvent, constantes
-│   ├── db/                       # Schema + MirrorRepository
-│   ├── converters/               # Shopee, ML, Amazon (só o ingestor precisa)
-│   │
-│   └── worker-common/            # NOVO — código compartilhado entre apps
-│       ├── src/
-│       │   ├── metrics.ts        # StepTracker, servidor HTTP /status
-│       │   ├── dead-letter-queue.ts
-│       │   └── notifier.ts
-│       ├── package.json          # deps: shared, db
-│       └── tsconfig.json
+│ ├── shared/ # Tipos RawMessageEvent, SendEvent, constantes
+│ ├── db/ # Schema + MirrorRepository
+│ ├── converters/ # Shopee, ML, Amazon (só o ingestor precisa)
+│ │
+│ └── worker-common/ # NOVO — código compartilhado entre apps
+│ ├── src/
+│ │ ├── metrics.ts # StepTracker, servidor HTTP /status
+│ │ ├── dead-letter-queue.ts
+│ │ └── notifier.ts
+│ ├── package.json # deps: shared, db
+│ └── tsconfig.json
+
 ```
 
 ### Dependências entre apps
 
 ```
-ingestor  → shared, db, converters, worker-common
+
+ingestor → shared, db, converters, worker-common
 dispatcher → shared, db, worker-common
 worker-common → shared, db
+
 ```
 
 O **dispatcher fica enxuto** — sem `converters`, sem `product-image`, sem `resolve-redirect`. Menos dependências = menos superfície de bug, build mais rápido, container menor.
@@ -827,30 +871,32 @@ O diretório `apps/worker/` existente pode ser mantido temporariamente como refe
 ### Estrutura atual (`apps/worker/`)
 
 ```
+
 apps/worker/
-├── Dockerfile                          # build da imagem
-├── package.json                        # @omestre/worker — deps: converters, shared, db, ioredis
+├── Dockerfile # build da imagem
+├── package.json # @omestre/worker — deps: converters, shared, db, ioredis
 ├── tsconfig.json
 ├── README.md
-├── dist/                               # build output (pode remover)
+├── dist/ # build output (pode remover)
 ├── node_modules/
 └── src/
-    ├── index.ts                        # entrypoint: modo mirror, revalidate, batch
-    ├── mirror-pipeline.ts              # 1390 linhas — pipeline COMPLETO (extrair, converter, enviar)
-    ├── metrics.ts                      # servidor HTTP /metrics + /status
-    ├── rate-limiter.ts                 # rate limit Redis (instância + sub-rate grupo)
-    ├── dead-letter-queue.ts            # DLQ
-    ├── notifier.ts                     # notificações ao usuário
-    ├── conversion-cache.ts             # cache de URLs convertidas
-    ├── resolve-redirect.ts             # resolução de redirect Promozone
-    ├── conversion-cache.test.ts
-    └── __tests__/
-        ├── dead-letter-queue.test.ts
-        ├── metrics.test.ts
-        ├── notifier.test.ts
-        ├── rate-limiter.test.ts
-        ├── redis-stream.test.ts
-        └── ttl-cache.test.ts
+├── index.ts # entrypoint: modo mirror, revalidate, batch
+├── mirror-pipeline.ts # 1390 linhas — pipeline COMPLETO (extrair, converter, enviar)
+├── metrics.ts # servidor HTTP /metrics + /status
+├── rate-limiter.ts # rate limit Redis (instância + sub-rate grupo)
+├── dead-letter-queue.ts # DLQ
+├── notifier.ts # notificações ao usuário
+├── conversion-cache.ts # cache de URLs convertidas
+├── resolve-redirect.ts # resolução de redirect Promozone
+├── conversion-cache.test.ts
+└── **tests**/
+├── dead-letter-queue.test.ts
+├── metrics.test.ts
+├── notifier.test.ts
+├── rate-limiter.test.ts
+├── redis-stream.test.ts
+└── ttl-cache.test.ts
+
 ```
 
 ### Destino de cada arquivo
@@ -902,30 +948,33 @@ apps/worker/
 A função `processMirrorMessage()` atual será desmembrada:
 
 ```
-mirror-pipeline.ts                          → ingestor.ts + dispatcher.ts
-├── extractMarketplaceUrl()                 → ingestor.ts (inalterada)
-├── loadBlacklist() / loadWhitelist()       → ingestor.ts (inalterada)
-├── isDuplicate()                           → ingestor.ts (inalterada)
-├── convertOfferUrl()                       → ingestor.ts (inalterada)
-├── convertShopeeForAffiliate()             → ingestor.ts (inalterada)
-├── convertMlForAffiliate()                 → ingestor.ts (inalterada)
-├── convertAmazonForAffiliate()             → ingestor.ts (inalterada)
-├── buildTemplateMessage()                  → ingestor.ts (inalterada)
-├── verifyAffiliateLink()                   → ingestor.ts (inalterada)
-├── verifyMercadoLivreLink()                → ingestor.ts (inalterada)
-├── verifyAmazonLink()                      → ingestor.ts (inalterada)
-├── getMirrorConfig()                       → worker-common (usado pelo dispatcher p/ buscar config do mirror)
-├── getMirrorTargetGroups()                 → REMOVIDO (mirror tem 1 targetGroup só)
-├── getMirrorMessageTemplate()              → ingestor.ts (reduzido — sem fallback de affiliate)
-├── getMirrorSubRateLimit()                 → REMOVIDO (sub-rate agora no dispatcher)
-├── sendToGroup()                           → dispatcher.ts (transformado em sendMediaOrText)
-├── logReflectedOffer()                     → dispatcher.ts (inalterada)
-├── processMirrorMessage()                  → REMOVIDO (split entre ingestor.ts e dispatcher.ts)
+
+mirror-pipeline.ts → ingestor.ts + dispatcher.ts
+├── extractMarketplaceUrl() → ingestor.ts (inalterada)
+├── loadBlacklist() / loadWhitelist() → ingestor.ts (inalterada)
+├── isDuplicate() → ingestor.ts (inalterada)
+├── convertOfferUrl() → ingestor.ts (inalterada)
+├── convertShopeeForAffiliate() → ingestor.ts (inalterada)
+├── convertMlForAffiliate() → ingestor.ts (inalterada)
+├── convertAmazonForAffiliate() → ingestor.ts (inalterada)
+├── buildTemplateMessage() → ingestor.ts (inalterada)
+├── verifyAffiliateLink() → ingestor.ts (inalterada)
+├── verifyMercadoLivreLink() → ingestor.ts (inalterada)
+├── verifyAmazonLink() → ingestor.ts (inalterada)
+├── getMirrorConfig() → worker-common (usado pelo dispatcher p/ buscar config do mirror)
+├── getMirrorTargetGroups() → REMOVIDO (mirror tem 1 targetGroup só)
+├── getMirrorMessageTemplate() → ingestor.ts (reduzido — sem fallback de affiliate)
+├── getMirrorSubRateLimit() → REMOVIDO (sub-rate agora no dispatcher)
+├── sendToGroup() → dispatcher.ts (transformado em sendMediaOrText)
+├── logReflectedOffer() → dispatcher.ts (inalterada)
+├── processMirrorMessage() → REMOVIDO (split entre ingestor.ts e dispatcher.ts)
+
 ```
 
 ### Etapas da migração
 
 ```
+
 1. CRIAR packages/worker-common/
    └── Extrair metrics.ts, dead-letter-queue.ts, notifier.ts
    └── Adaptar imports: @omestre/worker-common
@@ -951,7 +1000,8 @@ mirror-pipeline.ts                          → ingestor.ts + dispatcher.ts
 
 6. REMOVER apps/worker/ (após validar que tudo funciona)
    └── git rm -r apps/worker/
-```
+
+````
 
 ---
 
@@ -987,7 +1037,7 @@ services:
         condition: service_started
     restart: unless-stopped
     # Escalável: docker compose up -d --scale dispatcher=2
-```
+````
 
 ---
 
@@ -1034,29 +1084,29 @@ Fase 5 — Docker Compose + limpeza
 
 ## 12. Arquivos Modificados / Criados
 
-| Arquivo | Ação |
-|---|---|
-| `packages/worker-common/` (src + package.json + tsconfig) | **NOVO** — código compartilhado (metrics, DLQ, notifier) |
-| `packages/shared/src/mirror-message.ts` | Modificar: adicionar `RawMessageEvent`, `SendEvent`; manter `MirrorMessageEvent` para retrocompat |
-| `packages/shared/src/index.ts` | Modificar: adicionar constantes dos novos streams |
-| `apps/ingestor/` (src + package.json + Dockerfile) | **NOVO** — app Ingestor completo |
-| `apps/dispatcher/` (src + package.json + Dockerfile) | **NOVO** — app Dispatcher completo |
-| `apps/api/src/modules/webhook/webhook.routes.ts` | Modificar: publicar na Queue A em vez de PubSub |
-| `apps/api/src/services/group-cache.ts` | Modificar: cache 1:N |
-| `docker-compose.dev.yml` | Modificar: substituir `worker` por `ingestor` + `dispatcher` |
-| `apps/worker/` (antigo) | Manter como referência durante migração, remover no final |
+| Arquivo                                                   | Ação                                                                                              |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `packages/worker-common/` (src + package.json + tsconfig) | **NOVO** — código compartilhado (metrics, DLQ, notifier)                                          |
+| `packages/shared/src/mirror-message.ts`                   | Modificar: adicionar `RawMessageEvent`, `SendEvent`; manter `MirrorMessageEvent` para retrocompat |
+| `packages/shared/src/index.ts`                            | Modificar: adicionar constantes dos novos streams                                                 |
+| `apps/ingestor/` (src + package.json + Dockerfile)        | **NOVO** — app Ingestor completo                                                                  |
+| `apps/dispatcher/` (src + package.json + Dockerfile)      | **NOVO** — app Dispatcher completo                                                                |
+| `apps/api/src/modules/webhook/webhook.routes.ts`          | Modificar: publicar na Queue A em vez de PubSub                                                   |
+| `apps/api/src/services/group-cache.ts`                    | Modificar: cache 1:N                                                                              |
+| `docker-compose.dev.yml`                                  | Modificar: substituir `worker` por `ingestor` + `dispatcher`                                      |
+| `apps/worker/` (antigo)                                   | Manter como referência durante migração, remover no final                                         |
 
 ---
 
 ## 13. Benefícios da Arquitetura
 
-| Aspecto | Antes | Depois |
-|---|---|---|
-| Afiliados por sourceGroup | 1:1 (um afiliado por grupo) | 1:N (N afiliados, N instâncias) |
-| Responsabilidade | Worker monolítico | Pipeline separado do Sender |
-| Imagem | Não existia | Obrigatória, buscada do marketplace |
-| Métricas | Só contadores simples no worker | StepTracker por etapa + /status enriquecido em ambos processadores |
-| Paralelismo | Sequencial (1 mensagem por vez) | Instâncias diferentes em paralelo, fan-out de afiliados em paralelo |
-| Rate limit | Misturado com pipeline | Isolado no Sender |
-| Dead Letter Queue | Compartilhada | Compartilhada |
-| Observabilidade | Uma porta (9092) | Duas portas (9092 pipeline, 9093 sender) — UI unificada |
+| Aspecto                   | Antes                           | Depois                                                              |
+| ------------------------- | ------------------------------- | ------------------------------------------------------------------- |
+| Afiliados por sourceGroup | 1:1 (um afiliado por grupo)     | 1:N (N afiliados, N instâncias)                                     |
+| Responsabilidade          | Worker monolítico               | Pipeline separado do Sender                                         |
+| Imagem                    | Não existia                     | Obrigatória, buscada do marketplace                                 |
+| Métricas                  | Só contadores simples no worker | StepTracker por etapa + /status enriquecido em ambos processadores  |
+| Paralelismo               | Sequencial (1 mensagem por vez) | Instâncias diferentes em paralelo, fan-out de afiliados em paralelo |
+| Rate limit                | Misturado com pipeline          | Isolado no Sender                                                   |
+| Dead Letter Queue         | Compartilhada                   | Compartilhada                                                       |
+| Observabilidade           | Uma porta (9092)                | Duas portas (9092 pipeline, 9093 sender) — UI unificada             |

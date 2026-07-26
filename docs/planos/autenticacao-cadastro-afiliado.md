@@ -8,6 +8,7 @@
 ## Visão Geral
 
 Cada usuário da plataforma pode:
+
 1. Criar conta (email + senha)
 2. Configurar suas próprias credenciais dos marketplaces
 3. Testar a geração de links de afiliado com suas credenciais
@@ -57,14 +58,14 @@ Isso vincula um afiliado ML já conectado via OAuth ao usuário da plataforma.
 
 ### Arquivos
 
-| Arquivo | Ação |
-|---------|------|
-| `packages/db/src/schema/users.ts` | Schema da tabela users |
-| `packages/db/src/schema/userCredentials.ts` | Schema da tabela user_credentials |
-| `packages/db/src/schema/index.ts` | Adicionar `user_id` em `ml_affiliates`, exportar novos schemas |
-| `packages/db/src/index.ts` | Exportar novos schemas e repositórios |
-| `packages/db/src/repository/users.repository.ts` | CRUD users |
-| `packages/db/src/repository/userCredentials.repository.ts` | CRUD credentials |
+| Arquivo                                                    | Ação                                                           |
+| ---------------------------------------------------------- | -------------------------------------------------------------- |
+| `packages/db/src/schema/users.ts`                          | Schema da tabela users                                         |
+| `packages/db/src/schema/userCredentials.ts`                | Schema da tabela user_credentials                              |
+| `packages/db/src/schema/index.ts`                          | Adicionar `user_id` em `ml_affiliates`, exportar novos schemas |
+| `packages/db/src/index.ts`                                 | Exportar novos schemas e repositórios                          |
+| `packages/db/src/repository/users.repository.ts`           | CRUD users                                                     |
+| `packages/db/src/repository/userCredentials.repository.ts` | CRUD credentials                                               |
 
 ---
 
@@ -72,11 +73,11 @@ Isso vincula um afiliado ML já conectado via OAuth ao usuário da plataforma.
 
 ### Endpoints
 
-| Método | Rota | Descrição | Auth |
-|--------|------|-----------|------|
-| POST | `/api/auth/register` | Criar conta (email, name, password) | ❌ |
-| POST | `/api/auth/login` | Login (email, password) → JWT | ❌ |
-| GET | `/api/auth/me` | Dados do usuário logado | ✅ JWT |
+| Método | Rota                 | Descrição                           | Auth   |
+| ------ | -------------------- | ----------------------------------- | ------ |
+| POST   | `/api/auth/register` | Criar conta (email, name, password) | ❌     |
+| POST   | `/api/auth/login`    | Login (email, password) → JWT       | ❌     |
+| GET    | `/api/auth/me`       | Dados do usuário logado             | ✅ JWT |
 
 ### Fluxo
 
@@ -102,12 +103,12 @@ bun add @elysiajs/jwt
 
 ### Arquivos
 
-| Arquivo | Ação |
-|---------|------|
-| `apps/api/src/middleware/auth.ts` | Middleware JWT |
-| `apps/api/src/modules/auth/auth.routes.ts` | Rotas de auth |
+| Arquivo                                     | Ação                       |
+| ------------------------------------------- | -------------------------- |
+| `apps/api/src/middleware/auth.ts`           | Middleware JWT             |
+| `apps/api/src/modules/auth/auth.routes.ts`  | Rotas de auth              |
 | `apps/api/src/modules/auth/auth.service.ts` | Lógica (hash, geração JWT) |
-| `apps/api/src/index.ts` | Registrar módulo auth |
+| `apps/api/src/index.ts`                     | Registrar módulo auth      |
 
 ---
 
@@ -115,16 +116,17 @@ bun add @elysiajs/jwt
 
 ### Endpoints
 
-| Método | Rota | Descrição | Auth |
-|--------|------|-----------|------|
-| GET | `/api/affiliate/profile` | Retorna credenciais do afiliado (sem secrets) | ✅ |
-| PUT | `/api/affiliate/profile` | Atualiza credenciais Shopee | ✅ |
-| POST | `/api/affiliate/test-conversion` | Testa geração de link com credenciais do usuário | ✅ |
-| POST | `/api/affiliate/ml/connect` | Inicia fluxo OAuth do ML (com userId no state) | ✅ |
+| Método | Rota                             | Descrição                                        | Auth |
+| ------ | -------------------------------- | ------------------------------------------------ | ---- |
+| GET    | `/api/affiliate/profile`         | Retorna credenciais do afiliado (sem secrets)    | ✅   |
+| PUT    | `/api/affiliate/profile`         | Atualiza credenciais Shopee                      | ✅   |
+| POST   | `/api/affiliate/test-conversion` | Testa geração de link com credenciais do usuário | ✅   |
+| POST   | `/api/affiliate/ml/connect`      | Inicia fluxo OAuth do ML (com userId no state)   | ✅   |
 
 ### GET /api/affiliate/profile
 
 Retorna:
+
 ```json
 {
   "success": true,
@@ -149,6 +151,7 @@ Dados sensíveis (secrets, tokens) NUNCA expostos.
 ### PUT /api/affiliate/profile
 
 Body:
+
 ```json
 {
   "shopeeAppId": "...",
@@ -161,15 +164,18 @@ Atualiza `user_credentials`. Salva em texto plano (equivalente ao que o .env faz
 ### POST /api/affiliate/test-conversion
 
 Body:
+
 ```json
 { "url": "https://shopee.com.br/product/123" }
 ```
 
 Usa as credenciais do usuário autenticado para gerar o link:
+
 - Shopee → usa `shopee_app_id` + `shopee_app_secret` do `user_credentials`
 - Mercado Livre → usa o `ml_affiliate` vinculado ao `user_id`
 
 Retorna:
+
 ```json
 {
   "success": true,
@@ -182,11 +188,11 @@ Retorna:
 
 ### Arquivos
 
-| Arquivo | Ação |
-|---------|------|
-| `apps/api/src/modules/affiliate/affiliate.routes.ts` | Rotas do perfil afiliado |
-| `apps/api/src/modules/affiliate/affiliate.service.ts` | Lógica de negócio |
-| `apps/api/src/index.ts` | Registrar módulo affiliate |
+| Arquivo                                               | Ação                       |
+| ----------------------------------------------------- | -------------------------- |
+| `apps/api/src/modules/affiliate/affiliate.routes.ts`  | Rotas do perfil afiliado   |
+| `apps/api/src/modules/affiliate/affiliate.service.ts` | Lógica de negócio          |
+| `apps/api/src/index.ts`                               | Registrar módulo affiliate |
 
 ---
 
@@ -221,9 +227,11 @@ ALTER TABLE omestre.ml_affiliates ADD COLUMN IF NOT EXISTS user_id INTEGER REFER
 ```
 
 Executar com:
+
 ```bash
 bun run db:push
 ```
+
 Ou via drizzle-kit generate + migrate.
 
 ---
@@ -271,12 +279,12 @@ apps/web/src/components/RegisterPage.tsx
 
 ### Arquivos
 
-| Arquivo | Ação |
-|---------|------|
-| `apps/web/src/hooks/useAuth.ts` | Hook de autenticação |
-| `apps/web/src/components/LoginPage.tsx` | Tela de login |
-| `apps/web/src/components/RegisterPage.tsx` | Tela de registro |
-| `apps/web/src/App.tsx` | Condicionar renderização baseada em auth |
+| Arquivo                                    | Ação                                     |
+| ------------------------------------------ | ---------------------------------------- |
+| `apps/web/src/hooks/useAuth.ts`            | Hook de autenticação                     |
+| `apps/web/src/components/LoginPage.tsx`    | Tela de login                            |
+| `apps/web/src/components/RegisterPage.tsx` | Tela de registro                         |
+| `apps/web/src/App.tsx`                     | Condicionar renderização baseada em auth |
 
 ---
 
@@ -314,12 +322,12 @@ apps/web/src/components/TestConversion.tsx
 
 ### Arquivos
 
-| Arquivo | Ação |
-|---------|------|
-| `apps/web/src/components/AffiliateDashboard.tsx` | Painel principal |
-| `apps/web/src/components/ShopeeCredentialsForm.tsx` | Formulário Shopee |
-| `apps/web/src/components/MLConnectSection.tsx` | Seção Mercado Livre |
-| `apps/web/src/components/TestConversion.tsx` | Teste de conversão |
+| Arquivo                                             | Ação                |
+| --------------------------------------------------- | ------------------- |
+| `apps/web/src/components/AffiliateDashboard.tsx`    | Painel principal    |
+| `apps/web/src/components/ShopeeCredentialsForm.tsx` | Formulário Shopee   |
+| `apps/web/src/components/MLConnectSection.tsx`      | Seção Mercado Livre |
+| `apps/web/src/components/TestConversion.tsx`        | Teste de conversão  |
 
 ---
 
@@ -330,10 +338,11 @@ Modificar o conversor Shopee para aceitar credenciais por parâmetro, similar ao
 ### Em `packages/converters/src/shopee.ts`
 
 Adicionar:
+
 ```typescript
 export async function convertShopeeUrlWithCredentials(
   url: string,
-  credentials: ShopeeCredentials
+  credentials: ShopeeCredentials,
 ): Promise<ConversionResult> {
   // Mesma lógica de convertShopeeUrl mas usando as credenciais passadas
   // em vez de ler do .env
@@ -348,8 +357,8 @@ O test-conversion usa essa função para Shopee, e `convertMercadoLivreUrlWithTo
 
 ## 📦 Resumo de Dependências
 
-| Pacote | Comando | Onde |
-|--------|---------|------|
+| Pacote          | Comando                 | Onde     |
+| --------------- | ----------------------- | -------- |
 | `@elysiajs/jwt` | `bun add @elysiajs/jwt` | apps/api |
 
 Tudo o resto é nativo (Bun.password para hash, fetch para HTTP, crypto para assinatura).
@@ -359,6 +368,7 @@ Tudo o resto é nativo (Bun.password para hash, fetch para HTTP, crypto para ass
 ## 📂 Novos Arquivos (17 no total)
 
 ### DB (5)
+
 - `packages/db/src/schema/users.ts`
 - `packages/db/src/schema/userCredentials.ts`
 - `packages/db/src/repository/users.repository.ts`
@@ -366,15 +376,18 @@ Tudo o resto é nativo (Bun.password para hash, fetch para HTTP, crypto para ass
 - `packages/db/src/migrations/001_create_users.sql` (manual)
 
 ### API Middleware (1)
+
 - `apps/api/src/middleware/auth.ts`
 
 ### API Modules (4)
+
 - `apps/api/src/modules/auth/auth.routes.ts`
 - `apps/api/src/modules/auth/auth.service.ts`
 - `apps/api/src/modules/affiliate/affiliate.routes.ts`
 - `apps/api/src/modules/affiliate/affiliate.service.ts`
 
 ### Frontend (6)
+
 - `apps/web/src/hooks/useAuth.ts`
 - `apps/web/src/components/LoginPage.tsx`
 - `apps/web/src/components/RegisterPage.tsx`
@@ -384,33 +397,34 @@ Tudo o resto é nativo (Bun.password para hash, fetch para HTTP, crypto para ass
 - `apps/web/src/components/TestConversion.tsx`
 
 ### Converters (1 modificado)
+
 - `packages/converters/src/shopee.ts` (add `convertShopeeUrlWithCredentials`)
 
 ---
 
 ## 📄 Arquivos Modificados (4)
 
-| Arquivo | Mudança |
-|---------|---------|
-| `packages/db/src/schema/index.ts` | Add user_id em ml_affiliates |
-| `packages/db/src/index.ts` | Exportar novos módulos |
-| `apps/api/src/index.ts` | Registrar módulos auth + affiliate |
-| `apps/api/package.json` | Add @elysiajs/jwt |
-| `apps/web/src/App.tsx` | Adicionar auth flow + dashboard |
+| Arquivo                           | Mudança                            |
+| --------------------------------- | ---------------------------------- |
+| `packages/db/src/schema/index.ts` | Add user_id em ml_affiliates       |
+| `packages/db/src/index.ts`        | Exportar novos módulos             |
+| `apps/api/src/index.ts`           | Registrar módulos auth + affiliate |
+| `apps/api/package.json`           | Add @elysiajs/jwt                  |
+| `apps/web/src/App.tsx`            | Adicionar auth flow + dashboard    |
 
 ---
 
 ## 🎯 Ordem de Implementação
 
-| # | Passo | Descrição |
-|---|-------|-----------|
-| 1 | Schema DB | Criar tabelas users + user_credentials + user_id em ml_affiliates |
-| 2 | Repositories | Criar users.repository + userCredentials.repository |
-| 3 | Migration | Gerar/aplicar migration no banco |
-| 4 | Auth middleware | JWT middleware com @elysiajs/jwt |
-| 5 | Auth routes | POST register, POST login, GET me |
-| 6 | Affiliate routes | GET/PUT profile, POST test-conversion |
-| 7 | Shopee converter | Add convertShopeeUrlWithCredentials |
-| 8 | Frontend auth | Hook + LoginPage + RegisterPage |
-| 9 | Frontend dashboard | AffiliateDashboard + componentes |
-| 10 | Testar tudo | bun run build + fluxo completo |
+| #   | Passo              | Descrição                                                         |
+| --- | ------------------ | ----------------------------------------------------------------- |
+| 1   | Schema DB          | Criar tabelas users + user_credentials + user_id em ml_affiliates |
+| 2   | Repositories       | Criar users.repository + userCredentials.repository               |
+| 3   | Migration          | Gerar/aplicar migration no banco                                  |
+| 4   | Auth middleware    | JWT middleware com @elysiajs/jwt                                  |
+| 5   | Auth routes        | POST register, POST login, GET me                                 |
+| 6   | Affiliate routes   | GET/PUT profile, POST test-conversion                             |
+| 7   | Shopee converter   | Add convertShopeeUrlWithCredentials                               |
+| 8   | Frontend auth      | Hook + LoginPage + RegisterPage                                   |
+| 9   | Frontend dashboard | AffiliateDashboard + componentes                                  |
+| 10  | Testar tudo        | bun run build + fluxo completo                                    |

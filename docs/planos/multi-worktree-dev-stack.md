@@ -28,20 +28,20 @@ O `scripts/dev.ts` antigo usava `bun --watch`/`vite --port` para subir API/Worke
 
 ## Variáveis de ambiente relevantes
 
-| Variável | Default | Efeito |
-|---|---|---|
-| `DEV_TUNNEL_MODE` | `named`/`quick` por branch | força o modo |
-| `DEV_PORT_BASE` | auto (determinístico) | fixa o bloco de portas |
-| `DEV_BIND_HOST` | `127.0.0.1` | host das portas |
-| `DEV_BUILD` | `1` | `0` reusa imagens Docker |
-| `DEV_APP_ENV_FILE` | `<worktree>/.env` ou `<main>/.env` | `.env` para os containers |
-| `KEEP_INFRA` | `0` | preserva containers/config ao sair |
-| `NUKE_DATA` | `0` | remove volumes no shutdown |
-| `SKIP_LOCK` | `0` | desabilita lockdir (debug) |
-| `SKIP_TUNNEL` | `0` | não sobe tunnel |
-| `CLOUDFLARE_API_TOKEN` | unset | automatiza CNAME via API |
-| `CLOUDFLARE_ZONE_ID` | unset | zona para o CNAME |
-| `TUNNEL_CONFIG` / `TUNNEL_ID` / `TUNNEL_NAME` | heurística | override do tunnel nomeado |
+| Variável                                      | Default                            | Efeito                             |
+| --------------------------------------------- | ---------------------------------- | ---------------------------------- |
+| `DEV_TUNNEL_MODE`                             | `named`/`quick` por branch         | força o modo                       |
+| `DEV_PORT_BASE`                               | auto (determinístico)              | fixa o bloco de portas             |
+| `DEV_BIND_HOST`                               | `127.0.0.1`                        | host das portas                    |
+| `DEV_BUILD`                                   | `1`                                | `0` reusa imagens Docker           |
+| `DEV_APP_ENV_FILE`                            | `<worktree>/.env` ou `<main>/.env` | `.env` para os containers          |
+| `KEEP_INFRA`                                  | `0`                                | preserva containers/config ao sair |
+| `NUKE_DATA`                                   | `0`                                | remove volumes no shutdown         |
+| `SKIP_LOCK`                                   | `0`                                | desabilita lockdir (debug)         |
+| `SKIP_TUNNEL`                                 | `0`                                | não sobe tunnel                    |
+| `CLOUDFLARE_API_TOKEN`                        | unset                              | automatiza CNAME via API           |
+| `CLOUDFLARE_ZONE_ID`                          | unset                              | zona para o CNAME                  |
+| `TUNNEL_CONFIG` / `TUNNEL_ID` / `TUNNEL_NAME` | heurística                         | override do tunnel nomeado         |
 
 ## Pitfalls documentados durante o trabalho
 

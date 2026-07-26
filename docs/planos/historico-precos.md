@@ -12,14 +12,14 @@
 
 ## 1. Estado atual (o que já temos e o que falta)
 
-| O que existe | Onde | Observação |
-|--------------|-------|-------------|
-| `reflected_offers` | `packages/db/src/schema/index.ts:85` | Log de **envio** (link, grupos, status). Sem noção de produto/variação/preço. Não serve como histórico. |
-| `getProductOffer()` (Shopee) | `packages/converters/src/shopee.ts:204` | Retorna `itemId, shopId, productName, imageUrl, price, priceMin, priceMax, commissionRate`. **Já é chamado em `product-image.ts:325` mas só a `imageUrl` é aproveitada — `productName` e `price` são descartados.** (No modelo atual, esse offer *não* é reaproveitado pelo catálogo — o CatalogWorker busca o dado de novo, isolado.) |
-| `product-image.ts` | `apps/ingestor/src/product-image.ts` | Busca imagem OBRIGATÓRIA; continua sendo o único responsável por isso no Ingestor. Catálogo de preço é 100% responsabilidade do worker. |
-| `SendEvent` (Queue B) | `packages/shared/src/mirror-message.ts:31` | Não carrega `title`/`price`/`variationId` (e não precisa — o worker resolve). Carrega só `productKey`/`variationKey` de correlação. |
-| `logReflectedOffer()` | `apps/ingestor/src/ingestor.ts:785` | Insere em `reflected_offers` e **publica o `CatalogJob`** na Queue C (não grava catálogo). |
-| `isDuplicate()` | `apps/ingestor/src/ingestor.ts:216` | Dedup por `(affiliateId, originalLink, 24h)` — faz o papel de **anti-spam de envio**, não de histórico. |
+| O que existe                 | Onde                                       | Observação                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reflected_offers`           | `packages/db/src/schema/index.ts:85`       | Log de **envio** (link, grupos, status). Sem noção de produto/variação/preço. Não serve como histórico.                                                                                                                                                                                                                                |
+| `getProductOffer()` (Shopee) | `packages/converters/src/shopee.ts:204`    | Retorna `itemId, shopId, productName, imageUrl, price, priceMin, priceMax, commissionRate`. **Já é chamado em `product-image.ts:325` mas só a `imageUrl` é aproveitada — `productName` e `price` são descartados.** (No modelo atual, esse offer _não_ é reaproveitado pelo catálogo — o CatalogWorker busca o dado de novo, isolado.) |
+| `product-image.ts`           | `apps/ingestor/src/product-image.ts`       | Busca imagem OBRIGATÓRIA; continua sendo o único responsável por isso no Ingestor. Catálogo de preço é 100% responsabilidade do worker.                                                                                                                                                                                                |
+| `SendEvent` (Queue B)        | `packages/shared/src/mirror-message.ts:31` | Não carrega `title`/`price`/`variationId` (e não precisa — o worker resolve). Carrega só `productKey`/`variationKey` de correlação.                                                                                                                                                                                                    |
+| `logReflectedOffer()`        | `apps/ingestor/src/ingestor.ts:785`        | Insere em `reflected_offers` e **publica o `CatalogJob`** na Queue C (não grava catálogo).                                                                                                                                                                                                                                             |
+| `isDuplicate()`              | `apps/ingestor/src/ingestor.ts:216`        | Dedup por `(affiliateId, originalLink, 24h)` — faz o papel de **anti-spam de envio**, não de histórico.                                                                                                                                                                                                                                |
 
 **Conclusão:** o dado de produto (nome, preço) já atravessa o pipeline e é descartado. O ganho é enorme: reaproveitar `getProductOffer()` para normalizar o produto e, com a API pública do ML, cobrir variações.
 
@@ -30,6 +30,7 @@
 Duas tabelas novas. Separação Product (1) × Variation (N) × PricePoint (N) evita duplicar o produto a cada mensagem e dá o histórico real por variação.
 
 ### 2.1 `products` — chave de normalização (sem duplicação)
+
 ```sql
 CREATE TABLE omestre.products (
   id               serial PRIMARY KEY,
@@ -47,6 +48,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS products_key_idx ON omestre.products (product_
 ```
 
 ### 2.2 `product_variations` — variação (1:N com product)
+
 ```sql
 CREATE TABLE omestre.product_variations (
   id               serial PRIMARY KEY,
@@ -63,6 +65,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS product_variations_key_idx
 ```
 
 ### 2.3 `price_history` — o histórico (append-only, N por variação)
+
 > **Melhoria 1 (estoque + preço de lista):** além do `price` de venda, grava `list_price` (preço de tachado/original — ML `original_price`), `available` (bool) e `stock` (int, onde a API der). O `list_price` habilita % de desconto no gráfico e o futuro comparativo ("menor preço **disponível**"). `stock`/`available` marcam "esgotado" no histórico.
 >
 > **Melhoria 2 (dedup à prova de corrida):** o gate "leu último preço → decide → insere" tem TOCTOU no fan-out 1:N (N afiliados gravam o MESMO produto quase juntos). Substituímos por `UNIQUE (variation_id, price_bucket, price, list_price, available)` + `ON CONFLICT DO NOTHING` — concorrência e janela de gap resolvidas de graça, sem transação, sem race. `price_bucket` = truncagem de `captured_at` em **1 hora** (Melhoria 4: heartbeat diário opcional via bucket maior se quiser).
@@ -89,7 +92,7 @@ CREATE INDEX IF NOT EXISTS price_history_variation_idx
   ON omestre.price_history (variation_id, captured_at);
 ```
 
-**Por que separado de `reflected_offers`:** `reflected_offers` é log de *ação de envio* (pode falhar, ser bloqueado, rate-limited). O histórico de preço deve refletir *toda oferta vista*, independente de ter sido espelhada. São conceitos diferentes; juntar os dois poluiria o histórico com falhas de envio.
+**Por que separado de `reflected_offers`:** `reflected_offers` é log de _ação de envio_ (pode falhar, ser bloqueado, rate-limited). O histórico de preço deve refletir _toda oferta vista_, independente de ter sido espelhada. São conceitos diferentes; juntar os dois poluiria o histórico com falhas de envio.
 
 ---
 
@@ -98,7 +101,9 @@ CREATE INDEX IF NOT EXISTS price_history_variation_idx
 > **Decisão (Matheus):** catálogo roda em **worker isolado** (`apps/catalog-worker`), consumindo uma **Queue C** dedicada. O ingestor **não grava nada** no banco de catálogo e **não faz I/O de preço** no hot path — ele apenas resolve o `product_key` + `marketplace` (e reaproveita o `ShopeeProductOffer` já buscado em `product-image.ts`) e faz **`XADD` O(1) na Queue C**. Zero latência/risco de rate-limit no espelhamento.
 
 ### 3.1 No Ingestor — publica o job (só identidade, não grava)
+
 Novo módulo `apps/ingestor/src/catalog-publisher.ts` com `publishCatalogJob(params)`:
+
 - **Resolver `marketplace_item_id`** (apenas parse, sem rede) por marketplace:
   - Shopee: `extractShopeeItemIdFromUrl()` (já existe em `shopee.ts`).
   - ML: regex `(MLB|MLM|MLA|MCO|MLC)\d{8,}` na URL resolvida.
@@ -108,14 +113,14 @@ Novo módulo `apps/ingestor/src/catalog-publisher.ts` com `publishCatalogJob(par
 - **Montar `CatalogJob`** (tipo em `packages/shared/src/mirror-message.ts`) — **só identidade + contexto**, sem nenhum dado de preço/variação:
   ```ts
   export interface CatalogJob {
-    id: string;                 // UUID
-    productKey: string;          // marketplace:itemId
+    id: string; // UUID
+    productKey: string; // marketplace:itemId
     marketplace: string;
     itemId: string;
-    resolvedUrl: string;        // URL já resolvida (redirect tratado) — o worker usa pra buscar dado fresco
+    resolvedUrl: string; // URL já resolvida (redirect tratado) — o worker usa pra buscar dado fresco
     sourceGroupJid: string;
     messageId: string;
-    capturedAt: string;          // ISO
+    capturedAt: string; // ISO
   }
   ```
   > O job **não carrega** preço/variação/imagem de produto. O Ingestor só declara "este produto apareceu"; **buscar o dado atualizado é responsabilidade exclusiva do CatalogWorker** (seção 3.2). Isso mantém o contrato mínimo e desacopla o Ingestor de toda I/O de catálogo.
@@ -123,11 +128,12 @@ Novo módulo `apps/ingestor/src/catalog-publisher.ts` com `publishCatalogJob(par
 - **Sem acoplamento de fetch:** `fetchProductImage()` (`product-image.ts`) continua buscando só a **imagem** (obrigatória pro envio da oferta) e descartando o resto — **não** precisa retornar `offer` nem sofrer refactor. O catálogo de preço é 100% responsabilidade do worker.
 
 ### 3.2 No CatalogWorker — ele busca o dado FRESCO e grava
+
 Novo `apps/catalog-worker/src/catalog-worker.ts` (mesmo padrão do v2: Redis Stream + consumer group + ACK + DLQ). **Para cada `CatalogJob` o worker é DONO da busca do dado atualizado** — recebe só a identidade, vai à fonte e grava:
 
 1. **Buscar dado do produto** (isolado, com retry próprio):
    - **ML**: `GET https://api.mercadolibre.com/items/{id}` (público, sem auth) → `title`, `pictures[0].url`, `variations[]` (`id`, `price`, `original_price`, `available_quantity`, `attribute_combinations`).
-   - **Shopee**: `getProductOffer(resolvedUrl, creds)` (GraphQL) → `productName`, `imageUrl`, `price`. *creds*: o worker precisa resolver o `userId` a partir do `sourceGroupJid` (cache de sourceGroup → `affiliateId` → `userId`) OU receber `userId` no job. **Decisão**: incluir `userId` no `CatalogJob` (preencido pelo ingestor a partir do `SourceGroupConfig` que ele já tem no fan-out) — assim o worker não refaz a resolução.
+   - **Shopee**: `getProductOffer(resolvedUrl, creds)` (GraphQL) → `productName`, `imageUrl`, `price`. _creds_: o worker precisa resolver o `userId` a partir do `sourceGroupJid` (cache de sourceGroup → `affiliateId` → `userId`) OU receber `userId` no job. **Decisão**: incluir `userId` no `CatalogJob` (preencido pelo ingestor a partir do `SourceGroupConfig` que ele já tem no fan-out) — assim o worker não refaz a resolução.
    - **Amazon/outros**: `title` do `TemplateContext`/`text` (se vier no job), `price = null` (deixa pra fase futura).
 2. **Upsert `products`**: `INSERT ... ON CONFLICT (product_key) DO UPDATE SET last_seen_at=now(), title=EXCLUDED.title, image_url=EXCLUDED.image_url`. Retorna `productId`.
 3. **Resolver variações** (do dado fresco buscado no passo 1):
@@ -137,18 +143,22 @@ Novo `apps/catalog-worker/src/catalog-worker.ts` (mesmo padrão do v2: Redis Str
 5. **Append de preço** (sempre INSERT, dedup via índice único):
    ```ts
    await db.insert(priceHistory).values({
-     variationId, price, listPrice, currency: 'BRL',
-     available, stock,
+     variationId,
+     price,
+     listPrice,
+     currency: 'BRL',
+     available,
+     stock,
      priceBucket: dateTruncHour(capturedAt),
-     source: 'background', sourceGroupJid, messageId,
+     source: 'background',
+     sourceGroupJid,
+     messageId,
    });
    // ON CONFLICT (variation_id, price_bucket, price, list_price, available) DO NOTHING
    ```
 6. **ACK** na Queue C; falha → DLQ (`packages/worker-common`, padrão v2).
 
-**Por que separado de `reflected_offers`:** `reflected_offers` é log de *ação de envio* (pode falhar, ser bloqueado, rate-limited). O histórico de preço reflete *toda oferta vista*, independente de ter sido espelhada. Juntar os dois poluiria o histórico com falhas de envio.
-
-
+**Por que separado de `reflected_offers`:** `reflected_offers` é log de _ação de envio_ (pode falhar, ser bloqueado, rate-limited). O histórico de preço reflete _toda oferta vista_, independente de ter sido espelhada. Juntar os dois poluiria o histórico com falhas de envio.
 
 ## 4. Enriquecimento do `SendEvent` (opcional, barato)
 
@@ -179,19 +189,23 @@ O ingestor preenche `productKey` (já resolvido em 3.1) no `SendEvent` do fan-ou
 Hoje **não há papel/role** — `users` (`packages/db/src/schema/users.ts`) só tem `email/name/passwordHash` e o `AuthUser` do JWT é `{userId, userEmail}` (`middleware/auth.ts:18`). Precisamos criar o conceito de **admin do sistema** antes de expor a UI.
 
 #### 5.5.1. Campo `is_admin` (1 flag global, sem RBAC)
+
 - Migration `0017_add_users_is_admin.sql`: `ALTER TABLE omestre.users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;`
 - `packages/db/src/schema/users.ts`: adicionar `isAdmin: boolean('is_admin').notNull().default(false)`.
 - **Seed/setup**: como não há tela de "promover a admin", o primeiro admin é definido por env no startup OU por UPDATE manual no banco. Decisão simples (escolha do Matheus): `ADMIN_EMAILS` (env, CSV) — na criação/login, `UserRepository` marca `is_admin=true` se o email estiver na lista. Sem UI de gestão de admins nesta fase.
 - **JWT**: incluir `isAdmin` no payload do `jwt.sign` (`auth.routes.ts:39,78`) e no `AuthUser` (`middleware/auth.ts`). `/api/auth/me` (`auth.routes.ts:104`) já usa `findPublicById` — garantir que o `user` retornado inclua `isAdmin`.
 
 #### 5.5.2. Rotas de leitura do catálogo (só admin)
+
 Novo módulo `apps/api/src/modules/catalog/catalog.routes.ts` (montado em `index.ts` como `catalogRoutes`), **todas protegidas + gate `isAdmin`**:
+
 - `GET /api/catalog/products?marketplace=&search=&page=&pageSize=` → lista `products` (join `product_variations` + último `price_history`) com paginação.
 - `GET /api/catalog/products/:id` → detalhe do produto + todas as variações + **série temporal de `price_history`** (para o gráfico).
 - `GET /api/catalog/variations/:id/history?from=&to=` → pontos de preço de uma variação (filtro de período).
 - **Repositório** `packages/db/src/repository/catalog.repository.ts`: `listProducts()`, `getProductWithVariations()`, `getVariationHistory()`. Leitura-only, sem escrita (o histórico é populado só pelo CatalogWorker).
 
 #### 5.5.3. Frontend — rota e página admin
+
 - **`useAuth`** (`apps/web/src/hooks/useAuth.ts`): `User` ganha `isAdmin?`; propagar do `/api/auth/me` (já vem). Expor `isAdmin` no retorno do hook.
 - **`AppShell.tsx`** (`apps/web/src/components/layout/AppShell.tsx`): `navItems` (linha ~56) recebe item **`historico-precos`** ("Histórico de Preços") **só se `isAdmin`** — i.e. filtrar `navItems` por `user.isAdmin`. Usuário comum **não vê** o item na sidebar.
 - **`App.tsx`**: nova rota `historico-precos` (protegida) → `ProductHistoryPage`.
@@ -201,6 +215,7 @@ Novo módulo `apps/api/src/modules/catalog/catalog.routes.ts` (montado em `index
   - Filtros: marketplace, busca por título.
 
 #### 5.5.4. Gate de acesso (segurança)
+
 - Backend: toda rota `/api/catalog/*` checa `auth.isAdmin` → senão `403 { success:false }`. Mesmo que alguém descubra a URL, não retorna dado.
 - Frontend: item de menu **ausente** para não-admin (defense in depth — o backend é a fonte de verdade).
 
@@ -211,20 +226,24 @@ Novo módulo `apps/api/src/modules/catalog/catalog.routes.ts` (montado em `index
 > O catálogo **não roda no ingestor nem no dispatcher**. É um **3º worker dedicado** (`apps/catalog-worker`), consumindo sua própria fila Redis — exatamente o padrão Worker v2 já dominado (Ingestor :9092 → Dispatcher :9093).
 
 ### 8.1. Fluxo
+
 ```
 Webhook → Queue A (omestre:mirror:raw) → Ingestor (converte + envia) → Queue B (omestre:mirror:send) → Dispatcher
               │
               └─(XADD omestre:mirror:catalog)→ Queue C → CatalogWorker (:9094, isolado) → grava products/variations/price_history
 ```
+
 - O **Ingestor só faz `XADD`** (O(1), não-bloqueante) — nunca aguarda I/O de preço. Se a API do ML estiver lenta/throttling, o espelhamento nem sente.
 - O **CatalogWorker** faz o `GET api.mercadolibre.com/items/{id}` e a gravação — isolado, com retry/DLQ próprios. Falha de captura **não envenena** o ACK do pipeline de envio.
 
 ### 8.2. Contratos
+
 - **Queue C**: `omestre:mirror:catalog` (Redis Stream). Consumer group `omestre:mirror:catalog:cg` (1 consumer; escala com mais consumers se precisar).
 - **`CatalogJob`** (tipo em `packages/shared/src/mirror-message.ts`, seção 3.1) — **só identidade + contexto**: `productKey`, `marketplace`, `itemId`, `resolvedUrl`, `sourceGroupJid`, `messageId`, `capturedAt`, e `userId` (preencido pelo ingestor a partir do `SourceGroupConfig` do fan-out, pra o worker Shopee resolver `creds` sem refazer a resolução). **Nenhum dado de preço/variação/imagem** — o worker busca tudo fresco na fonte.
 - **DLQ** via `packages/worker-common` (mesmo `pushToDLQ` do v2). Job falho vai pra DLQ, não trava a fila.
 
 ### 8.3. Infra / Deploy
+
 - `apps/catalog-worker/Dockerfile` (copiar do `apps/ingestor`/`dispatcher` — build Bun + entrypoint).
 - `docker-compose.yml` e `docker-compose.dev.yml`: serviço `catalog-worker` (porta container `:9094`, host `5456` no dev pra não colidir com 545x). `REDIS_URL` + `POSTGRES_URL` herdados.
 - `scripts/dev.ts`: start/stop/lock do novo processo (mesmo padrão do ingestor/dispatcher).
@@ -232,6 +251,7 @@ Webhook → Queue A (omestre:mirror:raw) → Ingestor (converte + envia) → Que
 - `worker-common`: reusar `StepTracker`, `metrics-server` (porta `METRICS_PORT`+offset), `pushToDLQ`, `processFailure` — zero código novo de infra.
 
 ### 8.4. Recuperação de PEL órfão
+
 - No startup do CatalogWorker: `XAUTOCLAIM omestre:mirror:catalog cg consumer 0-0` pra resgatar jobs não-ACKados (mesma técnica do Dispatcher v2).
 
 ---
