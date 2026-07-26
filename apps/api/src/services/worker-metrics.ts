@@ -105,8 +105,45 @@ export async function getAggregatedWorkerStatus(): Promise<AggregatedWorkerStatu
 
 // ─── DLQ — operações diretas na fila compartilhada ───────────────────────
 
-export async function listDlqItems(offset = 0, limit = 20) {
-  return await dlqList({ offset, limit });
+export interface ListDlqFilters {
+  offset?: number;
+  limit?: number;
+  /** Filtro server-side. Aceita 'A' ou 'B'. */
+  queue?: 'A' | 'B';
+  /** Filtro server-side. Match exato em failureReason. */
+  failureReason?: string;
+  /** Filtro server-side. Epoch ms (Date.now()). */
+  since?: number;
+}
+
+/**
+ * Aceita filtros server-side. Quando filtros são aplicados, aumentamos
+ * o limit automaticamente (até 100) porque a UI precisa ver o suficiente
+ * pra mostrar contagens significativas e não só 20 itens coincidentes.
+ */
+export async function listDlqItems(
+  offsetOrFilters: number | ListDlqFilters = 0,
+  legacyLimit: number = 20,
+) {
+  // Back-compat: assinatura antiga (offset, limit) — usada internamente
+  // se algum outro lugar chamar assim. A API HTTP usa a forma nova.
+  let filters: ListDlqFilters;
+  if (typeof offsetOrFilters === 'number') {
+    filters = { offset: offsetOrFilters, limit: legacyLimit };
+  } else {
+    filters = offsetOrFilters;
+  }
+
+  const hasFilter = Boolean(filters.queue || filters.failureReason || filters.since != null);
+  const effectiveLimit = hasFilter ? Math.max(filters.limit ?? 100, 100) : filters.limit ?? 20;
+
+  return await dlqList({
+    offset: filters.offset ?? 0,
+    limit: effectiveLimit,
+    queue: filters.queue,
+    failureReason: filters.failureReason,
+    since: filters.since,
+  });
 }
 
 /**

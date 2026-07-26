@@ -175,7 +175,29 @@ const app = new Elysia()
   .get('/api/worker/dlq', async ({ query }) => {
     const offset = parseInt(String(query.offset ?? '0'), 10) || 0;
     const limit = parseInt(String(query.limit ?? '20'), 10) || 20;
-    const result = await listDlqItems(offset, limit);
+    // Filtros server-side opcionais
+    const queueRaw = query.queue;
+    const queue =
+      queueRaw === 'A' || queueRaw === 'B' ? (queueRaw as 'A' | 'B') : undefined;
+    const reasonRaw = query.reason;
+    const failureReason = typeof reasonRaw === 'string' && reasonRaw.length > 0 ? reasonRaw : undefined;
+    // since aceita ISO string (2026-07-20T00:00:00Z) OU duração relativa
+    // no formato "Nh" / "Nd" (ex: "1h", "24h", "7d"). Default: sem filtro.
+    let since: number | undefined;
+    const sinceRaw = query.since;
+    if (typeof sinceRaw === 'string' && sinceRaw.length > 0) {
+      const relativeMatch = sinceRaw.match(/^(\d+)(h|d)$/);
+      if (relativeMatch) {
+        const n = parseInt(relativeMatch[1] ?? '0', 10);
+        const unit = relativeMatch[2];
+        const ms = unit === 'd' ? n * 24 * 60 * 60 * 1000 : n * 60 * 60 * 1000;
+        since = Date.now() - ms;
+      } else {
+        const parsed = Date.parse(sinceRaw);
+        if (!Number.isNaN(parsed)) since = parsed;
+      }
+    }
+    const result = await listDlqItems({ offset, limit, queue, failureReason, since });
     return { success: true, ...result };
   })
   .post('/api/worker/dlq/requeue', async ({ query, set }) => {

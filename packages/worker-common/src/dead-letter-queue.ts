@@ -38,13 +38,27 @@ export interface DLQPushParams {
 export interface DLQListOptions {
   offset?: number;
   limit?: number;
+  /** Filtra por failureReason (match exato). */
+  failureReason?: string;
+  /** Filtra por fila de origem: 'A' (Ingestor) ou 'B' (Dispatcher). */
+  queue?: 'A' | 'B';
+  /** Filtra items com failedAt >= since (ms epoch). null = sem filtro. */
+  since?: number;
 }
 
 export interface DLQListResult {
   items: MirrorDLQEntry[];
+  /** Total REAL da DLQ (sem filtros aplicados) — usado pelo badge no header. */
   total: number;
   offset: number;
   limit: number;
+  /**
+   * Total APÓS aplicar filtros in-memory (failureReason, queue, since).
+   * Quando o cliente passa filtros, este é o número de items que
+   * casaram; sem filtros é igual a `total`.
+   * Útil pra UI saber "estou vendo X de Y".
+   */
+  totalFiltered: number;
 }
 
 // ─── Conexão Redis (lazy singleton) ──────────────────────────────────
@@ -153,19 +167,40 @@ export async function listDLQ(
     total: 0,
     offset: options.offset ?? 0,
     limit: options.limit ?? 20,
+    totalFiltered: 0,
   };
 
   const r = getDLQRedis();
   if (!r) return emptyResult;
 
   try {
+    // Total global da DLQ — sempre reflete o zcard, sem filtros.
     const total = await r.zcard(MIRROR_DLQ_INDEX);
+
     const offset = options.offset ?? 0;
     const limit = options.limit ?? 20;
+    const since = options.since;
+    const failureReason = options.failureReason;
+    const queue = options.queue;
 
-    const ids = await r.zrevrange(MIRROR_DLQ_INDEX, offset, offset + limit - 1);
-    if (ids.length === 0) return { ...emptyResult, total };
+    // 1) Pega IDs do ZSET, do mais novo pro mais velho.
+    //    Se since foi passado, usa ZREVRANGEBYSCORE pra cortar no Redis;
+    //    sem since, ZREVRANGE traz o ZSET inteiro (a DLQ tem <= alguns
+    //    milhares de items; tamanho de payload pequeno, OK pra memória).
+    //    O "limit" do ZREVRANGE existe só como salvaguarda — com since
+    //    o score já limita, sem since queremos o conjunto todo pra
+    //    que totalFiltered reflita a realidade após filtros in-memory.
+    const fetchLimit = since != null ? (offset + limit) * 10 + 100 : 100_000;
+    const ids: string[] =
+      since != null
+        ? await r.zrevrangebyscore(MIRROR_DLQ_INDEX, '+inf', since, 'LIMIT', 0, fetchLimit)
+        : await r.zrevrange(MIRROR_DLQ_INDEX, 0, fetchLimit - 1);
+    if (ids.length === 0) {
+      return { ...emptyResult, total, totalFiltered: 0 };
+    }
 
+    // 2) Carrega o conteúdo completo. lrange em batch único é mais simples
+    //    que HMGET e a DLQ é pequena (até alguns milhares).
     const rawItems = await r.lrange(MIRROR_DLQ_LIST, 0, -1);
     const itemMap = new Map<string, MirrorDLQEntry>();
     for (const raw of rawItems) {
@@ -177,13 +212,32 @@ export async function listDLQ(
       }
     }
 
-    const items: MirrorDLQEntry[] = [];
+    // 3) Monta a lista na ordem dos IDs (mais novo → mais velho),
+    //    aplicando filtros in-memory. totalFiltered conta quantos
+    //    passaram pelos filtros — diferente de `total` (zcard global).
+    const filtered: MirrorDLQEntry[] = [];
     for (const id of ids) {
       const item = itemMap.get(id);
-      if (item) items.push(item);
+      if (!item) continue;
+      if (failureReason && item.failureReason !== failureReason) continue;
+      if (queue) {
+        const isRawEvent = 'messageId' in item.event;
+        const itemQueue = isRawEvent ? 'A' : 'B';
+        if (itemQueue !== queue) continue;
+      }
+      filtered.push(item);
     }
 
-    return { items, total, offset, limit };
+    const totalFiltered = filtered.length;
+    const sliced = filtered.slice(offset, offset + limit);
+
+    return {
+      items: sliced,
+      total,
+      offset,
+      limit,
+      totalFiltered,
+    };
   } catch (err) {
     log('error', 'Falha ao listar DLQ', {
       error: err instanceof Error ? err.message : String(err),
