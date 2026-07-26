@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Pre-commit hook — bloqueia commits que violem os guards do projeto.
+#
+# Guards:
+#   1. prettier --check                  — formatação
+#   2. bun run scripts/lint-notifier.ts  — typos em classifyConversionError
+#   3. bun run typecheck                 — typecheck de todos os subprojetos
+#
+# Os guards rodam apenas em arquivos staged. Se nenhum arquivo
+# formatável mudou, pula o prettier. Se nenhum .ts/.tsx mudou em
+# apps/ ou packages/, pula o typecheck para não pagar 5-10s.
+
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Detecta arquivos staged relevantes
+STAGED_TS=$(git diff --cached --name-only --diff-filter=ACMR | grep -E "\.(ts|tsx)$" | grep -vE "^(e2e|\.hermes|tmp)/" || true)
+STAGED_PRETTIER=$(git diff --cached --name-only --diff-filter=ACMR | grep -E "\.(ts|tsx|js|jsx|json|css|md)$" | grep -vE "^(node_modules|\.worktees|dist|build)/" || true)
+
+if [ -z "$STAGED_TS" ] && [ -z "$STAGED_PRETTIER" ]; then
+  echo "pre-commit: nenhum arquivo staged relevante, pulando guards."
+  exit 0
+fi
+
+echo ""
+echo "🪝 pre-commit: ${#STAGED_TS[@]} .ts/.tsx, ${#STAGED_PRETTIER[@]} formatável(eis) staged"
+echo ""
+
+# ── 1. Prettier (se houver arquivos formatáveis) ───────────────────
+if [ -n "$STAGED_PRETTIER" ] && [ -f "$ROOT/node_modules/.bin/prettier" ]; then
+  echo "▶ [1/3] Prettier --check..."
+  if ! bunx prettier --check $STAGED_PRETTIER 2>&1; then
+    echo ""
+    echo "❌ Prettier falhou. Rode 'bunx prettier --write <arquivos>' e re-stage."
+    echo "   (use 'git commit --no-verify' apenas em emergências)"
+    exit 1
+  fi
+else
+  echo "▶ [1/3] Prettier: pulado (sem staged ou não instalado)"
+fi
+
+# ── 2. Lint notifier (sempre — é rápido) ──────────────────────────
+echo ""
+echo "▶ [2/3] Lint notifier..."
+if ! bun run scripts/lint-notifier.ts; then
+  echo ""
+  echo "❌ Lint notifier falhou. Corrija antes de commitar."
+  echo "   (use 'git commit --no-verify' apenas em emergências)"
+  exit 1
+fi
+
+# ── 3. Typecheck (só se mudou código em apps/ ou packages/) ───────
+APPS_OR_PKGS=$(echo "$STAGED_TS" | grep -E "^(apps|packages)/" || true)
+
+if [ -n "$APPS_OR_PKGS" ]; then
+  echo ""
+  echo "▶ [3/3] bun run typecheck (apps/ ou packages/ modificados)..."
+  if ! bun run typecheck; then
+    echo ""
+    echo "❌ Typecheck falhou em $(echo "$APPS_OR_PKGS" | wc -l) arquivo(s) staged."
+    echo "   Corrija com: bun run typecheck"
+    echo "   (use 'git commit --no-verify' apenas em emergências)"
+    exit 1
+  fi
+else
+  echo "▶ [3/3] typecheck: pulado (apps/packages não modificados)"
+fi
+
+echo ""
+echo "✅ pre-commit: guards passaram."
+exit 0

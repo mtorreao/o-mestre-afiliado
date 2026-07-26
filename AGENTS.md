@@ -52,41 +52,46 @@ o-mestre-afiliado/
 
 ## 🔧 Stack
 
-| Componente | Tecnologia |
-|------------|------------|
-| Runtime | Bun 1.3+ |
-| Monorepo | Bun Workspaces |
-| API | Elysia 1.x |
-| Web | React 19, Vite 6 |
-| Worker | Bun runtime nativo (Redis Stream + pipeline de espelhamento) |
-| Database ORM | Drizzle ORM |
-| Database | PostgreSQL 17 |
-| Cache | Redis 7 |
-| WhatsApp | Evolution API (Baileys) |
-| Conversão | @omestre/converters (Shopee GraphQL, ML URL params / link curto) |
-| Extensão Chrome | Cookie Importer (Manifest V3) |
-| TypeScript | ^5, strict mode, verbatimModuleSyntax |
-| Package manager | Bun (bun install, bun add) |
+| Componente      | Tecnologia                                                       |
+| --------------- | ---------------------------------------------------------------- |
+| Runtime         | Bun 1.3+                                                         |
+| Monorepo        | Bun Workspaces                                                   |
+| API             | Elysia 1.x                                                       |
+| Web             | React 19, Vite 6                                                 |
+| Worker          | Bun runtime nativo (Redis Stream + pipeline de espelhamento)     |
+| Database ORM    | Drizzle ORM                                                      |
+| Database        | PostgreSQL 17                                                    |
+| Cache           | Redis 7                                                          |
+| WhatsApp        | Evolution API (Baileys)                                          |
+| Conversão       | @omestre/converters (Shopee GraphQL, ML URL params / link curto) |
+| Extensão Chrome | Cookie Importer (Manifest V3)                                    |
+| TypeScript      | ^5, strict mode, verbatimModuleSyntax                            |
+| Package manager | Bun (bun install, bun add)                                       |
 
 ---
 
 ## 📐 TypeScript — Regras Essenciais
 
 1. **`verbatimModuleSyntax: true`** — use `import type` para importações que são apenas tipo:
+
    ```typescript
-   import type { ConversionResult } from '@omestre/shared';  // ✅
-   import { convertUrl } from '@omestre/converters';          // ✅ valor
+   import type { ConversionResult } from '@omestre/shared'; // ✅
+   import { convertUrl } from '@omestre/converters'; // ✅ valor
    ```
 
 2. **`noUncheckedIndexedAccess: true`** — array access retorna `T | undefined`:
+
    ```typescript
    const first = arr[0]; // tipo: T | undefined
-   if (first) { /* narrow */ }
+   if (first) {
+     /* narrow */
+   }
    ```
 
 3. **`allowImportingTsExtensions: true`** — imports de `.ts` local:
+
    ```typescript
-   import { shopee } from './shopee.ts';  // ✅ obrigatório
+   import { shopee } from './shopee.ts'; // ✅ obrigatório
    ```
 
 4. **`noEmit: true`** — Bun executa TS diretamente, sem compilação.
@@ -150,24 +155,76 @@ o-mestre-afiliado/
 
 ---
 
+## 🪝 Git Hooks
+
+Todos os hooks ficam versionados em `.githooks/` e são ativados via
+`git config core.hooksPath .githooks`.
+
+### Setup (uma vez após clonar)
+
+```bash
+bun run setup:hooks
+```
+
+Torna os hooks executáveis e configura o Git para usá-los.
+
+### Hooks ativos
+
+| Hook         | Quando               | O que faz                                                                           |
+| ------------ | -------------------- | ----------------------------------------------------------------------------------- |
+| `pre-commit` | Antes de cada commit | Roda prettier --check, lint-notifier e typecheck (só dos apps/packages modificados) |
+| `commit-msg` | Antes de cada commit | Valida mensagem contra conventional commits                                         |
+| `pre-push`   | Antes de cada push   | Roda typecheck completo + build                                                     |
+
+### Conventional commits
+
+Formato: `<type>(<scope>): <subject>`
+
+Tipos permitidos: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+
+Exemplos válidos:
+
+```
+feat(api): adicionar endpoint /api/affiliate/profile
+fix(web): corrigir layout do MirrorFormPage em mobile
+chore(deps): atualizar bun para 1.3.5
+docs(agents): documentar hook de pre-push
+```
+
+### Bypass de emergência
+
+```bash
+git commit --no-verify -m "hotfix crítico"   # pula pre-commit + commit-msg
+git push --no-verify                          # pula pre-push
+```
+
+Use apenas em emergências — os guards existem para evitar pushes quebrados.
+
+### Em CI (GitHub Actions)
+
+Os mesmos guards rodam em `.github/workflows/ci.yml` (typecheck + build + prettier no diff do PR). Commits com `--no-verify` ainda passam pelo CI.
+
+---
+
 ## 🧪 Comandos
 
-| Comando | Descrição |
-|---------|-----------|
-| `bun install` | Instala tudo (workspaces) |
-| `bun run dev` | Sobe `docker-compose.dev.yml` isolado pela branch atual (containers, rede, volumes, portas e tunnel próprios) |
-| `bun run scripts/dev.ts --dry-run` | Exibe slug, Compose project, hostname e portas sem alterar o ambiente |
-| `SKIP_TUNNEL=1 bun run dev` | Sobe a stack da branch sem Cloudflare Tunnel |
-| `DEV_BUILD=0 bun run dev` | Reutiliza as imagens Docker já construídas |
-| `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev` | Cria/atualiza o CNAME da branch via API da zona correta; o token precisa de `Zone / DNS / Edit` |
-| `bun run shopee <url>` | CLI conversor Shopee |
-| `bun run ml <url>` | CLI conversor Mercado Livre |
-| `bun run build` | Compila todos os apps (api + worker + web) |
-| `./node_modules/.bin/tsc --noEmit` | Typecheck completo |
-| `bun run db:generate` | Gerar migrations Drizzle |
-| `bun run db:migrate` | Aplicar migrations |
-| `bun run db:push` | Push rápido (dev) |
-| `docker compose --env-file .env.infra -f docker-compose.infra.yml up -d` | Subir infra (Evolution + PG + Redis) |
+| Comando                                                                  | Descrição                                                                                                     |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `bun install`                                                            | Instala tudo (workspaces)                                                                                     |
+| `bun run dev`                                                            | Sobe `docker-compose.dev.yml` isolado pela branch atual (containers, rede, volumes, portas e tunnel próprios) |
+| `bun run scripts/dev.ts --dry-run`                                       | Exibe slug, Compose project, hostname e portas sem alterar o ambiente                                         |
+| `SKIP_TUNNEL=1 bun run dev`                                              | Sobe a stack da branch sem Cloudflare Tunnel                                                                  |
+| `DEV_BUILD=0 bun run dev`                                                | Reutiliza as imagens Docker já construídas                                                                    |
+| `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev`            | Cria/atualiza o CNAME da branch via API da zona correta; o token precisa de `Zone / DNS / Edit`               |
+| `bun run shopee <url>`                                                   | CLI conversor Shopee                                                                                          |
+| `bun run ml <url>`                                                       | CLI conversor Mercado Livre                                                                                   |
+| `bun run build`                                                          | Compila todos os apps (api + worker + web)                                                                    |
+| `bun run typecheck`                                                      | Typecheck de todos os subprojetos (via `scripts/typecheck-all.ts`)                                            |
+| `bun run typecheck:root`                                                 | Typecheck só dos arquivos de tooling (scripts/, e2e/, deploy/)                                                |
+| `bun run db:generate`                                                    | Gerar migrations Drizzle                                                                                      |
+| `bun run db:migrate`                                                     | Aplicar migrations                                                                                            |
+| `bun run db:push`                                                        | Push rápido (dev)                                                                                             |
+| `docker compose --env-file .env.infra -f docker-compose.infra.yml up -d` | Subir infra (Evolution + PG + Redis)                                                                          |
 
 ---
 
@@ -175,25 +232,25 @@ o-mestre-afiliado/
 
 Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
 
-| Variável | Obrigatória | Apps |
-|----------|-------------|------|
-| `SHOPEE_APP_ID` | Para Shopee | converters, api, worker |
-| `SHOPEE_SECRET` | Para Shopee | converters, api, worker |
-| `ML_CLIENT_ID` | Para ML OAuth | converters, api, worker |
-| `ML_CLIENT_SECRET` | Para ML OAuth | converters, api, worker |
-| `ML_REFRESH_TOKEN` | Para ML OAuth | converters, api, worker |
-| `API_PORT` | Não (default 5442) | api |
-| `EVOLUTION_API_KEY` | Sim | api, worker |
-| `EVOLUTION_WEBHOOK_URL` | Não | api |
-| `POSTGRES_URL` | Não | api, worker (URI completa) |
-| `POSTGRES_HOST` | Não (default localhost) | api, worker |
-| `POSTGRES_PORT` | Não (default 5443) | api, worker |
-| `POSTGRES_DATABASE` | Não (default omestre_db) | api, worker |
-| `POSTGRES_USERNAME` | Não (default evolution) | api, worker |
-| `POSTGRES_PASSWORD` | Sim | api, worker |
-| `POSTGRES_SCHEMA` | Não (default omestre) | api, worker |
-| `FRONTEND_URL` | Não (default http://localhost:5441) | api |
-| `ML_REDIRECT_URI` | Não (default http://localhost:5442/api/ml/callback) | api |
+| Variável                | Obrigatória                                         | Apps                       |
+| ----------------------- | --------------------------------------------------- | -------------------------- |
+| `SHOPEE_APP_ID`         | Para Shopee                                         | converters, api, worker    |
+| `SHOPEE_SECRET`         | Para Shopee                                         | converters, api, worker    |
+| `ML_CLIENT_ID`          | Para ML OAuth                                       | converters, api, worker    |
+| `ML_CLIENT_SECRET`      | Para ML OAuth                                       | converters, api, worker    |
+| `ML_REFRESH_TOKEN`      | Para ML OAuth                                       | converters, api, worker    |
+| `API_PORT`              | Não (default 5442)                                  | api                        |
+| `EVOLUTION_API_KEY`     | Sim                                                 | api, worker                |
+| `EVOLUTION_WEBHOOK_URL` | Não                                                 | api                        |
+| `POSTGRES_URL`          | Não                                                 | api, worker (URI completa) |
+| `POSTGRES_HOST`         | Não (default localhost)                             | api, worker                |
+| `POSTGRES_PORT`         | Não (default 5443)                                  | api, worker                |
+| `POSTGRES_DATABASE`     | Não (default omestre_db)                            | api, worker                |
+| `POSTGRES_USERNAME`     | Não (default evolution)                             | api, worker                |
+| `POSTGRES_PASSWORD`     | Sim                                                 | api, worker                |
+| `POSTGRES_SCHEMA`       | Não (default omestre)                               | api, worker                |
+| `FRONTEND_URL`          | Não (default http://localhost:5441)                 | api                        |
+| `ML_REDIRECT_URI`       | Não (default http://localhost:5442/api/ml/callback) | api                        |
 
 ---
 
@@ -253,11 +310,11 @@ Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch(
 
 ### Formatos de link gerados
 
-| Formato | Parâmetros | Exemplo |
-|---------|-----------|---------|
-| Link curto | API interna ML | `https://meli.la/2DSBbLg` |
-| Novo (mtorreao) | `matt_word` + `matt_tool` | `...?matt_word=mtorreao&matt_tool=71835809` |
-| Antigo (om895584) | `meliid` + `melitat` | `...?meliid=...&melitat=om895584` |
+| Formato           | Parâmetros                | Exemplo                                     |
+| ----------------- | ------------------------- | ------------------------------------------- |
+| Link curto        | API interna ML            | `https://meli.la/2DSBbLg`                   |
+| Novo (mtorreao)   | `matt_word` + `matt_tool` | `...?matt_word=mtorreao&matt_tool=71835809` |
+| Antigo (om895584) | `meliid` + `melitat`      | `...?meliid=...&melitat=om895584`           |
 
 ---
 
@@ -274,6 +331,7 @@ Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch(
 5. **Domínio DOM** — o root tsconfig inclui `"DOM"` e `"DOM.Iterable"` na lib. Isso permite `window.navigator.clipboard`, `document.getElementById`, etc. no web app, mas adiciona tipos DOM também nos apps API/worker (inócuo).
 
 6. **`as` casts com optional chaining** — formato `(data as T)?.field as U` causa erro TS1128. Prefira variáveis intermediárias:
+
    ```typescript
    const node = data as Record<string, unknown> | undefined;
    const field = node?.field as string | undefined;
@@ -308,13 +366,13 @@ Tela web de **saúde e performance** dos workers de espelhamento, em
 
 Endpoints em `apps/api/src/index.ts`:
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/api/worker/status` | Status agregado (Ingestor + Dispatcher) — `getAggregatedWorkerStatus()` |
-| GET | `/api/worker/dlq` | Lista DLQ com filtros server-side |
-| POST | `/api/worker/dlq/requeue?id=ID` | Re-enfileira item (Queue A ou B conforme origem) |
-| POST | `/api/worker/dlq/remove?id=ID` | Remove item da DLQ |
-| POST | `/api/worker/dlq/purge` | Remove todos os itens da DLQ |
+| Método | Rota                            | Descrição                                                               |
+| ------ | ------------------------------- | ----------------------------------------------------------------------- |
+| GET    | `/api/worker/status`            | Status agregado (Ingestor + Dispatcher) — `getAggregatedWorkerStatus()` |
+| GET    | `/api/worker/dlq`               | Lista DLQ com filtros server-side                                       |
+| POST   | `/api/worker/dlq/requeue?id=ID` | Re-enfileira item (Queue A ou B conforme origem)                        |
+| POST   | `/api/worker/dlq/remove?id=ID`  | Remove item da DLQ                                                      |
+| POST   | `/api/worker/dlq/purge`         | Remove todos os itens da DLQ                                            |
 
 **`GET /api/worker/dlq`** aceita query params: `offset`, `limit`, `queue` (`A`/`B`),
 `reason` (failureReason exato) e `since` (ISO ou `Nh`/`Nd`). Responde com `total`
