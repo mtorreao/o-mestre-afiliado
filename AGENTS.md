@@ -152,10 +152,11 @@ o-mestre-afiliado/
 | Comando | Descrição |
 |---------|-----------|
 | `bun install` | Instala tudo (workspaces) |
-| `bun run dev` | Sobe todos os apps em paralelo |
-| `bun run dev:api` | API em hot-reload (`--hot`) |
-| `bun run dev:worker` | Worker em hot-reload |
-| `bun run dev:web` | Web (Vite dev server) |
+| `bun run dev` | Sobe `docker-compose.dev.yml` isolado pela branch atual (containers, rede, volumes, portas e tunnel próprios) |
+| `bun run scripts/dev.ts --dry-run` | Exibe slug, Compose project, hostname e portas sem alterar o ambiente |
+| `SKIP_TUNNEL=1 bun run dev` | Sobe a stack da branch sem Cloudflare Tunnel |
+| `DEV_BUILD=0 bun run dev` | Reutiliza as imagens Docker já construídas |
+| `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev` | Cria/atualiza o CNAME da branch via API da zona correta; o token precisa de `Zone / DNS / Edit` |
 | `bun run shopee <url>` | CLI conversor Shopee |
 | `bun run ml <url>` | CLI conversor Mercado Livre |
 | `bun run build` | Compila todos os apps (api + worker + web) |

@@ -11,13 +11,13 @@
 #   - Evolution API dentro da rede Docker (sem host.docker.internal)
 #
 # USO:
-#   docker compose -f docker-compose.dev.yml up -d --build
+#   bun run dev
 #
 # Com override de portas do .env.infra (se 5453 estiver ocupada):
-#   docker compose --env-file .env.infra -f docker-compose.dev.yml up -d --build
+#   DEV_PORT_BASE=6000 bun run dev
 #
 # Com tunnel Cloudflare (requer ~/.cloudflared/omestre-afiliado.yml):
-#   docker compose -f docker-compose.dev.yml --profile tunnel up -d --build
+#   bun run dev  # cria/reutiliza o tunnel da branch automaticamente
 #
 # PORTAS (dev compose — faixa 545x para evitar conflito com docker-compose.infra.yml que usa 544x):
 #   API        5452  (container:5442)
@@ -28,14 +28,14 @@
 #
 # BUILD:
 #   Depois de alterar código, rebuildar com --build:
-#     docker compose -f docker-compose.dev.yml up -d --build
+#     bun run dev
 #
 # LOGS:
 #   docker compose -f docker-compose.dev.yml logs -f
 #   docker compose -f docker-compose.dev.yml logs -f api
 # =============================================================================
 
-name: o-mestre-afiliado-dev
+name: ${DEV_COMPOSE_PROJECT:-o-mestre-afiliado-dev}
 
 services:
   # ═══════════════════════════════════════════════════════════════════════════
@@ -43,7 +43,7 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
 
   postgres:
-    container_name: omestre_dev_postgres
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_postgres
     image: postgres:17-alpine
     restart: unless-stopped
     command:
@@ -59,7 +59,7 @@ services:
     volumes:
       - omestre_dev_postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-127.0.0.1:5453:5432}"
+      - "${DEV_POSTGRES_HOST_PORT:-127.0.0.1:5453:5432}"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U evolution -d omestre_db"]
       interval: 10s
@@ -69,14 +69,14 @@ services:
       - omestre-dev-net
 
   redis:
-    container_name: omestre_dev_redis
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_redis
     image: redis:7-alpine
     restart: unless-stopped
     command: redis-server --port 6379 --appendonly yes --timeout 0
     volumes:
       - omestre_dev_redis_data:/data
     ports:
-      - "${REDIS_PORT:-127.0.0.1:5455:6379}"
+      - "${DEV_REDIS_HOST_PORT:-127.0.0.1:5455:6379}"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -86,7 +86,7 @@ services:
       - omestre-dev-net
 
   evolution-api:
-    container_name: omestre_dev_evolution
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_evolution
     image: evoapicloud/evolution-api:v2.3.7
     restart: unless-stopped
     depends_on:
@@ -95,7 +95,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "${EVOLUTION_API_PORT:-127.0.0.1:5454:8080}"
+      - "${DEV_EVOLUTION_HOST_PORT:-127.0.0.1:5454:8080}"
     volumes:
       - omestre_dev_evolution_instances:/evolution/instances
     environment:
@@ -103,7 +103,7 @@ services:
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: >-
         postgresql://evolution:${POSTGRES_PASSWORD:-evolution_pass}@postgres:5432/omestre_db?schema=evolution_api
-      DATABASE_CONNECTION_CLIENT_NAME: omestre_afiliado_dev
+      DATABASE_CONNECTION_CLIENT_NAME: ${DEV_DATABASE_CLIENT_NAME:-omestre_afiliado_dev}
       DATABASE_SAVE_DATA_INSTANCE: "true"
       DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
       DATABASE_SAVE_MESSAGE_UPDATE: "true"
@@ -122,7 +122,7 @@ services:
       CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: redis://redis:6379/6
       CACHE_REDIS_TTL: 604800
-      CACHE_REDIS_PREFIX_KEY: evolution_omestre_dev
+      CACHE_REDIS_PREFIX_KEY: ${DEV_CACHE_PREFIX:-evolution_omestre_dev}
 
       # ── Auth ──────────────────────────────────────────────────────────
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
@@ -180,7 +180,7 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
       target: api
-    container_name: omestre_dev_api
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -188,9 +188,9 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "${API_PORT:-127.0.0.1:5452:5442}"
+      - "${DEV_API_HOST_PORT:-127.0.0.1:5452:5442}"
     env_file:
-      - .env
+      - ${DEV_APP_ENV_FILE:-.env}
     environment:
       # Sobrescreve .env para apontar para os containers Docker
       API_PORT: "5442"
@@ -203,6 +203,7 @@ services:
       EVOLUTION_API_URL: http://evolution-api:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5451}
+      ML_REDIRECT_URI: ${ML_REDIRECT_URI:-http://localhost:5451/api/ml/callback}
       # Worker metrics API (DNS interno do container) — Ingestor v2
       WORKER_METRICS_URL: http://ingestor:9092
       # Dispatcher metrics (DNS interno do container)
@@ -225,15 +226,15 @@ services:
     build:
       context: .
       dockerfile: apps/ingestor/Dockerfile
-    container_name: omestre_dev_ingestor
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_ingestor
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9092:9092"
+      - "${DEV_INGESTOR_HOST_PORT:-127.0.0.1:9092:9092}"
     depends_on:
       api:
         condition: service_healthy
     env_file:
-      - .env
+      - ${DEV_APP_ENV_FILE:-.env}
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
@@ -259,15 +260,15 @@ services:
     build:
       context: .
       dockerfile: apps/dispatcher/Dockerfile
-    container_name: omestre_dev_dispatcher
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_dispatcher
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9093:9093"
+      - "${DEV_DISPATCHER_HOST_PORT:-127.0.0.1:9093:9093}"
     depends_on:
       api:
         condition: service_healthy
     env_file:
-      - .env
+      - ${DEV_APP_ENV_FILE:-.env}
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
@@ -288,13 +289,13 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: omestre_dev_web
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_web
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "${WEB_PORT:-127.0.0.1:5451:5441}"
+      - "${DEV_WEB_HOST_PORT:-127.0.0.1:5451:5441}"
     environment:
       # Já tem default api:5442 no Dockerfile, mas explícito é mais seguro
       API_UPSTREAM: api:5442
@@ -304,18 +305,21 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # OPTIONAL: Cloudflare Tunnel
   # ═══════════════════════════════════════════════════════════════════════════
-  # Ativar com:  --profile tunnel
-  # Requer ~/.cloudflared/omestre-afiliado.yml configurado
-  # Equivalente ao SKIP_TUNNEL=0 no dev.ts
+  # Ativado pelo scripts/dev.ts, que cria/reutiliza um tunnel por branch.
+  # Use SKIP_TUNNEL=1 para subir somente a stack local.
   tunnel:
     profiles:
       - tunnel
     image: cloudflare/cloudflared:2024.10.0
-    container_name: omestre_dev_tunnel
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_tunnel
     restart: unless-stopped
-    command: tunnel --config /etc/cloudflared/omestre-afiliado.yml run
+    depends_on:
+      web:
+        condition: service_started
+    command: tunnel --config /etc/cloudflared/config.yml run
     volumes:
-      - "${HOME}/.cloudflared:/etc/cloudflared:ro"
+      - "${DEV_TUNNEL_CONFIG_HOST_PATH:-./deploy/cloudflared/config.yml}:/etc/cloudflared/config.yml:ro"
+      - "${DEV_TUNNEL_CREDENTIALS_HOST_PATH:-${HOME}/.cloudflared/f1437a45-faee-4b13-ba05-04a87bbecbae.json}:/etc/cloudflared/${DEV_TUNNEL_ID:-f1437a45-faee-4b13-ba05-04a87bbecbae}.json:ro"
     networks:
       - omestre-dev-net
 
@@ -324,7 +328,7 @@ services:
 # ═════════════════════════════════════════════════════════════════════════════
 networks:
   omestre-dev-net:
-    name: omestre-dev-net
+    name: ${DEV_NETWORK_NAME:-omestre-dev-net}
     driver: bridge
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -332,8 +336,8 @@ networks:
 # ═════════════════════════════════════════════════════════════════════════════
 volumes:
   omestre_dev_postgres_data:
-    name: omestre-dev-postgres-data
+    name: ${DEV_POSTGRES_VOLUME_NAME:-omestre-dev-postgres-data}
   omestre_dev_redis_data:
-    name: omestre-dev-redis-data
+    name: ${DEV_REDIS_VOLUME_NAME:-omestre-dev-redis-data}
   omestre_dev_evolution_instances:
-    name: omestre-dev-evolution-instances
+    name: ${DEV_EVOLUTION_VOLUME_NAME:-omestre-dev-evolution-instances}

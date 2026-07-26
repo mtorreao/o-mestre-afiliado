@@ -36,11 +36,17 @@ bun install
 cp .env.example .env
 # Edite .env com suas credenciais
 
-# Desenvolvimento (API :5442 + Web :5441)
+# Ambiente Docker isolado pela branch atual
 bun run dev
 
-# Ou sem infraestrutura Docker
-SKIP_INFRA=1 bun run dev
+# Inspecionar o slug e as portas sem subir containers
+bun run scripts/dev.ts --dry-run
+
+# Subir sem Cloudflare Tunnel
+SKIP_TUNNEL=1 bun run dev
+
+# DNS automático opcional (token da conta que possui omestreafiliado.com.br)
+CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev
 ```
 
 ---
