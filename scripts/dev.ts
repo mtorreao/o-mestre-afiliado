@@ -6,17 +6,21 @@
  *   - um Compose project name próprio;
  *   - nomes próprios para containers, network e volumes;
  *   - um bloco de portas livre e determinístico;
- *   - um tunnel Cloudflare próprio (nomeado ou quick, automático).
+ *   - (opcional, opt-in via DEV_TUNNEL=1) um tunnel Cloudflare próprio (nomeado ou quick).
  *
  * Uso:
- *   bun run dev
- *   SKIP_TUNNEL=1 bun run dev
- *   DEV_TUNNEL_MODE=quick bun run dev     # força um tunnel anônimo
- *   DEV_TUNNEL_MODE=named bun run dev     # usa o tunnel nomeado da branch
+ *   bun run dev                           # sobe só a stack local (sem tunnel)
+ *   DEV_TUNNEL=1 bun run dev              # OPT-IN: sobe também o tunnel Cloudflare
+ *   DEV_TUNNEL=1 DEV_TUNNEL_MODE=quick bun run dev   # tunnel anônimo
+ *   DEV_TUNNEL=1 DEV_TUNNEL_MODE=named bun run dev   # tunnel nomeado da branch
  *   DEV_PORT_BASE=6000 bun run dev
  *   KEEP_INFRA=1 bun run dev              # mantém os containers após Ctrl+C
  *   DEV_BUILD=0 bun run dev               # não força rebuild das imagens
  *   bun scripts/dev.ts --dry-run          # mostra a configuração sem iniciar Docker
+ *
+ * Por padrão o tunnel NÃO sobe (apenas a stack local em http://localhost:<porta>).
+ * O service `tunnel` continua definido em docker-compose.dev.yml (sob o profile
+ * `tunnel`) caso queira subir manualmente com `docker compose --profile tunnel up`.
  *
  * DNS do tunnel nomeado não é alterado por padrão. Configure o CNAME no
  * dashboard Cloudflare ou informe CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID
@@ -33,7 +37,12 @@ const isWindows = process.platform === 'win32';
 const requestedDryRun = process.argv.includes('--dry-run');
 const isExplicitPortBase = Boolean(process.env.DEV_PORT_BASE);
 const bindHost = process.env.DEV_BIND_HOST ?? '127.0.0.1';
-const skipTunnel = process.env.SKIP_TUNNEL === '1';
+// Por padrão NÃO subimos o tunnel (usa só a stack local em http://localhost).
+// Opt-in explícito via DEV_TUNNEL=1 para subir o tunnel Cloudflare (profile `tunnel`
+// do docker-compose.dev.yml). Todo o código de tunnel permanece no script; o service
+// `tunnel` fica definido no compose para uso manual/opt-in.
+const enableTunnel = process.env.DEV_TUNNEL === '1';
+const skipTunnel = !enableTunnel;
 const keepStack = process.env.KEEP_INFRA === '1';
 const buildImages = process.env.DEV_BUILD !== '0';
 const skipLock = process.env.SKIP_LOCK === '1';
