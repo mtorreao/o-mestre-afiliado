@@ -4,7 +4,7 @@ name: omestre-e2e
 # Docker Compose para testes E2E
 #
 # Uso:
-#   1. Build da Web:   bun run build:web
+#   1. Build do Web:   bun run build:web
 #   2. Subir stack:    docker compose -f e2e/docker-compose.e2e.yml up -d --wait
 #   3. Rodar testes:   bun run test:e2e
 #   4. Derrubar:       docker compose -f e2e/docker-compose.e2e.yml down -v
@@ -159,7 +159,7 @@ services:
     depends_on:
       - api-e2e
 
-  # ─── Ingestor (background — pipeline pesado) ───────────────────────
+  # ─── Ingestor (background — pipeline pesado) ─────────────────────
   ingestor-e2e:
     container_name: omestre_e2e_ingestor
     build:
