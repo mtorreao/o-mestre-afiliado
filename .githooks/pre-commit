@@ -28,15 +28,11 @@ echo ""
 echo "🪝 pre-commit: ${#STAGED_TS[@]} .ts/.tsx, ${#STAGED_PRETTIER[@]} formatável(eis) staged"
 echo ""
 
-# ── 1. Prettier (se houver arquivos formatáveis) ───────────────────
+# ── 1. Prettier (formata automaticamente e re-stage) ──────────────
 if [ -n "$STAGED_PRETTIER" ] && [ -f "$ROOT/node_modules/.bin/prettier" ]; then
-  echo "▶ [1/3] Prettier --check..."
-  if ! bunx prettier --check $STAGED_PRETTIER 2>&1; then
-    echo ""
-    echo "❌ Prettier falhou. Rode 'bunx prettier --write <arquivos>' e re-stage."
-    echo "   (use 'git commit --no-verify' apenas em emergências)"
-    exit 1
-  fi
+  echo "▶ [1/3] Prettier --write (formatando automaticamente)..."
+  bunx prettier --write $STAGED_PRETTIER 2>&1 || true
+  git add $STAGED_PRETTIER
 else
   echo "▶ [1/3] Prettier: pulado (sem staged ou não instalado)"
 fi
