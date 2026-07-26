@@ -2,20 +2,25 @@
  * Ingestor — Pipeline de processamento de mensagens cruas.
  *
  * Fluxo:
- *   1. Lê RawMessageEvent da Queue A (omestre:mirror:raw)
- *   2. Dedup (messageId + sourceGroupJid) — 5 min
- *   3. Extrai URL de marketplace
- *   4. Blacklist / Whitelist global
- *   5. Dedup 24h (URL original no banco)
- *   6. Resolve redirect (Promozone)
- *   7. Fetch product image (obrigatório)
- *   8. Busca afiliados do sourceGroup (cache 1:N)
- *   9. Para CADA afiliado (fan-out em paralelo):
- *      a. Converte link com credenciais do afiliado
+ *   0. Sanitização: remove links não-oferta (t.me/*) do texto
+ *   1. Extrai URLs de marketplace do texto sanitizado
+ *   2. Resolve TODOS os links (multi-link) e classifica:
+ *      - product:     URL final é página de produto → vai pro Link Builder
+ *      - informative: URL final é campanha/listagem → mantida no texto
+ *      - discard:     não resolveu → removida do texto
+ *   3. Seleciona a URL de produto (bloqueia se 0 ou ≥2)
+ *   4. Reconstrói o texto com URLs resolvidas
+ *   5. Blacklist global
+ *   6. Whitelist global
+ *   7. Busca configs do sourceGroup (cache 1:N)
+ *   8. Fan-out por afiliado (paralelo):
+ *      a. Converte link com credenciais do afiliado (só produto)
  *      b. Verifica link (safety check)
- *      c. Monta template
+ *      c. Monta template (texto sanitizado + URLs resolvidas)
  *      d. Publica SendEvent na Queue B
- *   10. ACK na Queue A
+ *   9. Fetch product image (opcional, fallback texto)
+ *   10. Publica na Queue B
+ *   11. ACK na Queue A
  */
 
 import type { RawMessageEvent, SendEvent, SourceGroupConfig, TemplateContext } from '@omestre/shared';
@@ -77,7 +82,6 @@ const steps = {
   blacklist: new StepTracker(),
   whitelist: new StepTracker(),
   imageFetch: new StepTracker(),
-  resolveRedirect: new StepTracker(),
   fanOut: new StepTracker(),
   total: new StepTracker(),
 };
@@ -209,6 +213,26 @@ function extractMarketplaceUrl(text: string): string | null {
   if (links.length === 0) return null;
   const nonCoupon = links.find((l) => l.kind !== 'coupon');
   return (nonCoupon ?? links[0]!).url;
+}
+
+/**
+ * Remove links que não fazem parte da oferta do texto.
+ * Atualmente remove links de Telegram (t.me/*) — canais/grupos que são
+ * divulgação do bot original, não parte da oferta em si.
+ *
+ * Exemplo: "#MercadoLivre #Parceria | t.me/cuponsm"
+ *       →  "#MercadoLivre #Parceria"
+ */
+function sanitizeNonOfferLinks(text: string): string {
+  // Remove URLs de Telegram (t.me/*)
+  let sanitized = text.replace(/https?:\/\/t\.me\/[^\s<>"']+/gi, '');
+  // Remove separadores órfãos no final de linha (ex.: "| " sem link)
+  sanitized = sanitized.replace(/\s*\|\s*$/gm, '');
+  // Limpa espaços extras
+  sanitized = sanitized.replace(/[ \t]{2,}/g, ' ');
+  // Remove linhas vazias extras
+  sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
+  return sanitized.trim();
 }
 
 // ─── Dedup 24h (DB) ──────────────────────────────────────────────────
@@ -418,10 +442,11 @@ async function convertShopeeForAffiliate(
  * Resolve um link curto meli.la/XXX para a URL de produto real do ML.
  *
  * IMPORTANTE: muitos meli.la escondem PERFIS SOCIAIS ou LISTAS de outros
- * afiliados (ex: /social/om895584) — esses NÃO são produtos elegíveis e
- * o Link Builder rejeita com erro 111. Use `resolveMeliRedirect` (em
- * ./resolve-redirect.ts) que já trata isso: segue o redirect, faz strip
- * de params de tracking (matt_word/matt_tool/ref) e retorna isProduct.
+ * afiliados (ex: /social/om895584/lists) — esses NÃO são produtos elegíveis.
+ * Porém /social/<id> (sem sub-path) É uma página de produto (social commerce).
+ * Use `resolveMeliRedirect` (em ./resolve-redirect.ts) que já trata isso:
+ * segue o redirect, faz strip de params de tracking (matt_word/matt_tool/ref)
+ * e retorna isProduct.
  */
 
 async function convertMlForAffiliate(
@@ -834,17 +859,22 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
 
   incrementCounter('pipeline_messages_received_total');
 
+  // ── 0. Sanitização: remove links que não são da oferta ──
+  // Links de Telegram (t.me/*) são divulgação do bot original, não fazem
+  // parte da oferta. Removidos ANTES da extração para não poluir o pipeline.
+  const sanitizedText = sanitizeNonOfferLinks(text);
+
   // ── 1. Extrai URLs de marketplace ──
-  // Mensagens podem trazer MAIS DE UM link (ex.: produto + cupom).
+  // Mensagens podem trazer MAIS DE UM link (ex.: produto + cupom + campanha).
   // Regra: se houver ≥2 links de PRODUTO, bloqueia (nunca deveria ter 2
-  // produtos na mesma oferta). Se houver 1 produto + cupons, processa o
-  // produto e ignora os cupons.
-  const extractedLinks = measureStepSync(steps.extract, () => extractAllMarketplaceLinks(text));
+  // produtos na mesma oferta). Links informativos (campanha, cupom) são
+  // resolvidos e mantidos no texto, mas NÃO vão para o Link Builder.
+  const extractedLinks = measureStepSync(steps.extract, () => extractAllMarketplaceLinks(sanitizedText));
   if (extractedLinks.length === 0) {
     log('info', 'Mensagem sem URL de marketplace — ignorada', { messageId });
     incrementCounter('pipeline_messages_blocked_total', { reason: 'no_url' });
     return true;
-}
+  }
 
   const productLinks = extractedLinks.filter((l) => l.kind === 'product');
   const couponLinks = extractedLinks.filter((l) => l.kind === 'coupon');
@@ -857,94 +887,150 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     });
     incrementCounter('pipeline_messages_blocked_total', { reason: 'multiple_product_links' });
     return true;
-}
+  }
 
-  // ── Resolução de shortlinks Shopee (s.shopee.com.br) ──
-  // Shortlinks Shopee são marcados como 'coupon' no classificador (não
-  // temos como saber se é produto sem resolver o redirect). Aqui tentamos
-  // resolver e, se for um produto de verdade, promovemos a URL para o
-  // caminho de produto. Links que NÃO resolvem para produto (cupom,
-  // voucher, afiliado) permanecem como cupons e são descartados.
-  const resolvedCouponLinks: ExtractedLink[] = [];
-  let promotedShopeeUrl: string | null = null;
-  for (const link of couponLinks) {
-    if (!/s\.shopee\.com\.br/i.test(link.url)) {
-      resolvedCouponLinks.push(link);
+  // ── 2. Resolução multi-link ──
+  // Resolve TODOS os links extraídos (não só o selecionado) para:
+  //   a) Descobrir se shortlinks (meli.la, s.shopee.com.br, /sec/) levam a
+  //      produto real ou página informativa
+  //   b) Reconstruir o texto com URLs resolvidas (mais limpas e informativas)
+  //
+  // Cada link resolvido recebe uma classificação:
+  //   - 'product':     URL final é página de produto → vai pro Link Builder
+  //   - 'informative': URL final é campanha/listagem → mantida no texto, não convertida
+  //   - 'discard':     não resolveu ou não é marketplace → removida do texto
+  interface ResolvedLink {
+    originalUrl: string;
+    resolvedUrl: string;
+    role: 'product' | 'informative' | 'discard';
+    marketplace: string;
+  }
+
+  const resolvedLinks: ResolvedLink[] = [];
+
+  for (const link of extractedLinks) {
+    const resolved = await resolveRedirectUrl(link.url);
+    const resolvedMarketplace = detectMarketplace(resolved);
+
+    if (resolvedMarketplace === 'unknown') {
+      resolvedLinks.push({ originalUrl: link.url, resolvedUrl: resolved, role: 'discard', marketplace: 'unknown' });
       continue;
     }
-    const resolved = await resolveRedirectUrl(link.url);
-    if (resolved && resolved !== link.url) {
-      // Verifica se a URL resolvida é uma página de produto Shopee
-      const isProduct = /-i\.\d+\.\d+/i.test(resolved);
-      if (isProduct) {
-        promotedShopeeUrl = resolved;
-        log('info', 'Shortlink Shopee resolvido para produto', {
-          messageId,
-          shortlink: link.url,
-          resolved,
-        });
-      } else {
-        log('info', 'Shortlink Shopee não resolve para produto — descartado', {
-          messageId,
-          shortlink: link.url,
-          resolved,
-        });
-      }
-    } else {
-      log('info', 'Shortlink Shopee sem redirect ou não resolveu — descartado', {
+
+    // Classifica o destino resolvido
+    const isProduct =
+      resolvedMarketplace === 'shopee'
+        ? /-i\.\d+\.\d+/i.test(resolved)
+        : resolvedMarketplace === 'mercadolivre'
+          ? isMeliProductUrl(resolved)
+          : resolvedMarketplace === 'amazon'
+            ? /\/dp\/[A-Z0-9]{10}/i.test(resolved) || /\/gp\/product\/[A-Z0-9]{10}/i.test(resolved)
+            : false;
+
+    resolvedLinks.push({
+      originalUrl: link.url,
+      resolvedUrl: resolved,
+      role: isProduct ? 'product' : 'informative',
+      marketplace: resolvedMarketplace,
+    });
+  }
+
+  // ── 3. Seleção da URL de produto ──
+  const productResolved = resolvedLinks.filter((l) => l.role === 'product');
+  const informativeResolved = resolvedLinks.filter((l) => l.role === 'informative');
+
+  if (productResolved.length === 0) {
+    // Nenhum link resolveu para produto — verifica se há links informativos
+    // (ex.: só campanha/cupom). Se sim, loga e descarta (não é oferta de produto).
+    if (informativeResolved.length > 0) {
+      log('info', 'Mensagem só contém links informativos (campanha/cupom) — ignorada', {
         messageId,
-        shortlink: link.url,
+        informativeUrls: informativeResolved.map((l) => l.resolvedUrl),
+      });
+      incrementCounter('pipeline_messages_blocked_total', { reason: 'informative_only' });
+    } else {
+      log('info', 'Mensagem sem links de produto após resolução — ignorada', {
+        messageId,
+        links: extractedLinks.map((l) => l.url),
+      });
+      incrementCounter('pipeline_messages_blocked_total', { reason: 'no_product_after_resolve' });
+    }
+    return true;
+  }
+
+  if (productResolved.length >= 2) {
+    log('info', 'Múltiplos links de produto após resolução — bloqueada', {
+      messageId,
+      productUrls: productResolved.map((l) => l.resolvedUrl),
+    });
+    incrementCounter('pipeline_messages_blocked_total', { reason: 'multiple_product_links' });
+    return true;
+  }
+
+  const selectedProduct = productResolved[0]!;
+  const originalUrl = selectedProduct.originalUrl;
+  let resolvedUrl = selectedProduct.resolvedUrl;
+  const marketplace = selectedProduct.marketplace;
+
+  // ── 3.5. Resolução de /social/<id> → produto real ──
+  // Páginas /social/<id> do ML são social commerce: o Link Builder rejeita
+  // essas URLs (erro 111). Precisamos extrair a URL real do produto (/p/MLB<id>)
+  // navegando na página e clicando em "Ir para o Produto".
+  if (marketplace === 'mercadolivre' && /^\/social\/[a-zA-Z0-9]+\/?$/i.test(new URL(resolvedUrl).pathname)) {
+    const { resolveSocialProductUrl } = await import('./resolve-social-product.ts');
+    const realProductUrl = await resolveSocialProductUrl(resolvedUrl);
+    if (realProductUrl) {
+      log('info', '/social/ resolvido para produto real', {
+        messageId,
+        socialUrl: resolvedUrl,
+        productUrl: realProductUrl,
+      });
+      resolvedUrl = realProductUrl;
+    } else {
+      log('warn', '/social/ não pôde ser resolvido para produto — tentando Link Builder mesmo assim', {
+        messageId,
+        socialUrl: resolvedUrl,
       });
     }
-}
+  }
 
-  // Se promovemos um shortlink, ele entra na lista de produtos
-  const finalProductLinks: ExtractedLink[] = promotedShopeeUrl
-    ? [...productLinks, { url: promotedShopeeUrl, kind: 'product' as const }]
-    : productLinks;
+  // ── 4. Reconstrução do texto ──
+  // Substitui URLs originais pelas resolvidas no texto sanitizado:
+  //   - Produto: será substituído pela URL convertida no template (passo 6)
+  //   - Informativo: substituído pela URL resolvida (ex.: /sec/ → /ofertas)
+  //   - Descartado: removido do texto
+  let processedText = sanitizedText;
+  for (const rl of resolvedLinks) {
+    if (rl.role === 'informative') {
+      processedText = processedText.replace(rl.originalUrl, rl.resolvedUrl);
+    } else if (rl.role === 'discard') {
+      // Remove o link e separadores órfãos
+      processedText = processedText.replace(rl.originalUrl, '');
+    }
+    // 'product' não é substituído aqui — será substituído pela URL convertida
+    // no template (buildTemplateMessage faz text.replace(originalUrl, convertedUrl))
+  }
+  // Limpa espaços/separadores órfãos após remoções
+  processedText = processedText.replace(/\s*\|\s*$/gm, '');
+  processedText = processedText.replace(/[ \t]{2,}/g, ' ');
+  processedText = processedText.replace(/\n{3,}/g, '\n\n');
+  processedText = processedText.trim();
 
-  // Seleção da URL a processar:
-  //  - 1+ produto → usa o produto (ignora cupons)
-  //  - 0 produto → usa o primeiro link não-cupom (ex.: magalu) mantendo
-  //    o comportamento anterior. Mas se sobrou APENAS shortlinks Shopee
-  //    não-resolvidos, descarta (são links de cupom/afiliado).
-  const hasOnlyUnresolvedShopeeShortlinks =
-    finalProductLinks.length === 0 &&
-    extractedLinks.length > 0 &&
-    resolvedCouponLinks.length === 0;
-
-  if (hasOnlyUnresolvedShopeeShortlinks) {
-    log('info', 'Mensagem só contém shortlinks Shopee não-produto — ignorada', {
-      messageId,
-      shortlinks: extractedLinks.map((l) => l.url),
-    });
-    incrementCounter('pipeline_messages_blocked_total', { reason: 'shopee_shortlink_only' });
-    return true;
-}
-
-  const selectedLink = finalProductLinks[0] ?? extractedLinks.find((l) => l.kind !== 'coupon');
-  const originalUrl = selectedLink?.url ?? null;
-
-  if (!originalUrl) {
-    log('info', 'Mensagem só contém links de cupom — ignorada', { messageId, couponCount: couponLinks.length });
-    incrementCounter('pipeline_messages_blocked_total', { reason: 'coupon_only' });
-    return true;
-}
-
-  const marketplace = detectMarketplace(originalUrl);
-  log('info', 'URL de marketplace detectada', {
+  log('info', 'URL de marketplace detectada e resolvida', {
     messageId,
     originalUrl,
+    resolvedUrl,
     marketplace,
     totalLinks: extractedLinks.length,
-    productCount: productLinks.length,
-    couponCount: couponLinks.length,
+    productCount: productResolved.length,
+    informativeCount: informativeResolved.length,
+    discardedCount: resolvedLinks.filter((l) => l.role === 'discard').length,
   });
 
-  // ── 2. Blacklist ──
+  // ── 5. Blacklist ──
   const blacklistTerms = await measureStep(steps.blacklist, async () => loadBlacklist());
   if (blacklistTerms.length > 0) {
-    const textLower = text.toLowerCase();
+    const textLower = sanitizedText.toLowerCase();
     for (const term of blacklistTerms) {
       if (textLower.includes(term.toLowerCase())) {
         log('info', 'Mensagem filtrada pela blacklist', { messageId, term });
@@ -952,33 +1038,28 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
         return true;
       }
     }
-}
+  }
 
-  // ── 3. Whitelist ──
+  // ── 6. Whitelist ──
   const whitelistTerms = await measureStep(steps.whitelist, async () => loadWhitelist());
   if (whitelistTerms.length > 0) {
-    const textLower = text.toLowerCase();
+    const textLower = sanitizedText.toLowerCase();
     const hasMatch = whitelistTerms.some((term) => textLower.includes(term.toLowerCase()));
     if (!hasMatch) {
       log('info', 'Mensagem filtrada pela whitelist', { messageId });
       incrementCounter('pipeline_messages_blocked_total', { reason: 'global_whitelist' });
       return true;
     }
-}
+  }
 
-  // ── 4. Dedup 24h ── (via sourceGroup 1:N, usa o primeiro affiliate como proxy)
-  // O dedup real é feito pelo send-dedup (Ingestor) e send-completed (Dispatcher)
-  // Este passo é mantido como segurança extra
+  // ── 7. Source Group Configs ──
   const sourceConfigs = await getSourceGroupConfigs(sourceGroupJid);
   if (sourceConfigs.length === 0) {
     log('info', 'Nenhum afiliado configurado para este sourceGroup', { sourceGroupJid });
     return true;
-}
+  }
 
-  // ── 5. Resolve redirect ──
-  const resolvedUrl = await measureStep(steps.resolveRedirect, () => resolveRedirectUrl(originalUrl));
-
-  // ── 6. Fan-out: para cada afiliado (valida credenciais + converte) ──
+  // ── 8. Fan-out: para cada afiliado (valida credenciais + converte) ──
   // A busca de imagem vem DEPOIS do fan-out: só faz sentido gastar o
   // recurso de rede (fetch no marketplace) se ao menos um afiliado tiver
   // credenciais válidas e gerar um SendEvent. Isso evita buscar imagem
@@ -1037,9 +1118,9 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
           timestamp: new Date().toISOString(),
         });
 
-        // Monta template
+        // Monta template — usa processedText (texto sanitizado + URLs resolvidas)
         const ctx: TemplateContext = {
-          originalText: text,
+          originalText: processedText,
           originalUrl,
           convertedUrl: conversion.convertedUrl,
           marketplace: conversion.marketplace,
@@ -1074,7 +1155,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
 
   incrementCounter('pipeline_affiliates_per_message', { count: String(sourceConfigs.length) });
 
-  // ── 7. Fetch product image (só se houver SendEvent válido) ──
+  // ── 9. Fetch product image (só se houver SendEvent válido) ──
   // A imagem é OPCIONAL com fallback: se não for encontrada (ex.: Shopee
   // bloqueando extração server-side, ou Amazon bloqueando bots), a oferta
   // ainda é enviada como TEXTO (sendText) em vez de ser bloqueada — evitando
@@ -1104,7 +1185,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     evt.imageUrl = imageUrl;
 }
 
-  // ── 8. Publica na Queue B ──
+  // ── 10. Publica na Queue B ──
   if (sendEvents.length > 0) {
     const pipeline = r.pipeline();
     for (const evt of sendEvents) {
@@ -1124,7 +1205,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     });
 }
 
-  // ── 9. ACK na Queue A ──
+  // ── 11. ACK na Queue A ──
   const totalDuration = performance.now() - totalStart;
   steps.total.observe(totalDuration);
 

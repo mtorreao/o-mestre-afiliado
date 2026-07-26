@@ -68,15 +68,21 @@ function stripMeliTrackingParams(url: string): { url: string; dropped: string[] 
 
 /**
  * Detecta se a URL do Mercado Livre é uma página de PRODUTO.
- * URLs válidas: /p/MLB<id> ou /<slug>/p/MLB<id>.
- * Rejeitadas: /social/<id>, /sec/<id>, /coupons/<id>, /up/<id>, etc.
+ * URLs válidas:
+ *   - /p/MLB<id> ou /<slug>/p/MLB<id>  → página clássica de produto
+ *   - /social/<id>                      → página de social commerce (produto
+ *     com preço, vendedor e botão "Ir para produto")
+ * Rejeitadas: /sec/<id>, /coupons/<id>, /up/<id>, /ofertas, etc.
  */
 export function isMeliProductUrl(url: string): boolean {
   try {
     const u = new URL(url);
     if (!/mercadolivre\.com\.br/i.test(u.hostname)) return false;
-    const m = u.pathname.match(/\/p\/MLB\d+/i);
-    return !!m;
+    // Página clássica de produto: /p/MLB<id>
+    if (/\/p\/MLB\d+/i.test(u.pathname)) return true;
+    // Social commerce: /social/<id> — página de produto com preço e CTA
+    if (/^\/social\/[a-zA-Z0-9]+\/?$/i.test(u.pathname)) return true;
+    return false;
   } catch {
     return false;
   }
@@ -110,6 +116,10 @@ const REDIRECTOR_DOMAINS: { pattern: RegExp; resolve: Resolver }[] = [
   {
     pattern: /meli\.la/i,
     resolve: resolveMeliShortlink,
+  },
+  {
+    pattern: /mercadolivre\.com\.br\/sec\//i,
+    resolve: resolveMeliSecLink,
   },
 ];
 
@@ -280,15 +290,21 @@ async function resolveMeliShortlink(url: string): Promise<ResolvedMeliRedirect |
     return { url: absoluteUrl, isProduct: false, reason: 'external_domain' };
   }
 
-  // Strip params de tracking injetados por outro afiliado
-  const { url: cleanUrl, dropped } = stripMeliTrackingParams(absoluteUrl);
+  // Strip params de tracking injetados por outro afiliado.
+  // EXCEÇÃO: URLs /social/<id> precisam dos params (matt_word, matt_tool,
+  // forceInApp, ref) para o botão "Ir para o Produto" aparecer na página.
+  // O strip só é necessário para URLs que vão direto pro Link Builder.
+  const isSocialUrl = /^\/social\/[a-zA-Z0-9]+\/?$/i.test(parsed.pathname);
+  const { url: cleanUrl, dropped } = isSocialUrl
+    ? { url: absoluteUrl, dropped: [] as string[] }
+    : stripMeliTrackingParams(absoluteUrl);
   const isProduct = isMeliProductUrl(cleanUrl);
 
   let reason: string | undefined;
   if (!isProduct) {
     // Diagnosticar o tipo de URL para log
     if (/^\/social\//i.test(parsed.pathname)) {
-      reason = 'social_profile';
+      reason = 'social_listing';
     } else if (/^\/sec\//i.test(parsed.pathname)) {
       reason = 'category_listing';
     } else if (/^\/coupons?\//i.test(parsed.pathname)) {
@@ -304,6 +320,64 @@ async function resolveMeliShortlink(url: string): Promise<ResolvedMeliRedirect |
   if (reason) result.reason = reason;
   if (dropped.length > 0) result.droppedParams = dropped;
   return result;
+}
+
+/**
+ * Resolve um link mercadolivre.com.br/sec/XXX (link curto de campanha/cupom).
+ *
+ * Estratégia: GET com redirect:manual → extrai Location → strip de query
+ * params e fragment. O resultado é uma URL limpa do ML (ex.: /ofertas).
+ *
+ * Diferente do meli.la, links /sec/ tipicamente levam a páginas de campanha
+ * ou listagem de ofertas — NÃO a um produto único. O caller usa isso para
+ * reconstruir o texto com a URL resolvida (informativa), não para conversão.
+ */
+async function resolveMeliSecLink(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+
+    const location = res.headers.get('location');
+    if (!location) return null;
+
+    let absoluteUrl: string;
+    try {
+      absoluteUrl = new URL(location, url).toString();
+    } catch {
+      return null;
+    }
+
+    // Aceita somente destinos no domínio do Mercado Livre
+    let parsed: URL;
+    try {
+      parsed = new URL(absoluteUrl);
+    } catch {
+      return null;
+    }
+
+    if (!/mercadolivre\.com\.br/i.test(parsed.hostname)) return null;
+
+    // Strip query params e fragment — EXCETO para /social/<id> que precisa
+    // dos params (matt_word, matt_tool, forceInApp, ref) para o botão
+    // "Ir para o Produto" aparecer na página.
+    const isSocial = /^\/social\/[a-zA-Z0-9]+\/?$/i.test(parsed.pathname);
+    if (!isSocial) {
+      parsed.search = '';
+      parsed.hash = '';
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 export async function resolveRedirectUrl(url: string): Promise<string> {

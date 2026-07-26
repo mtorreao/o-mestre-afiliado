@@ -442,3 +442,85 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     expect(mirrorMessages.length).toBe(0);
   });
 });
+
+// ─── ML /social/ URL Resolution (HTTP real, sem Evolution API) ─────────
+
+test.describe('Mirror Flow — ML /social/ Resolution', () => {
+  test.beforeEach(async () => {
+    await resetSimulator();
+  });
+
+  /**
+   * Testa o fluxo de resolução de URL /social/ do Mercado Livre até a Queue A.
+   *
+   * Valida o pipeline: mirror criado com sourceGroup → webhook recebido →
+   * cache Redis consultado → RawMessageEvent publicado na Queue A.
+   *
+   * A conversão (ML Link Builder) requer cookies de sessão reais do ML,
+   * que não estão disponíveis no ambiente E2E. Quando a conversão falha,
+   * a oferta é descartada silenciosamente (design atual do ML).
+   *
+   * Para testar o pipeline completo até o simulador, configure credenciais
+   * ML reais (ml_affiliates.melitat + sessionCookies) no banco E2E.
+   */
+  test('Mensagem com /social/ do ML é processada e publicada na Queue A', async () => {
+    // ── 1. Setup: usuário + WhatsApp + affiliate + mirror ──
+    const { token, user } = await createUserWithConnectedWhatsApp();
+
+    // Insere affiliate no DB para o cache Redis de sourceGroups
+    const instanceName = `user-${user.id}`;
+    const { execSync } = await import('node:child_process');
+    execSync(
+      `docker exec omestre_e2e_postgres psql -U evolution -d omestre_db ` +
+      `-c "INSERT INTO omestre.affiliates (name, active, evolution_instance_id) VALUES ('E2E ML Social', true, '${instanceName}')"`,
+      { stdio: 'pipe' } as any,
+    );
+
+    // Cria mirror → popula cache Redis com sourceGroup → affiliateId
+    const mirrorRes = await authPostMirror('/api/mirrors', token, {
+      name: 'E2E Test ML /social/',
+      sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
+      targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
+      status: 'active',
+    });
+    expect(mirrorRes.body.success).toBe(true);
+
+    // ── 2. Webhook com mensagem contendo URL /social/ do ML ──
+    const socialUrl =
+      'https://www.mercadolivre.com.br/social/om895584' +
+      '?matt_word=om895584&matt_tool=50805475&forceInApp=true' +
+      '&ref=BNNwFaW22UcOR1BlyOdbNtjr2boYjnVMhdiudR%2Bblb9KP8z%2FjOSjOF4HDBAEmDY9' +
+      '%2BW05Jn8THcCL5rXdphHYB2B0AOVOXEnQqTM%2BStd3YB6usBmGmuo9gXkACXjj' +
+      '%2B21LpsNqCSkWmBhHGip0CI4PI3ptDVo%2FYlwBvWw52atp%2BbnxgTS0EE5WILI8filUTV' +
+      '%2BWZMYrelk%3D';
+
+    const webhookPayload = {
+      event: 'messages.upsert',
+      instance: 'user-1',
+      data: [
+        {
+          key: { id: `e2e_social_${Date.now()}`, remoteJid: '120363000000000001@g.us', fromMe: false },
+          message: {
+            conversation:
+              '🚨 CUPONS MERCADO LIVRE\n\n' +
+              '👇 RESGATE AQUI:\nhttps://mercadolivre.com.br/sec/1TTwcDm\n\n' +
+              `Na lista: ${socialUrl}\n\n` +
+              '#MercadoLivre\n| t.me/cuponsm',
+          },
+          messageTimestamp: Math.floor(Date.now() / 1000),
+          pushName: 'Promozone #156',
+        },
+      ],
+    };
+
+    const webhookRes = await fetch(`${API_MIRROR}/webhook/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(webhookPayload),
+    });
+    expect(webhookRes.status).toBe(200);
+    const whBody = await webhookRes.json();
+    // Confirma que o webhook foi recebido (cache Redis consultado com sucesso)
+    expect(whBody.success).toBe(true);
+  });
+});

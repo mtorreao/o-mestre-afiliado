@@ -16,6 +16,15 @@ WORKDIR /app
 COPY --from=builder /app/apps/ingestor/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 
+# Chromium para resolução de /social/ do ML (headless browser)
+RUN apt-get update && apt-get install -y \
+    chromium \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV METRICS_PORT=9092
 EXPOSE 9092
 
