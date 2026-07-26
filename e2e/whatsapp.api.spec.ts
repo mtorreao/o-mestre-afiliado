@@ -59,7 +59,7 @@ test.describe('WhatsApp - Auth', () => {
       headers: { 'Content-Type': 'application/json' },
     });
     expect(res.status).toBe(401);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
     expect(body.error).toContain('Não autenticado');
   });
@@ -120,10 +120,7 @@ test.describe('WhatsApp - Connect / Disconnect', () => {
     expect(connectBody.instanceId).toBeDefined();
 
     // Verificar status depois de conectar
-    const { status: statusStatus, body: statusBody } = await authGet(
-      '/api/whatsapp/status',
-      token,
-    );
+    const { status: statusStatus, body: statusBody } = await authGet('/api/whatsapp/status', token);
     expect(statusStatus).toBe(200);
     expect(statusBody.success).toBe(true);
 

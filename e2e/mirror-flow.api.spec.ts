@@ -240,7 +240,8 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
             fromMe: false,
           },
           message: {
-            conversation: 'Oferta imperdível! https://shopee.com.br/produto-E2E-Test-123',
+            conversation:
+              'Oferta imperdível! https://shopee.com.br/Produto-E2E-Test-123-i.1234567890.1234567890',
           },
           messageTimestamp: Math.floor(Date.now() / 1000),
           pushName: 'Test E2E',
@@ -258,16 +259,11 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // ── 3. Aguarda o ingestor+dispatcher processarem e enviar para o simulador ────
     // O ingestor vai: detectar link → converter → montar template → publicar na Queue B
     // O dispatcher vai: ler da Queue B → enviar para grupo 3 via Evolution API (simulador)
-    const { found, messages } = await waitForMessageInSimulator(
-      'https://shopee.com.br/produto-E2E-Test-123',
-      30000,
-    );
+    const { found, messages } = await waitForMessageInSimulator('Produto-E2E-Test-123', 30000);
 
     expect(found).toBe(true);
     // A mensagem deve ter sido enviada para o grupo de destino (grupo 3)
-    const sentMsg = messages.find((m) =>
-      m.text.includes('https://shopee.com.br/produto-E2E-Test-123'),
-    );
+    const sentMsg = messages.find((m) => m.text.includes('Produto-E2E-Test-123'));
     expect(sentMsg).toBeDefined();
     expect(sentMsg!.number).toBe('120363000000000003@g.us');
     expect(sentMsg!.text).toContain('shopee.com.br');

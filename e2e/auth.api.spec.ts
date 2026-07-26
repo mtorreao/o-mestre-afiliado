@@ -30,7 +30,7 @@ test.describe('Auth - Register', () => {
       body: JSON.stringify({ email, name: TEST_NAME, password: TEST_PASSWORD }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(true);
     expect(body.token).toBeDefined();
     expect(body.user).toBeDefined();
@@ -53,7 +53,7 @@ test.describe('Auth - Register', () => {
       body: JSON.stringify({ email, name: 'Outro', password: TEST_PASSWORD }),
     });
     expect(res.status).toBe(409);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
     expect(body.error).toContain('Email já cadastrado');
   });
@@ -69,7 +69,7 @@ test.describe('Auth - Register', () => {
       }),
     });
     expect(res.status).toBe(400);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 
@@ -111,7 +111,7 @@ test.describe('Auth - Login', () => {
       body: JSON.stringify({ email, password: TEST_PASSWORD }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(true);
     expect(body.token).toBeDefined();
     expect((body.user as Record<string, unknown>).email).toBe(email);
@@ -124,7 +124,7 @@ test.describe('Auth - Login', () => {
       body: JSON.stringify({ email, password: 'wrong-password' }),
     });
     expect(res.status).toBe(401);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 
@@ -152,7 +152,7 @@ test.describe('Auth - GET /me', () => {
   test('deve rejeitar requisição sem token', async () => {
     const res = await fetch(`${API}/api/auth/me`);
     expect(res.status).toBe(401);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
     expect(body.error).toContain('Não autenticado');
   });
@@ -162,7 +162,7 @@ test.describe('Auth - GET /me', () => {
       headers: { Authorization: 'Bearer invalid-token' },
     });
     expect(res.status).toBe(401);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 });
@@ -199,7 +199,7 @@ test.describe('Affiliate - Profile', () => {
   test('deve rejeitar perfil sem autenticação', async () => {
     const res = await fetch(`${API}/api/affiliate/profile`);
     expect(res.status).toBe(401);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 
@@ -215,11 +215,9 @@ test.describe('Affiliate - Profile', () => {
 test.describe('Affiliate - Test Conversion', () => {
   test('deve rejeitar conversão sem credenciais Shopee', async () => {
     const { token } = await createTestUser();
-    const { status, body } = await authPost(
-      '/api/affiliate/test-conversion',
-      token,
-      { url: 'https://shopee.com.br/product/123' },
-    );
+    const { status, body } = await authPost('/api/affiliate/test-conversion', token, {
+      url: 'https://shopee.com.br/product/123',
+    });
     expect(status).toBe(200);
     expect(body.success).toBe(false);
     expect((body.error as string) || '').toContain('Credenciais');
@@ -227,11 +225,9 @@ test.describe('Affiliate - Test Conversion', () => {
 
   test('deve rejeitar conversão ML sem conta vinculada', async () => {
     const { token } = await createTestUser();
-    const { status, body } = await authPost(
-      '/api/affiliate/test-conversion',
-      token,
-      { url: 'https://www.mercadolivre.com.br/product/123' },
-    );
+    const { status, body } = await authPost('/api/affiliate/test-conversion', token, {
+      url: 'https://www.mercadolivre.com.br/product/123',
+    });
     expect(status).toBe(200);
     expect(body.success).toBe(false);
     expect((body.error as string) || '').toContain('Mercado Livre');
@@ -239,21 +235,15 @@ test.describe('Affiliate - Test Conversion', () => {
 
   test('deve rejeitar URL de marketplace não suportado', async () => {
     const { token } = await createTestUser();
-    const { status } = await authPost(
-      '/api/affiliate/test-conversion',
-      token,
-      { url: 'https://www.americanas.com.br/produto/123' },
-    );
+    const { status } = await authPost('/api/affiliate/test-conversion', token, {
+      url: 'https://www.americanas.com.br/produto/123',
+    });
     expect(status).toBe(400);
   });
 
   test('deve rejeitar URL vazia', async () => {
     const { token } = await createTestUser();
-    const { status } = await authPost(
-      '/api/affiliate/test-conversion',
-      token,
-      { url: '' },
-    );
+    const { status } = await authPost('/api/affiliate/test-conversion', token, { url: '' });
     expect(status).toBe(400);
   });
 });
