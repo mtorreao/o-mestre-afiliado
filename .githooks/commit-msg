@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Commit-msg hook — valida mensagem de commit contra conventional commits.
+#
+# Formato esperado: <type>(<scope>): <subject>
+# Tipos: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+# Exemplo: feat(api): adicionar endpoint de webhook
+
+set -e
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Permite merge commits, revert commits e commits vazios sem validar
+if echo "$COMMIT_MSG" | head -1 | grep -qE "^Merge (branch|remote-tracking branch|pull request)"; then
+  exit 0
+fi
+if echo "$COMMIT_MSG" | head -1 | grep -qE "^Revert \""; then
+  exit 0
+fi
+
+# Valida contra o commitlint
+if [ -f "node_modules/.bin/commitlint" ]; then
+  if ! bunx --no -- commitlint --edit "$COMMIT_MSG_FILE"; then
+    echo ""
+    echo "❌ Mensagem de commit inválida."
+    echo "   Formato esperado: <type>(<scope>): <subject>"
+    echo "   Tipos: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+    echo "   Exemplo: feat(api): adicionar endpoint de webhook"
+    echo "   (use 'git commit --no-verify' apenas em emergências)"
+    exit 1
+  fi
+else
+  # Fallback: regex simples se commitlint não estiver instalado
+  if ! echo "$COMMIT_MSG" | head -1 | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9_-]+\))?!?: .+"; then
+    echo ""
+    echo "❌ Mensagem de commit inválida."
+    echo "   Formato esperado: <type>(<scope>): <subject>"
+    echo "   Primeira linha: '$COMMIT_MSG'"
+    exit 1
+  fi
+fi
+
+exit 0

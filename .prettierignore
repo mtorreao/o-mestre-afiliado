@@ -1,0 +1,40 @@
+# Build artifacts
+node_modules/
+dist/
+build/
+.tsbuildinfo
+*.tsbuildinfo
+out/
+coverage/
+
+# Worktrees
+.worktrees/
+
+# Generated
+apps/api/src/**/*.js
+apps/dispatcher/src/**/*.js
+apps/ingestor/src/**/*.js
+apps/web/src/**/*.js
+apps/web/dist/
+packages/*/src/**/*.js
+packages/*/drizzle.config.js
+
+# Test results
+test-results/
+playwright-report/
+.playwright/
+coverage/
+
+# Cache
+.turbo/
+.cache/
+.bun/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Lockfiles (Bun gerencia)
+bun.lockb
+bun.lock

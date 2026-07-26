@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Pre-push hook — bloqueia push de código que não builda.
+#
+# Roda typecheck + build completo antes de aceitar o push.
+# Cobre o caso de CI falhar por código que compilava em --noEmit
+# mas quebra no build (e.g. imports faltando, paths errados em runtime).
+
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Detecta se há commits a serem enviados para refs/heads/main
+# (skip se push é só de tag, force-push, etc.)
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    # Branch nova — todos os commits são a verificar
+    RANGE="$local_sha..$local_sha"
+    # Quando remote_sha é zero, significa push de branch nova —
+    # precisamos de um range a partir do upstream
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+      RANGE=""
+    else
+      RANGE="$remote_sha..$local_sha"
+    fi
+  else
+    RANGE="$remote_sha..$local_sha"
+  fi
+
+  # Conta commits staged no range
+  if [ -z "$RANGE" ] || [ "$RANGE" = "..$local_sha" ]; then
+    COMMIT_COUNT=$(git rev-list --count "$local_sha" 2>/dev/null || echo "1")
+  else
+    COMMIT_COUNT=$(git rev-list --count "$RANGE" 2>/dev/null || echo "0")
+  fi
+  if [ "$COMMIT_COUNT" = "0" ]; then
+    continue
+  fi
+done
+
+# Verifica se algum arquivo de apps/ ou packages/ mudou em algum
+# commit que ainda não foi pro remote
+APPS_OR_PKGS_CHANGED=$(git diff --name-only @{u}..HEAD 2>/dev/null | grep -E "^(apps|packages)/" || true)
+
+if [ -z "$APPS_OR_PKGS_CHANGED" ]; then
+  echo "pre-push: nenhum apps/ ou packages/ mudou, pulando guards."
+  exit 0
+fi
+
+echo ""
+echo "🪝 pre-push: $(echo "$APPS_OR_PKGS_CHANGED" | wc -l) arquivo(s) em apps/packages modificados"
+echo ""
+
+# ── 1. Typecheck ────────────────────────────────────────────────
+echo "▶ [1/2] bun run typecheck..."
+if ! bun run typecheck; then
+  echo ""
+  echo "❌ Typecheck falhou. Corrija antes de pushar."
+  echo "   (use 'git push --no-verify' apenas em emergências)"
+  exit 1
+fi
+
+# ── 2. Build ────────────────────────────────────────────────────
+echo ""
+echo "▶ [2/2] bun run build..."
+if ! bun run build; then
+  echo ""
+  echo "❌ Build falhou. Corrija antes de pushar."
+  echo "   (use 'git push --no-verify' apenas em emergências)"
+  exit 1
+fi
+
+echo ""
+echo "✅ pre-push: guards passaram."
+exit 0

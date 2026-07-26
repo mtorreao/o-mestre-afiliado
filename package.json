@@ -29,12 +29,20 @@
     "deploy:local": "bun run scripts/deploy-local.ts",
     "healthcheck": "bun run scripts/healthcheck.ts",
     "healthcheck:alert": "bun run scripts/healthcheck.ts --alert",
-    "typecheck": "tsc --noEmit"
-    },
+    "typecheck": "bun run scripts/typecheck-all.ts",
+    "typecheck:root": "tsc --noEmit",
+    "setup:hooks": "bun run scripts/setup-hooks.sh"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
   "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
     "@playwright/test": "^1.61.1",
     "@types/bun": "latest",
     "concurrently": "^9.1.0",
+    "prettier": "^3.3.0",
     "typescript": "^5"
   }
 }

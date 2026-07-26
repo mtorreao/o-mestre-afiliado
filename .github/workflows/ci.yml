@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: typecheck + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      - name: Prettier check (apenas arquivos do diff)
+        run: |
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE=${{ github.event.pull_request.base.sha }}
+          else
+            BASE="HEAD~1"
+          fi
+          FILES=$(git diff --name-only "$BASE"...HEAD --diff-filter=ACMR | grep -E "\.(ts|tsx|js|jsx|json|css|md)$" || true)
+          if [ -n "$FILES" ]; then
+            bunx prettier --check $FILES
+          else
+            echo "Nenhum arquivo formatável no diff, pulando prettier."
+          fi
