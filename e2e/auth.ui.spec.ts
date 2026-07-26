@@ -160,6 +160,8 @@ test.describe('UI - Dashboard', () => {
     await page.goto('/configuracoes');
     // Aguardar AppShell carregar (sidebar visível)
     await page.waitForSelector('text=Configurações', { timeout: 15_000 });
+    // Abas Radix escondem conteúdo inativo: clicar na aba "Shopee"
+    await page.getByRole('tab', { name: /shopee/i }).click();
 
     // Preencher credenciais Shopee pelos placeholders
     const appIdInput = page.locator('input[placeholder="Seu App ID da Shopee"]');
@@ -186,8 +188,11 @@ test.describe('UI - Dashboard', () => {
 
     await page.goto('/');
     await page.evaluate((t: string) => localStorage.setItem('omestre_auth_token', t), data.token);
-    await page.reload();
-    await page.waitForSelector('text=🧪 Testar Conversão');
+    await page.goto('/configuracoes');
+    await page.waitForSelector('text=Configurações', { timeout: 15_000 });
+    // TestConversionSection fica dentro das abas Mercado Livre e Amazon
+    await page.getByRole('tab', { name: /Mercado Livre/i }).click();
+    await page.waitForSelector('text=🧪 Testar Conversão', { timeout: 10_000 });
 
     // Preencher URL e testar
     const testInput = page.locator('input[placeholder="Cole a URL do produto (Shopee ou ML)..."]');
