@@ -119,15 +119,18 @@ async function setCachedImage(url: string, imageUrl: string | null): Promise<voi
  * Segue redirects automaticamente (redirect:'follow').
  * Retorna URL absoluta (resolve relativas contra a página de origem).
  */
-async function fetchOgImage(pageUrl: string): Promise<string | null> {
+async function fetchOgImage(pageUrl: string, cookies?: string): Promise<string | null> {
   try {
+    const headers: Record<string, string> = {
+      'User-Agent': BROWSER_UA,
+      Accept: 'text/html,application/xhtml+xml',
+    };
+    if (cookies) headers.Cookie = cookies;
+
     const res = await fetch(pageUrl, {
       method: 'GET',
       redirect: 'follow',
-      headers: {
-        'User-Agent': BROWSER_UA,
-        Accept: 'text/html,application/xhtml+xml',
-      },
+      headers,
       signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
     });
 
@@ -200,9 +203,14 @@ function extractAmazonDynamicImage(html: string): string | null {
  *   - <img> com src de domínio de imagem conhecido
  * Retorna URL absoluta quando possível.
  */
+export function extractOgImageFromHtml(html: string, baseUrl: string): string | null {
+  const image = extractOgImage(html);
+  return image ? toAbsolute(image, baseUrl) : null;
+}
+
 function extractAnyProductImage(html: string, baseUrl: string): string | null {
-  const og = extractOgImage(html);
-  if (og) return toAbsolute(og, baseUrl);
+  const og = extractOgImageFromHtml(html, baseUrl);
+  if (og) return og;
 
   const amazon = extractAmazonDynamicImage(html);
   if (amazon) return toAbsolute(amazon, baseUrl);
@@ -231,25 +239,29 @@ function logImageStrategy(
   imageUrl: string | null,
 ): void {
   if (imageUrl) {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      service: 'product-image',
-      message: `Imagem encontrada (${strategy})`,
-      marketplace,
-      productUrl: url,
-      imageUrl,
-      strategy,
-    }));
+    console.log(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        service: 'product-image',
+        message: `Imagem encontrada (${strategy})`,
+        marketplace,
+        productUrl: url,
+        imageUrl,
+        strategy,
+      }),
+    );
   } else {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'debug',
-      service: 'product-image',
-      message: `Estratégia ${strategy} falhou`,
-      marketplace,
-      productUrl: url,
-    }));
+    console.log(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'debug',
+        service: 'product-image',
+        message: `Estratégia ${strategy} falhou`,
+        marketplace,
+        productUrl: url,
+      }),
+    );
   }
 }
 
@@ -367,7 +379,10 @@ async function fetchShopeeImage(productUrl: string): Promise<string | null> {
   return null;
 }
 
-async function fetchMercadoLivreImage(productUrl: string): Promise<string | null> {
+async function fetchMercadoLivreImage(
+  productUrl: string,
+  sessionCookies?: string,
+): Promise<string | null> {
   const itemId = extractMlItemId(productUrl);
 
   // Se temos o item_id, a API pública do ML é a fonte mais confiável.
@@ -386,8 +401,8 @@ async function fetchMercadoLivreImage(productUrl: string): Promise<string | null
     }
   }
 
-  // Fallback principal: og:image da página (meli.la → redireciona p/ produto).
-  return fetchOgImage(productUrl);
+  // Fallback autenticado: sem os cookies, o ML pode devolver /gz/account-verification.
+  return fetchOgImage(productUrl, sessionCookies);
 }
 
 /**
@@ -469,7 +484,16 @@ function ensureHttps(url: string): string {
 export async function fetchProductImage(
   marketplace: string,
   productUrl: string,
+  options: {
+    preferredImageUrl?: string | null;
+    sessionCookies?: string | null;
+  } = {},
 ): Promise<string | null> {
+  if (options.preferredImageUrl) {
+    await setCachedImage(productUrl, options.preferredImageUrl);
+    return options.preferredImageUrl;
+  }
+
   // Cache check
   const cached = await getCachedImage(productUrl);
   if (cached) {
@@ -483,7 +507,7 @@ export async function fetchProductImage(
       imageUrl = await fetchShopeeImage(productUrl);
       break;
     case 'mercadolivre':
-      imageUrl = await fetchMercadoLivreImage(productUrl);
+      imageUrl = await fetchMercadoLivreImage(productUrl, options.sessionCookies ?? undefined);
       break;
     case 'amazon':
       imageUrl = await fetchAmazonImage(productUrl);
@@ -495,7 +519,7 @@ export async function fetchProductImage(
 
   // Fallback final: og:image genérico independente de marketplace.
   if (!imageUrl) {
-    imageUrl = await fetchOgImage(productUrl);
+    imageUrl = await fetchOgImage(productUrl, options.sessionCookies ?? undefined);
   }
 
   // Cache o resultado (mesmo null — evita re-fetch).

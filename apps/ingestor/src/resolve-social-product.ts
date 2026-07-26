@@ -18,13 +18,15 @@ import { incrementCounter } from '@omestre/worker-common';
 import type { Browser, Page } from 'playwright-core';
 
 function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) {
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level,
-    service: 'ingestor',
-    message,
-    ...(data && typeof data === 'object' ? data : {}),
-  }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level,
+      service: 'ingestor',
+      message,
+      ...(data && typeof data === 'object' ? data : {}),
+    }),
+  );
 }
 
 // ─── Config ────────────────────────────────────────────────────────────
@@ -77,11 +79,73 @@ export async function closeBrowser(): Promise<void> {
 
 // ─── Estratégia 1: fetch + parse HTML ──────────────────────────────────
 
+export interface SocialProductResolution {
+  productUrl: string;
+  imageUrl: string | null;
+}
+
+function extractOgImage(html: string): string | null {
+  const patterns = [
+    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*?content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]*?(?:property|name)=["'](?:og:image|twitter:image)["']/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+
+  return null;
+}
+
+/** Extrai URL do produto e imagem do mesmo HTML /social/. */
+export function extractSocialProductDataFromHtml(html: string): SocialProductResolution | null {
+  const productUrlMatch = html.match(
+    /href="(https?:\/\/(?:www\.)?mercadolivre\.com\.br\/[^"]*\/p\/MLB\d+[^"]*)"/i,
+  );
+
+  let productUrl: string | null = null;
+  if (productUrlMatch?.[1]) {
+    try {
+      const url = new URL(productUrlMatch[1]);
+      url.search = '';
+      url.hash = '';
+      productUrl = url.toString();
+    } catch {
+      productUrl = productUrlMatch[1];
+    }
+  }
+
+  if (!productUrl) {
+    const irParaMatch = html.match(
+      /<a[^>]+href="(https?:\/\/[^\"]+)"[^>]*>[^<]*Ir\s+para[^<]*<\/a>/i,
+    );
+    if (irParaMatch?.[1]) {
+      try {
+        const url = new URL(irParaMatch[1]);
+        if (/mercadolivre\.com\.br/i.test(url.hostname)) {
+          url.search = '';
+          url.hash = '';
+          productUrl = url.toString();
+        }
+      } catch {
+        // URL inválida — segue sem resolução.
+      }
+    }
+  }
+
+  if (!productUrl) return null;
+
+  return {
+    productUrl,
+    imageUrl: extractOgImage(html),
+  };
+}
+
 /**
- * Tenta extrair a URL do produto do HTML da página /social/.
- * O botão "Ir para o Produto" geralmente é um <a> com href para /p/MLB<id>.
+ * Tenta extrair a URL do produto e a imagem do HTML da página /social/.
  */
-async function tryExtractFromHtml(socialUrl: string): Promise<string | null> {
+async function tryExtractFromHtml(socialUrl: string): Promise<SocialProductResolution | null> {
   try {
     const res = await fetch(socialUrl, {
       headers: {
@@ -95,42 +159,7 @@ async function tryExtractFromHtml(socialUrl: string): Promise<string | null> {
     });
 
     if (!res.ok) return null;
-    const html = await res.text();
-
-    // Procura hrefs que apontam para /p/MLB<id> (página de produto clássica)
-    const productUrlMatch = html.match(
-      /href="(https?:\/\/(?:www\.)?mercadolivre\.com\.br\/[^"]*\/p\/MLB\d+[^"]*)"/i,
-    );
-    if (productUrlMatch?.[1]) {
-      // Limpa params de tracking
-      try {
-        const u = new URL(productUrlMatch[1]);
-        u.search = '';
-        u.hash = '';
-        return u.toString();
-      } catch {
-        return productUrlMatch[1];
-      }
-    }
-
-    // Fallback: procura qualquer link com "Ir para" no texto âncora
-    const irParaMatch = html.match(
-      /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>[^<]*Ir\s+para[^<]*<\/a>/i,
-    );
-    if (irParaMatch?.[1]) {
-      try {
-        const u = new URL(irParaMatch[1]);
-        if (/mercadolivre\.com\.br/i.test(u.hostname)) {
-          u.search = '';
-          u.hash = '';
-          return u.toString();
-        }
-      } catch {
-        // ignora
-      }
-    }
-
-    return null;
+    return extractSocialProductDataFromHtml(await res.text());
   } catch {
     return null;
   }
@@ -138,7 +167,16 @@ async function tryExtractFromHtml(socialUrl: string): Promise<string | null> {
 
 // ─── Estratégia 2: headless browser ────────────────────────────────────
 
-async function tryWithBrowser(socialUrl: string): Promise<string | null> {
+async function extractBrowserImage(page: Page): Promise<string | null> {
+  const content = await page
+    .locator('meta[property="og:image"], meta[name="twitter:image"]')
+    .first()
+    .getAttribute('content')
+    .catch(() => null);
+  return content?.trim() || null;
+}
+
+async function tryWithBrowser(socialUrl: string): Promise<SocialProductResolution | null> {
   let page: Page | null = null;
   try {
     const browser = await getBrowser();
@@ -172,7 +210,9 @@ async function tryWithBrowser(socialUrl: string): Promise<string | null> {
         if (await el.isVisible({ timeout: 2000 })) {
           // Captura a navegação resultante do clique
           const [response] = await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: CLICK_TIMEOUT_MS }).catch(() => null),
+            page
+              .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: CLICK_TIMEOUT_MS })
+              .catch(() => null),
             el.click({ timeout: CLICK_TIMEOUT_MS }),
           ]);
 
@@ -181,7 +221,10 @@ async function tryWithBrowser(socialUrl: string): Promise<string | null> {
             const u = new URL(finalUrl);
             u.search = '';
             u.hash = '';
-            return u.toString();
+            return {
+              productUrl: u.toString(),
+              imageUrl: await extractBrowserImage(page),
+            };
           }
 
           // Se clicou mas não foi para /p/MLB, tenta extrair do HTML da nova página
@@ -193,7 +236,10 @@ async function tryWithBrowser(socialUrl: string): Promise<string | null> {
             const u = new URL(match[1]);
             u.search = '';
             u.hash = '';
-            return u.toString();
+            return {
+              productUrl: u.toString(),
+              imageUrl: await extractBrowserImage(page),
+            };
           }
         }
       } catch {
@@ -210,7 +256,10 @@ async function tryWithBrowser(socialUrl: string): Promise<string | null> {
       const u = new URL(match[1]);
       u.search = '';
       u.hash = '';
-      return u.toString();
+      return {
+        productUrl: u.toString(),
+        imageUrl: await extractBrowserImage(page),
+      };
     }
 
     return null;
@@ -222,7 +271,10 @@ async function tryWithBrowser(socialUrl: string): Promise<string | null> {
     return null;
   } finally {
     if (page) {
-      await page.context().close().catch(() => {});
+      await page
+        .context()
+        .close()
+        .catch(() => {});
     }
   }
 }
@@ -235,9 +287,11 @@ async function tryWithBrowser(socialUrl: string): Promise<string | null> {
  * Tenta primeiro via fetch+parse HTML (rápido, sem browser).
  * Se não achar, usa headless browser para clicar em "Ir para o Produto".
  *
- * @returns URL do produto real, ou null se não conseguiu resolver
+ * @returns URL e imagem do produto real, ou null se não conseguiu resolver
  */
-export async function resolveSocialProductUrl(socialUrl: string): Promise<string | null> {
+export async function resolveSocialProductUrl(
+  socialUrl: string,
+): Promise<SocialProductResolution | null> {
   log('info', 'Resolvendo /social/ para URL de produto real', { socialUrl });
 
   // Estratégia 1: fetch + parse (rápido)
@@ -245,7 +299,8 @@ export async function resolveSocialProductUrl(socialUrl: string): Promise<string
   if (fromHtml) {
     log('info', '/social/ resolvido via HTML (sem browser)', {
       socialUrl,
-      productUrl: fromHtml,
+      productUrl: fromHtml.productUrl,
+      imageUrl: fromHtml.imageUrl,
     });
     return fromHtml;
   }
@@ -255,7 +310,8 @@ export async function resolveSocialProductUrl(socialUrl: string): Promise<string
   if (fromBrowser) {
     log('info', '/social/ resolvido via headless browser', {
       socialUrl,
-      productUrl: fromBrowser,
+      productUrl: fromBrowser.productUrl,
+      imageUrl: fromBrowser.imageUrl,
     });
     return fromBrowser;
   }
