@@ -62,7 +62,7 @@ export async function generateShortLink(originUrl: string): Promise<string | nul
     body,
   });
 
-  const data = await res.json() as Record<string, unknown>;
+  const data = (await res.json()) as Record<string, unknown>;
 
   const dataNode = data?.data as Record<string, unknown> | undefined;
   const generateNode = dataNode?.generateShortLink as Record<string, unknown> | undefined;
@@ -123,7 +123,7 @@ export async function convertShopeeUrlWithCredentials(
       body,
     });
 
-    const data = await res.json() as Record<string, unknown>;
+    const data = (await res.json()) as Record<string, unknown>;
     const dataNode = data?.data as Record<string, unknown> | undefined;
     const generateNode = dataNode?.generateShortLink as Record<string, unknown> | undefined;
     const shortLink = generateNode?.shortLink as string | undefined;
@@ -280,11 +280,7 @@ async function queryProductOfferV2ByKeyword(
   keyword: string,
 ): Promise<ShopeeProductOffer | null> {
   // Limpa o slug: remove acentos, mantém só alfanumérico + espaços
-  const cleanKeyword = keyword
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 100);
+  const cleanKeyword = keyword.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
 
   const body = JSON.stringify({
     query: `query {
@@ -341,7 +337,7 @@ async function shopeeGraphqlRequest(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`,
+        Authorization: `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`,
       },
       body,
       signal: AbortSignal.timeout(8_000),
