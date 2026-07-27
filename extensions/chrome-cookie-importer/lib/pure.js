@@ -1,5 +1,10 @@
 export const ML_DOMAINS = ['.mercadolivre.com.br', '.mercadolibre.com', '.mercadolivre.com'];
 
+export const MAGALU_DOMAINS = ['.magazinevoce.com.br'];
+
+export const MAGALU_ONELINK_API =
+  'https://www.magazinevoce.com.br/azion-rochelle-proxy/v1/shortenlink/onelink';
+
 export const DEFAULT_API_URL = 'https://dev.omestreafiliado.com.br';
 
 export function normalizeApiUrl(value) {

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "O Mestre Afiliado — Cookie Importer",
-  "description": "Sincroniza e valida a sessão do Mercado Livre para operações de afiliado",
-  "version": "1.3.0",
+  "description": "Sincroniza e valida a sessão do Mercado Livre e Magazine Você para operações de afiliado",
+  "version": "1.4.0",
   "permissions": [
     "alarms",
     "cookies",
@@ -19,6 +19,7 @@
     "https://*.shopee.com.br/*",
     "https://*.amazon.com.br/*",
     "https://*.amazon.com/*",
+    "https://*.magazinevoce.com.br/*",
     "https://dev.omestreafiliado.com.br/*",
     "http://127.0.0.1:5441/*",
     "http://127.0.0.1:5442/*"

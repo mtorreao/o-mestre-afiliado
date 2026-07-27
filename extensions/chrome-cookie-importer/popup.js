@@ -1,5 +1,7 @@
 import {
   DEFAULT_API_URL,
+  MAGALU_DOMAINS,
+  MAGALU_ONELINK_API,
   ML_DOMAINS,
   cookieMetadata,
   deduplicateCookies,
@@ -171,6 +173,8 @@ function setupTabs() {
 function setupEvents() {
   $('importBtn').addEventListener('click', importCookies);
   $('validateBtn').addEventListener('click', validateSession);
+  $('magaluTestBtn').addEventListener('click', testMagaluOneLink);
+  $('magaluSyncBtn').addEventListener('click', syncMagaluCookies);
   $('sendOfferBtn').addEventListener('click', sendOffer);
   $('clearLogBtn').addEventListener('click', clearLog);
   $('selectAllGroups').addEventListener('change', () => {
@@ -418,4 +422,95 @@ async function renderLog() {
 async function clearLog() {
   await chrome.runtime.sendMessage({ type: 'clear-offer-log' });
   renderLog();
+}
+
+// ─── Magalu (Magazine Você) ─────────────────────────────────────────────────
+
+/**
+ * Testa a geração de OneLink usando a sessão ativa do navegador.
+ * A extensão tem host_permission para magazinevoce.com.br, então o fetch
+ * envia os cookies da sessão automaticamente (incluindo HttpOnly).
+ */
+async function testMagaluOneLink() {
+  const btn = $('magaluTestBtn');
+  btn.disabled = true;
+  showStatus('magaluStatus', 'Testando OneLink com a sessão do navegador...', 'loading');
+
+  try {
+    const testProduct =
+      'https://www.magazineluiza.com.br/perfume-cebolinha-25ml-edicao-limitada-frasco-de-vidro-jequiti/p/jb440h4cc8/de/frap/';
+    const res = await fetch(MAGALU_ONELINK_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        addPartnerId: true,
+        desktopLink: testProduct,
+        link: testProduct.replace('www.magazineluiza.com.br', 'm.magazineluiza.com.br'),
+      }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.shortenedLink) {
+      $('magaluState').textContent = `🟢 Sessão válida · OneLink OK`;
+      $('magaluState').className = 'session-state valid';
+      showStatus('magaluStatus', `✅ OneLink gerado: ${data.shortenedLink}`, 'success');
+    } else {
+      $('magaluState').textContent = '🔴 Sessão expirada';
+      $('magaluState').className = 'session-state expired';
+      showStatus(
+        'magaluStatus',
+        `❌ ${data.message || 'Sessão inválida. Faça login no magazinevoce.com.br'}`,
+        'error',
+      );
+    }
+  } catch (err) {
+    showStatus('magaluStatus', `❌ Erro: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/**
+ * Lê os cookies do magazinevoce.com.br (incluindo HttpOnly) e envia
+ * para a API para persistência (magalu_affiliates.session_cookies).
+ */
+async function syncMagaluCookies() {
+  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  if (!apiUrl) return showStatus('magaluStatus', 'URL da API inválida', 'error');
+
+  const btn = $('magaluSyncBtn');
+  btn.disabled = true;
+  showStatus('magaluStatus', 'Lendo cookies do Magazine Você...', 'loading');
+
+  try {
+    const allCookies = [];
+    for (const domain of MAGALU_DOMAINS)
+      allCookies.push(...(await chrome.cookies.getAll({ domain })));
+    const cookies = deduplicateCookies(allCookies);
+    const meta = cookieMetadata(cookies);
+    if (!meta.count) {
+      showStatus(
+        'magaluStatus',
+        'Nenhum cookie encontrado. Faça login no magazinevoce.com.br.',
+        'error',
+      );
+      return;
+    }
+
+    const res = await fetch(`${apiUrl}/api/magalu/affiliate/cookies`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ sessionCookies: serializeCookies(cookies) }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      showStatus('magaluStatus', `✅ ${meta.count} cookies Magalu salvos!`, 'success');
+    } else {
+      showStatus('magaluStatus', `❌ Erro do servidor: ${data.error || 'desconhecido'}`, 'error');
+    }
+  } catch (err) {
+    showStatus('magaluStatus', `❌ Erro: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
