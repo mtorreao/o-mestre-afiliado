@@ -29,8 +29,11 @@ import {
   removeDlqItem,
   purgeDlq,
 } from './services/worker-metrics.ts';
+import { makeLogger } from '@omestre/shared';
+import { config } from './config.ts';
 
-const PORT = parseInt(process.env.API_PORT || '5442', 10);
+const log = makeLogger('api');
+const PORT = parseInt(config.API_PORT, 10);
 
 // ─── App ─────────────────────────────────────────────────────────────────
 
@@ -70,7 +73,7 @@ const app = new Elysia()
       };
     }
     // Erros internos não tratados
-    console.error('[api] Erro não tratado:', error);
+    log('error', 'Erro não tratado', { error: String(error) });
     set.status = 500;
     return { success: false, error: 'Erro interno do servidor' };
   })
@@ -177,10 +180,10 @@ const app = new Elysia()
     const limit = parseInt(String(query.limit ?? '20'), 10) || 20;
     // Filtros server-side opcionais
     const queueRaw = query.queue;
-    const queue =
-      queueRaw === 'A' || queueRaw === 'B' ? (queueRaw as 'A' | 'B') : undefined;
+    const queue = queueRaw === 'A' || queueRaw === 'B' ? (queueRaw as 'A' | 'B') : undefined;
     const reasonRaw = query.reason;
-    const failureReason = typeof reasonRaw === 'string' && reasonRaw.length > 0 ? reasonRaw : undefined;
+    const failureReason =
+      typeof reasonRaw === 'string' && reasonRaw.length > 0 ? reasonRaw : undefined;
     // since aceita ISO string (2026-07-20T00:00:00Z) OU duração relativa
     // no formato "Nh" / "Nd" (ex: "1h", "24h", "7d"). Default: sem filtro.
     let since: number | undefined;
@@ -236,12 +239,12 @@ const app = new Elysia()
     // Carrega todos os sourceGroups do PostgreSQL para o Redis
     // para evitar que mensagens sejam ignoradas após restart
     await warmSourceGroupCache();
-  })
+  });
 
 app.listen(PORT);
 
-console.log(`🦊 API rodando em http://localhost:${PORT}`);
-console.log(`📖 Swagger docs em http://localhost:${PORT}/docs`);
-console.log(`📦 Store: PostgreSQL via Drizzle`);
+log('info', `API rodando em http://localhost:${PORT}`);
+log('info', `Swagger docs em http://localhost:${PORT}/docs`);
+log('info', 'Store: PostgreSQL via Drizzle');
 
 export type App = typeof app;

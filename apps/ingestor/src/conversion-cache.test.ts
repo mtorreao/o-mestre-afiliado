@@ -18,6 +18,7 @@ import {
   _setEnabledForTest,
   type CachedConversion,
 } from './conversion-cache.ts';
+import { config } from './config.ts';
 
 // ─── Redis mock helper ─────────────────────────────────────────────────
 
@@ -181,6 +182,7 @@ describe('setCachedConversion — com Redis mockado', () => {
 
   it('usa TTL customizado de WORKER_CONVERSION_CACHE_TTL', async () => {
     process.env.WORKER_CONVERSION_CACHE_TTL = '120';
+    config.reset();
     const url = 'https://example.com/x';
     await setCachedConversion(url, {
       convertedUrl: null,
@@ -192,7 +194,9 @@ describe('setCachedConversion — com Redis mockado', () => {
 
   it('faz parse correto de WORKER_CONVERSION_CACHE_TTL', async () => {
     process.env.WORKER_CONVERSION_CACHE_TTL = '900';
-    await setCachedConversion('https://example.com', {
+    config.reset();
+    const url = 'https://example.com/y';
+    await setCachedConversion(url, {
       convertedUrl: null,
       marketplace: 'shopee',
       timestamp: '2026-07-27T10:00:00.000Z',

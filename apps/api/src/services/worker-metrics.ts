@@ -6,10 +6,7 @@
  * para o /status, e opera na DLQ diretamente via @omestre/worker-common
  * (a DLQ é compartilhada no Redis — não depende de nenhum serviço estar up).
  */
-import {
-  MIRROR_RAW_STREAM,
-  MIRROR_SEND_STREAM,
-} from '@omestre/shared';
+import { MIRROR_RAW_STREAM, MIRROR_SEND_STREAM } from '@omestre/shared';
 import type { MirrorDLQEntry } from '@omestre/shared';
 import {
   listDLQ as dlqList,
@@ -19,18 +16,13 @@ import {
   purgeOldDLQItems,
 } from '@omestre/worker-common';
 import { getRedis } from './redis.ts';
-
-const INGESTOR_METRICS_URL =
-  process.env.WORKER_METRICS_URL || 'http://localhost:9092';
-const DISPATCHER_METRICS_URL =
-  process.env.DISPATCHER_METRICS_URL || 'http://localhost:9093';
-const METRICS_API_KEY = process.env.METRICS_API_KEY || '';
+import { config } from '../config.ts';
 
 export type WorkerServiceName = 'ingestor' | 'dispatcher';
 
 const SERVICE_URLS: Record<WorkerServiceName, string> = {
-  ingestor: INGESTOR_METRICS_URL,
-  dispatcher: DISPATCHER_METRICS_URL,
+  ingestor: config.WORKER_METRICS_URL,
+  dispatcher: config.DISPATCHER_METRICS_URL,
 };
 
 export interface ServiceStatus {
@@ -50,7 +42,7 @@ export interface AggregatedWorkerStatus {
 }
 
 function authHeaders(): Record<string, string> {
-  return METRICS_API_KEY ? { 'x-api-key': METRICS_API_KEY } : {};
+  return config.METRICS_API_KEY ? { 'x-api-key': config.METRICS_API_KEY } : {};
 }
 
 async function fetchServiceStatus(name: WorkerServiceName): Promise<ServiceStatus> {
@@ -135,7 +127,7 @@ export async function listDlqItems(
   }
 
   const hasFilter = Boolean(filters.queue || filters.failureReason || filters.since != null);
-  const effectiveLimit = hasFilter ? Math.max(filters.limit ?? 100, 100) : filters.limit ?? 20;
+  const effectiveLimit = hasFilter ? Math.max(filters.limit ?? 100, 100) : (filters.limit ?? 20);
 
   return await dlqList({
     offset: filters.offset ?? 0,
@@ -151,7 +143,9 @@ export async function listDlqItems(
  *   - RawMessageEvent (tem `messageId`) → Queue A (Ingestor reprocessa)
  *   - SendEvent (tem `sourceMessageId`) → Queue B (Dispatcher reenvia)
  */
-export async function requeueDlqItem(itemId: string): Promise<{ success: boolean; targetStream?: string }> {
+export async function requeueDlqItem(
+  itemId: string,
+): Promise<{ success: boolean; targetStream?: string }> {
   const item = await getDLQItem(itemId);
   if (!item) return { success: false };
 

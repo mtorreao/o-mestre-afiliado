@@ -3,14 +3,14 @@
  * para as rotas de Mercado Livre.
  */
 import { MlAffiliateRepository } from '@omestre/db';
+import { config } from '../../config.ts';
 
 // ─── Env vars ──────────────────────────────────────────────────────────
 
-export const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
-export const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET || '';
-export const REDIRECT_URI =
-  process.env.ML_REDIRECT_URI || 'http://localhost:5442/api/ml/callback';
-export const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5441';
+export const ML_CLIENT_ID = config.ML_CLIENT_ID;
+export const ML_CLIENT_SECRET = config.ML_CLIENT_SECRET;
+export const REDIRECT_URI = config.ML_REDIRECT_URI;
+export const FRONTEND_URL = config.FRONTEND_URL;
 
 // ─── Repository ────────────────────────────────────────────────────────
 
@@ -35,17 +35,13 @@ export async function validateCookies(
   nickname?: string;
 }> {
   try {
-    const res = await fetch(
-      'https://www.mercadolivre.com.br/afiliados/linkbuilder',
-      {
-        headers: {
-          Cookie: sessionCookies,
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        redirect: 'manual',
+    const res = await fetch('https://www.mercadolivre.com.br/afiliados/linkbuilder', {
+      headers: {
+        Cookie: sessionCookies,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
-    );
+      redirect: 'manual',
+    });
 
     const redirected = res.status === 301 || res.status === 302;
     const loginPage = res.headers.get('location')?.includes('login');

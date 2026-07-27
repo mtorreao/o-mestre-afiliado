@@ -3,17 +3,9 @@
  * na tabela `reflected_offers`. Falha de DB não bloqueia o pipeline.
  */
 import { getDb, reflectedOffers } from '@omestre/db';
+import { makeLogger } from '@omestre/shared';
 
-function log(level: 'error', message: string, data?: unknown) {
-  const entry = {
-    timestamp: new Date().toISOString(),
-    level,
-    service: 'ingestor',
-    message,
-    ...(data && typeof data === 'object' ? data : {}),
-  };
-  console.error(JSON.stringify(entry));
-}
+const log = makeLogger('ingestor');
 
 export async function logReflectedOffer(params: {
   affiliateId: number;

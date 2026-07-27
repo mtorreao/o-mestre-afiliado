@@ -9,19 +9,25 @@
  * Stream persiste mensagens e usa consumer group com ACK explícito.
  */
 import Redis from 'ioredis';
+import { makeLogger } from '@omestre/shared';
+import { config } from '../config.ts';
+
+const log = makeLogger('api');
 
 let client: Redis | null = null;
 let enabled = true;
 
-function getRedisUrl(): string | null {
-  return process.env.REDIS_URL || null;
-}
-
+/**
+ * Retorna a conexão Redis singleton, criando-a sob demanda.
+ *
+ * Se a inicialização falhar, retorna null — callers devem fazer
+ * fail-open (pular a operação que dependeria do Redis).
+ */
 export function getRedis(): Redis | null {
   if (!enabled) return null;
   if (client) return client;
 
-  const url = getRedisUrl();
+  const url = config.REDIS_URL;
   if (!url) {
     enabled = false;
     return null;
@@ -33,7 +39,7 @@ export function getRedis(): Redis | null {
       retryStrategy(times) {
         if (times > 3) {
           enabled = false;
-          return null; // stops retrying
+          return null;
         }
         return Math.min(times * 200, 1000);
       },
@@ -61,7 +67,11 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
     const raw = await r.get(key);
     if (!raw) return null;
     return JSON.parse(raw) as T;
-  } catch {
+  } catch (err) {
+    log('warn', 'Falha ao ler do cache', {
+      key,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
@@ -69,13 +79,16 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
 /**
  * Salva no cache com TTL em segundos.
  */
-export async function cacheSet(key: string, value: unknown, ttlSeconds: number = 300): Promise<void> {
+export async function cacheSet(key: string, value: unknown, ttlSeconds = 300): Promise<void> {
   const r = getRedis();
   if (!r) return;
   try {
     await r.setex(key, ttlSeconds, JSON.stringify(value));
-  } catch {
-    // silencia falha de cache
+  } catch (err) {
+    log('warn', 'Falha ao salvar no cache', {
+      key,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -87,8 +100,11 @@ export async function cacheDel(key: string): Promise<void> {
   if (!r) return;
   try {
     await r.del(key);
-  } catch {
-    // silencia
+  } catch (err) {
+    log('warn', 'Falha ao deletar do cache', {
+      key,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -109,7 +125,11 @@ export async function streamAdd(stream: string, message: object): Promise<string
   try {
     const id = await r.xadd(stream, '*', 'payload', JSON.stringify(message));
     return id ?? false;
-  } catch {
+  } catch (err) {
+    log('warn', 'Falha ao adicionar ao stream', {
+      stream,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }

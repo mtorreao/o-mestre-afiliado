@@ -20,7 +20,7 @@ import {
   convertAmazonUrlWithAffiliate,
   generateShortAffiliateLink,
 } from '@omestre/converters';
-import { detectMarketplace } from '@omestre/shared';
+import { detectMarketplace, makeLogger } from '@omestre/shared';
 import { processFailure } from '@omestre/worker-common';
 import {
   UserCredentialsRepository,
@@ -31,20 +31,7 @@ import { resolveRedirectUrl } from './resolve-redirect.ts';
 import { resolveMeliRedirect, isMeliProductUrl } from './resolve-redirect.ts';
 import { getCachedConversion } from './conversion-cache.ts';
 
-function log(level: 'info' | 'warn', message: string, data?: unknown) {
-  const entry = {
-    timestamp: new Date().toISOString(),
-    level,
-    service: 'ingestor',
-    message,
-    ...(data && typeof data === 'object' ? data : {}),
-  };
-  if (level === 'warn') {
-    console.warn(JSON.stringify(entry));
-  } else {
-    console.log(JSON.stringify(entry));
-  }
-}
+const log = makeLogger('ingestor');
 
 /**
  * Converte uma URL de oferta em link de afiliado, considerando o afiliado

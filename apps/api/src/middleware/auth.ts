@@ -12,8 +12,7 @@
 
 import { t } from 'elysia';
 import { jwt } from '@elysiajs/jwt';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'omestre-dev-secret-change-in-production';
+import { config } from '../config.ts';
 
 export interface AuthUser {
   userId: number;
@@ -28,7 +27,7 @@ export interface AuthUser {
 export function createJwtPlugin() {
   return jwt({
     name: 'jwt',
-    secret: JWT_SECRET,
+    secret: config.JWT_SECRET || 'omestre-dev-secret-change-in-production',
     schema: t.Object({
       userId: t.Number(),
       userEmail: t.String(),

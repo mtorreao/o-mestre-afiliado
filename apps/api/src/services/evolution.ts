@@ -8,10 +8,10 @@
  * na porta EVOLUTION_API_PORT (default 5444) no host.
  */
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:5444';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
-const WEBHOOK_URL =
-  process.env.WEBHOOK_URL || 'http://localhost:5442/webhook/message';
+import { makeLogger } from '@omestre/shared';
+import { config } from '../config.ts';
+
+const log = makeLogger('api');
 
 export interface QrCodeResult {
   base64: string | null;
@@ -34,7 +34,7 @@ function sleep(ms: number): Promise<void> {
 function headers(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    apikey: EVOLUTION_API_KEY,
+    apikey: config.EVOLUTION_API_KEY,
   };
 }
 
@@ -69,17 +69,17 @@ export async function createInstance(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/instance/create`, {
+    const res = await fetch(`${config.EVOLUTION_API_URL}/instance/create`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({
         instanceName,
-        token: EVOLUTION_API_KEY,
+        token: config.EVOLUTION_API_KEY,
         integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
         webhook: {
           enabled: true,
-          url: WEBHOOK_URL,
+          url: config.WEBHOOK_URL,
           events: [
             'messages.upsert',
             'connection.update',
@@ -135,7 +135,7 @@ export async function getQrCode(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/instance/qrcode/${instanceName}`, {
+    const res = await fetch(`${config.EVOLUTION_API_URL}/instance/qrcode/${instanceName}`, {
       method: 'GET',
       headers: headers(),
     });
@@ -173,7 +173,7 @@ export async function getConnectionState(instanceName: string): Promise<{
 }> {
   try {
     const res = await fetch(
-      `${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`,
+      `${config.EVOLUTION_API_URL}/instance/connectionState/${instanceName}`,
       {
         method: 'GET',
         headers: headers(),
@@ -192,8 +192,7 @@ export async function getConnectionState(instanceName: string): Promise<{
 
     // Evolution API v2.3.7 retorna { instance: { state: "connecting" } }
     // (versões anteriores usavam { state: { connectionState: "..." } })
-    const rawState =
-      data.instance?.state ?? data.state?.connectionState;
+    const rawState = data.instance?.state ?? data.state?.connectionState;
     let state: 'open' | 'close' | 'connecting' = 'close';
     if (rawState === 'open') state = 'open';
     else if (rawState === 'connecting') state = 'connecting';
@@ -218,7 +217,7 @@ export async function deleteInstance(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/instance/delete/${instanceName}`, {
+    const res = await fetch(`${config.EVOLUTION_API_URL}/instance/delete/${instanceName}`, {
       method: 'DELETE',
       headers: headers(),
     });
@@ -251,7 +250,7 @@ export async function fetchGroups(instanceName: string): Promise<{
 }> {
   try {
     const res = await fetch(
-      `${EVOLUTION_API_URL}/group/fetchAllGroups/${instanceName}?getParticipants=true`,
+      `${config.EVOLUTION_API_URL}/group/fetchAllGroups/${instanceName}?getParticipants=true`,
       {
         method: 'GET',
         headers: headers(),
@@ -316,7 +315,7 @@ export async function fetchGroupInfo(
   // Tenta endpoint específico primeiro (Evolution API v2+)
   try {
     const res = await fetch(
-      `${EVOLUTION_API_URL}/group/groupInfo/${instanceName}/${encodeURIComponent(groupJid)}`,
+      `${config.EVOLUTION_API_URL}/group/groupInfo/${instanceName}/${encodeURIComponent(groupJid)}`,
       {
         method: 'GET',
         headers: headers(),
@@ -346,35 +345,35 @@ export async function fetchGroupInfo(
   }
 }
 
-/** 
+/**
  * Extrai caption de mensagens efêmeras (ephemeralMessage).
  * Evolution API v2: mensagens com tempo de expiração usam este formato.
  */
 function extractEphemeralCaption(msg: Record<string, unknown> | undefined): string | undefined {
   if (!msg) return undefined;
-  
+
   // ephemeralMessage > message > {imageMessage|videoMessage|documentMessage}.caption
   const ephemeral = msg.ephemeralMessage as Record<string, unknown> | undefined;
   if (!ephemeral) return undefined;
-  
+
   const innerMsg = ephemeral.message as Record<string, unknown> | undefined;
   if (!innerMsg) return undefined;
-  
+
   // Tenta imageMessage > caption
   const imgMsg = innerMsg.imageMessage as Record<string, unknown> | undefined;
   if (imgMsg?.caption) return String(imgMsg.caption);
-  
+
   // Tenta videoMessage > caption
   const vidMsg = innerMsg.videoMessage as Record<string, unknown> | undefined;
   if (vidMsg?.caption) return String(vidMsg.caption);
-  
+
   // Tenta documentMessage > caption
   const docMsg = innerMsg.documentMessage as Record<string, unknown> | undefined;
   if (docMsg?.caption) return String(docMsg.caption);
-  
+
   // Tenta conversation direta dentro da ephemeral
   if (innerMsg.conversation) return String(innerMsg.conversation);
-  
+
   // Tenta extendedTextMessage
   const extMsg = innerMsg.extendedTextMessage as Record<string, unknown> | undefined;
   if (extMsg?.text) return String(extMsg.text);
@@ -382,7 +381,7 @@ function extractEphemeralCaption(msg: Record<string, unknown> | undefined): stri
   // Tenta audioMessage
   const audMsg = innerMsg.audioMessage as Record<string, unknown> | undefined;
   if (audMsg?.caption) return String(audMsg.caption);
-  
+
   return undefined;
 }
 
@@ -428,17 +427,14 @@ export async function fetchGroupMessages(
   error?: string;
 }> {
   try {
-    const res = await fetch(
-      `${EVOLUTION_API_URL}/chat/findMessages/${instanceName}`,
-      {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({
-          jid: groupJid,
-          count: limit,
-        }),
-      },
-    );
+    const res = await fetch(`${config.EVOLUTION_API_URL}/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        jid: groupJid,
+        count: limit,
+      }),
+    });
 
     if (!res.ok) {
       const text = await res.text();
@@ -508,9 +504,7 @@ export async function fetchGroupMessages(
             extractEphemeralCaption(msg) ??
             '',
         );
-        const timestamp = item.messageTimestamp
-          ? Number(item.messageTimestamp)
-          : undefined;
+        const timestamp = item.messageTimestamp ? Number(item.messageTimestamp) : undefined;
         return { text: text || '', timestamp };
       })
       .filter((m) => m.text.length > 0);
@@ -532,7 +526,7 @@ export async function logoutInstance(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
+    const res = await fetch(`${config.EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
       method: 'DELETE',
       headers: headers(),
     });
@@ -561,9 +555,7 @@ export async function logoutInstance(instanceName: string): Promise<{
  * - success = true → qrcode NUNCA é null (ou error é preenchido)
  * - success = false → detalhe em error
  */
-export async function createInstanceWithQR(
-  instanceName: string,
-): Promise<{
+export async function createInstanceWithQR(instanceName: string): Promise<{
   success: boolean;
   instance?: { instanceName: string; status: string };
   qrcode?: QrCodeResult;
@@ -610,9 +602,7 @@ export async function createInstanceWithQR(
  *
  * Retorno: { success, instance?, qrcode?, error? }
  */
-export async function refreshInstance(
-  instanceName: string,
-): Promise<{
+export async function refreshInstance(instanceName: string): Promise<{
   success: boolean;
   instance?: { instanceName: string; status: string };
   qrcode?: QrCodeResult;
@@ -655,7 +645,7 @@ export async function sendGroupMessage(
   error?: string;
 }> {
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+    const res = await fetch(`${config.EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({

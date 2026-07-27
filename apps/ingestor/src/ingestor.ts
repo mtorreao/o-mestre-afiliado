@@ -39,6 +39,7 @@ import {
   MIRROR_SEND_STREAM,
   MIRROR_SEND_DEDUP_PREFIX,
   MIRROR_SEND_DEDUP_TTL,
+  makeLogger,
 } from '@omestre/shared';
 import {
   classifyConversionError,
@@ -71,20 +72,7 @@ import { setCachedConversion } from './conversion-cache.ts';
 import { verifyAffiliateLink } from './link-verifier.ts';
 import { buildTemplateMessage } from './template-builder.ts';
 
-function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) {
-  const entry = {
-    timestamp: new Date().toISOString(),
-    level,
-    service: 'ingestor',
-    message,
-    ...(data && typeof data === 'object' ? data : {}),
-  };
-  if (level === 'error') {
-    console.error(JSON.stringify(entry));
-  } else {
-    console.log(JSON.stringify(entry));
-  }
-}
+const log = makeLogger('ingestor');
 
 /**
  * Processa uma mensagem crua da Queue A.

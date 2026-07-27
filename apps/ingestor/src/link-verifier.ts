@@ -10,17 +10,9 @@
  */
 import { eq } from 'drizzle-orm';
 import { getDb, affiliates, MlAffiliateRepository, AmazonAffiliateRepository } from '@omestre/db';
+import { makeLogger } from '@omestre/shared';
 
-function log(level: 'warn', message: string, data?: unknown) {
-  const entry = {
-    timestamp: new Date().toISOString(),
-    level,
-    service: 'ingestor',
-    message,
-    ...(data && typeof data === 'object' ? data : {}),
-  };
-  console.warn(JSON.stringify(entry));
-}
+const log = makeLogger('ingestor');
 
 /**
  * Verifica se o convertedUrl é válido para o afiliado.

@@ -15,19 +15,10 @@
  * O browser é singleton (lazy init) e reutilizado entre chamadas.
  */
 import { incrementCounter } from '@omestre/worker-common';
+import { makeLogger } from '@omestre/shared';
 import type { Browser, Page } from 'playwright-core';
 
-function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) {
-  console.log(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level,
-      service: 'ingestor',
-      message,
-      ...(data && typeof data === 'object' ? data : {}),
-    }),
-  );
-}
+const log = makeLogger('ingestor');
 
 // ─── Config ────────────────────────────────────────────────────────────
 const NAV_TIMEOUT_MS = 20_000;

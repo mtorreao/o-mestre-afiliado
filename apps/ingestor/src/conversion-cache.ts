@@ -7,7 +7,14 @@
 
 import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
-import { MIRROR_CONVERSION_CACHE_PREFIX, MIRROR_CONVERSION_CACHE_TTL } from '@omestre/shared';
+import {
+  MIRROR_CONVERSION_CACHE_PREFIX,
+  MIRROR_CONVERSION_CACHE_TTL,
+  makeLogger,
+} from '@omestre/shared';
+import { config } from './config.ts';
+
+const log = makeLogger('ingestor');
 
 export interface CachedConversion {
   convertedUrl: string | null;
@@ -15,7 +22,7 @@ export interface CachedConversion {
   timestamp: string;
 }
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:5455';
+const REDIS_URL = config.REDIS_URL;
 let redis: Redis | null = null;
 let enabled = true;
 
@@ -93,7 +100,7 @@ export async function setCachedConversion(url: string, result: CachedConversion)
   if (!r) return;
 
   const ttl = parseInt(
-    process.env.WORKER_CONVERSION_CACHE_TTL || String(MIRROR_CONVERSION_CACHE_TTL),
+    config.WORKER_CONVERSION_CACHE_TTL || String(MIRROR_CONVERSION_CACHE_TTL),
     10,
   );
 
