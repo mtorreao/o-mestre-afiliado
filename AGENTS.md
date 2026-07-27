@@ -349,6 +349,12 @@ Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch(
 
 11. **Link curto vs URL params** — link curto (`meli.la`) é preferível mas requer cookies de sessão. URL params funcionam sempre, independente de login.
 
+12. **`isLandingPage` NÃO deve usar `utm_` params como indicador de landing page** — URLs de produto da Shopee frequentemente têm `utm_campaign`, `utm_source`, `utm_medium`, `utm_content`, `utm_term` inseridos pelo próprio sistema de afiliados. Esses parâmetros são de rastreamento e **não indicam** que a página não é um produto. O único indicador confiável de página de produto Shopee é o padrão `-i.SHOPID.ITEMID` no pathname. Arquivo: `apps/ingestor/src/resolve-redirect.ts`, função `resolveShopeeShortlink()`.
+
+13. **`isMeliProductUrl` precisa reconhecer o formato `produto.mercadolivre.com.br/MLB-{id}-{slug}`** — Quando `resolveSocialProductUrl()` extrai a URL de um produto via página `/social/`, o resultado tem formato `produto.mercadolivre.com.br/MLB-{id}-{slug}` (sem `/p/` no path). A função `isMeliProductUrl` só reconhecia `/p/MLB` e `/social/<id>`. Adicionar o padrão `/\/MLB-\d+/i` para cobrir o formato. Arquivo: `apps/ingestor/src/resolve-redirect.ts`, função `isMeliProductUrl()`.
+
+14. **`shopeeGraphqlRequest` vs `generateAuthHeaders` — sincronizar auth header da Shopee** — Duas funções montam o Authorization header da Shopee GraphQL API. A `generateAuthHeaders` (linha 39, usada pelo fluxo de conversão de links) tem o prefixo `SHA256` correto. A `shopeeGraphqlRequest` (linha 344, usada pelo `fetchShopeeImage` via `getProductOffer`) estava sem o `SHA256`, causando "Unsupported Auth Type". **Sempre que alterar o formato do header em uma, alterar na outra também.** Arquivo: `packages/converters/src/shopee.ts`, funções `generateAuthHeaders()` e `shopeeGraphqlRequest()`.
+
 ---
 
 ## 📊 Worker Monitoring
