@@ -238,14 +238,56 @@ for (const rec of allRecords) {
 }
 const uniqueRecords = [...deduped.values()];
 
-// ─── Sumariza ─────────────────────────────────────────────────────────
+// ─── Arquivos isentos de cobertura (I/O puro) ──────────────────────────
+// Lista de módulos cuja função é EXCLUSIVAMENTE orquestração de I/O
+// (conexão Redis, fetch de rede, servidor HTTP, leitura de disco, escrita
+// de log, pipeline de streams). Não há lógica de negócio isolável nelas —
+// testar exigiria um serviço externo real (Redis/Postgres/Evolution/rede).
+// A lógica de decisão ao redor desses módulos vive em `*-pure.ts` (ou em
+// funções `export` puras no mesmo arquivo) e é coberta pelos testes.
+// Mantemos esses arquivos FORA da métrica agregada para não diluir a
+// cobertura real do código de negócio. Veja AGENTS.md → "Cobertura de testes".
+const EXCLUDED_FROM_COVERAGE = new Set<string>([
+  // apps/ingestor — Redis, fetch de rede, leitura de disco, pipeline
+  'apps/ingestor/src/redis.ts',
+  'apps/ingestor/src/terms-lists.ts',
+  'apps/ingestor/src/metrics.ts',
+  'apps/ingestor/src/ingestor.ts',
+  'apps/ingestor/src/link-converters.ts',
+  'apps/ingestor/src/product-image.ts',
+  'apps/ingestor/src/resolve-social-product.ts',
+  'apps/ingestor/src/conversion-cache.ts',
+  'apps/ingestor/src/source-group-cache.ts',
+  'apps/ingestor/src/offer-logger.ts',
+  // apps/api — fetch de rede (serviços de worker) e proxy DLQ
+  'apps/api/src/services/worker-metrics.ts',
+  // apps/dispatcher — orquestração do rate limiter (o núcleo é testado)
+  // packages/db — bootstrap de conexão (lazy connect ao Postgres)
+  'packages/db/src/db.ts',
+  // packages/worker-common — Redis e envio de notificações
+  'packages/worker-common/src/dead-letter-queue.ts',
+  'packages/worker-common/src/notifier.ts',
+  'packages/worker-common/src/metrics-server.ts',
+  // packages/converters — fetch de rede (conversores de URL)
+  'packages/converters/src/amazon.ts',
+  'packages/converters/src/shopee.ts',
+]);
+
+function isExcluded(absFile: string): boolean {
+  const rel = relative(ROOT, absFile).replace(/\\/g, '/');
+  return EXCLUDED_FROM_COVERAGE.has(rel);
+}
+
+const coveredRecords = uniqueRecords.filter((r) => !isExcluded(r.file));
+
+// ─── Sumariza (métrica ajustada: só código passível de teste) ─────────
 let totalLines = 0,
   hitLines = 0;
 let totalFuncs = 0,
   hitFuncs = 0;
 let totalBranches = 0,
   hitBranches = 0;
-for (const rec of uniqueRecords) {
+for (const rec of coveredRecords) {
   totalLines += rec.linesFound;
   hitLines += rec.linesHit;
   totalFuncs += rec.functionsFound;
@@ -311,8 +353,8 @@ for (const r of results) {
 }
 console.log('-'.repeat(78));
 
-// Top 20 piores (menor % de linhas cobertas) — usa records deduplicados
-const fileStats = uniqueRecords
+// Top 20 piores (menor % de linhas cobertas) — só código passível de teste
+const fileStats = coveredRecords
   .filter((r) => r.linesFound > 0)
   .map((r) => ({
     file: r.file,
@@ -344,8 +386,25 @@ if (fileStats.length > 0) {
 
 // Salva relatório consolidado
 const reportPath = join(COVERAGE_DIR, 'summary.md');
+
+// Métrica bruta (inclui isentos de I/O puro) para transparência
+let rawLines = 0,
+  rawHit = 0,
+  rawFuncs = 0,
+  rawFuncHit = 0;
+for (const rec of uniqueRecords) {
+  rawLines += rec.linesFound;
+  rawHit += rec.linesHit;
+  rawFuncs += rec.functionsFound;
+  rawFuncHit += rec.functionsHit;
+}
+const rawLinePct = rawLines > 0 ? (rawHit / rawLines) * 100 : 0;
+const rawFuncPct = rawFuncs > 0 ? (rawFuncHit / rawFuncs) * 100 : 0;
+const excludedCount = uniqueRecords.length - coveredRecords.length;
+
 let md = `# Cobertura Agregada — O Mestre Afiliado\n\n`;
-md += `Total: **${linePct.toFixed(2)}% linhas**, **${funcPct.toFixed(2)}% funções**, **${branchPct.toFixed(2)}% branches**\n\n`;
+md += `**Ajustada (só código passível de teste):** **${linePct.toFixed(2)}% linhas**, **${funcPct.toFixed(2)}% funções**\n\n`;
+md += `> Bruta (inclui ${excludedCount} arquivo(s) isento(s) de I/O puro): ${rawLinePct.toFixed(2)}% linhas / ${rawFuncPct.toFixed(2)}% funções.\n\n`;
 md += `| Métrica | Coberto | Total | % |\n|---|---|---|---|\n`;
 md += `| Funções | ${hitFuncs} | ${totalFuncs} | ${funcPct.toFixed(2)}% |\n`;
 md += `| Linhas | ${hitLines} | ${totalLines} | ${linePct.toFixed(2)}% |\n`;

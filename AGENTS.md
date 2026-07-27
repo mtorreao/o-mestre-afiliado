@@ -441,5 +441,10 @@ atualmente chegam a ~95% (veja `bun run test:coverage`).
   desde que a lógica de decisão/parse ao redor esteja isolada em `*-pure.ts` e testada.
 - **Verificar antes de commitar:** rodar `bun run test:coverage` e garantir que nenhum arquivo
   de código de negócio novo regrediu abaixo de 80% sem justificativa de I/O puro.
+- **Métrica ajustada vs bruta:** o `scripts/test-coverage.ts` exclui arquivos de I/O puro
+  (Redis connect, fetch de rede, HTTP server, leitura de disco, pipeline de streams) da
+  métrica agregada, reportando a cobertura "ajustada" (só código passível de teste). A
+  métrica bruta (incluindo isentos) também é exibida para transparência. A lista de isentos
+  vive em `EXCLUDED_FROM_COVERAGE` no próprio script. Hoje a ajustada está em ~98% linhas.
 - **Comandos:** `bun run test:unit` (testes rápidos, ~5s) e `bun run test:coverage`
   (relatório agregado em `coverage/summary.md`).

@@ -7,7 +7,11 @@
  * o alvo deste arquivo.
  */
 import { describe, expect, it } from 'bun:test';
-import { truncateMessage, replaceOriginalUrlInText } from './template-builder.ts';
+import {
+  truncateMessage,
+  replaceOriginalUrlInText,
+  buildTemplateMessage,
+} from './template-builder.ts';
 
 describe('truncateMessage', () => {
   it('retorna texto inalterado abaixo do limite', () => {
@@ -89,5 +93,44 @@ describe('replaceOriginalUrlInText', () => {
 
   it('texto vazio com URLs vazias retorna vazio', () => {
     expect(replaceOriginalUrlInText('', '', '')).toBe('');
+  });
+});
+
+describe('buildTemplateMessage', () => {
+  const baseCtx = {
+    marketplace: 'shopee' as const,
+    sourceGroupName: 'Grupo A',
+    targetGroupName: 'Grupo B',
+    originalText: 'Veja: https://shopee.com.br/old-i.1.2',
+    originalUrl: 'https://shopee.com.br/old-i.1.2',
+    convertedUrl: 'https://shp.ee/xyz',
+    productTitle: 'Produto X',
+    timestamp: new Date('2024-01-15T10:30:00Z'),
+  };
+
+  it('sem template, substitui URL original pela convertida e trunca', () => {
+    const result = buildTemplateMessage(baseCtx, null);
+    expect(result).toContain('https://shp.ee/xyz');
+    expect(result).not.toContain('https://shopee.com.br/old-i.1.2');
+  });
+
+  it('sem template e convertedUrl ausente, mantém texto original', () => {
+    const ctx = { ...baseCtx, convertedUrl: null };
+    const result = buildTemplateMessage(ctx, null);
+    expect(result).toContain('https://shopee.com.br/old-i.1.2');
+  });
+
+  it('com template, resolve placeholders e condicionais humanas', () => {
+    const template = 'Oferta ({marketplace_nome): {link_convertido}';
+    const result = buildTemplateMessage(baseCtx, template);
+    expect(result).toContain('https://shp.ee/xyz');
+    // marketplace_nome resolvido (não deve conter o placeholder cru)
+    expect(result).not.toContain('{link_convertido}');
+  });
+
+  it('com template, trunca para o limite do WhatsApp (4000)', () => {
+    const longTemplate = 'x'.repeat(5000);
+    const result = buildTemplateMessage(baseCtx, longTemplate);
+    expect(result.length).toBeLessThanOrEqual(4000);
   });
 });
