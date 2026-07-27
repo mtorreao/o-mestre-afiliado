@@ -34,7 +34,7 @@ export async function logReflectedOffer(params: {
       targetGroupJid: params.targetGroupJid,
       originalLink: params.originalLink,
       convertedLink: params.convertedLink ?? params.originalLink,
-      marketplace: params.marketplace as 'shopee' | 'mercadolivre' | 'amazon' | 'unknown',
+      marketplace: params.marketplace as 'shopee' | 'mercadolivre' | 'amazon' | 'magalu' | 'unknown',
       messagePreview: params.messagePreview.slice(0, 500),
       status: params.status,
       failureReason: params.failureReason ?? null,

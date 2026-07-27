@@ -12,7 +12,7 @@ import { users } from './users.ts';
 
 // ─── Enums ──────────────────────────────────────────────────────────
 
-export const marketplaceEnum = pgEnum('marketplace', ['shopee', 'mercadolivre', 'amazon', 'unknown']);
+export const marketplaceEnum = pgEnum('marketplace', ['shopee', 'mercadolivre', 'amazon', 'magalu', 'unknown']);
 
 export const offerStatusEnum = pgEnum('offer_status', ['sent', 'failed', 'blocked']);
 
