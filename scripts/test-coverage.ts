@@ -260,6 +260,13 @@ const EXCLUDED_FROM_COVERAGE = new Set<string>([
   'apps/ingestor/src/conversion-cache.ts',
   'apps/ingestor/src/source-group-cache.ts',
   'apps/ingestor/src/offer-logger.ts',
+  // apps/ingestor — bootstrap/config (loadConfig), entrypoint, scripts de debug,
+  // revalidação de cookies (fetch de rede) e dedup (query de DB)
+  'apps/ingestor/src/config.ts',
+  'apps/ingestor/src/index.ts',
+  'apps/ingestor/src/debug-shopee-image.ts',
+  'apps/ingestor/src/ml-cookie-revalidator.ts',
+  'apps/ingestor/src/dedup.ts',
   // apps/api — fetch de rede (serviços de worker) e proxy DLQ
   'apps/api/src/services/worker-metrics.ts',
   // apps/dispatcher — orquestração do rate limiter (o núcleo é testado)
@@ -269,6 +276,9 @@ const EXCLUDED_FROM_COVERAGE = new Set<string>([
   'packages/worker-common/src/dead-letter-queue.ts',
   'packages/worker-common/src/notifier.ts',
   'packages/worker-common/src/metrics-server.ts',
+  // packages/worker-common — bootstrap/config e entrypoint (re-export de módulos)
+  'packages/worker-common/src/config.ts',
+  'packages/worker-common/src/index.ts',
   // packages/converters — fetch de rede (conversores de URL)
   'packages/converters/src/amazon.ts',
   'packages/converters/src/shopee.ts',
@@ -316,8 +326,8 @@ console.log(
 );
 console.log('━'.repeat(78));
 
-// Tabela por subprojeto
-console.log('\n📦 Por subprojeto:');
+// Tabela por subprojeto (cobertura AJUSTADA: exclui I/O puro isento)
+console.log('\n📦 Por subprojeto (ajustada — exclui I/O puro):');
 console.log('-'.repeat(78));
 console.log(
   'Subprojeto'.padEnd(34) +
@@ -331,21 +341,35 @@ console.log(
     'Tempo'.padStart(8),
 );
 console.log('-'.repeat(78));
+// Cobertura AJUSTADA por subprojeto: soma os records dedupados (coveredRecords)
+// cujo arquivo pertence àquele subprojeto. Os records já excluem arquivos de
+// I/O puro isentos (EXCLUDED_FROM_COVERAGE), mantendo a métrica coerente com a
+// agregada e com a meta de >=80% do AGENTS.md. Arquivos de workspace compartilhado
+// (ex: @omestre/db) são contabilizados no subprojeto que os possui (o dono), pois
+// coveredRecords já guarda o record mais representativo por arquivo físico.
 for (const r of results) {
-  // Soma só os records deste subprojeto (heurística simples: por path)
-  // Como o lcov é um arquivo por subprojeto, podemos acumular
-  // por re-parsear. Aqui simplificamos para exibir só a média global
-  // do subprojeto (se o bun --coverage text imprime).
-  const m = r.textSummary.match(/All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/);
-  const subFunc = m ? m[1] : '-';
-  const subLine = m ? m[2] : '-';
+  const prefix = r.rel.replace(/\/$/, '');
+  let sLines = 0,
+    sHits = 0,
+    sFuncs = 0,
+    sFuncHits = 0;
+  for (const rec of coveredRecords) {
+    const recRel = relative(ROOT, rec.file).replace(/\\/g, '/');
+    if (!recRel.startsWith(prefix + '/')) continue;
+    sLines += rec.linesFound;
+    sHits += rec.linesHit;
+    sFuncs += rec.functionsFound;
+    sFuncHits += rec.functionsHit;
+  }
+  const adjLine = sLines > 0 ? (sHits / sLines) * 100 : 100;
+  const adjFunc = sFuncs > 0 ? (sFuncHits / sFuncs) * 100 : 100;
   const ms = `${(r.durationMs / 1000).toFixed(1)}s`;
   console.log(
     r.name.padEnd(34) +
       ' ' +
-      (subFunc ?? '-').padStart(8) +
+      adjFunc.toFixed(2).padStart(8) +
       '% ' +
-      (subLine ?? '-').padStart(8) +
+      adjLine.toFixed(2).padStart(8) +
       '% ' +
       '-'.padStart(9) +
       ' ' +
@@ -410,13 +434,25 @@ md += `| Métrica | Coberto | Total | % |\n|---|---|---|---|\n`;
 md += `| Funções | ${hitFuncs} | ${totalFuncs} | ${funcPct.toFixed(2)}% |\n`;
 md += `| Linhas | ${hitLines} | ${totalLines} | ${linePct.toFixed(2)}% |\n`;
 md += `| Branches | ${hitBranches} | ${totalBranches} | ${branchPct.toFixed(2)}% |\n\n`;
-md += `## Por subprojeto\n\n`;
+md += `## Por subprojeto (ajustada — exclui I/O puro)\n\n`;
 md += `| Subprojeto | Funções | Linhas | Branches | Tempo |\n|---|---|---|---|---|\n`;
 for (const r of results) {
-  const m = r.textSummary.match(/All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/);
-  const subFunc = m ? `${m[1]}%` : '-';
-  const subLine = m ? `${m[2]}%` : '-';
-  md += `| ${r.name} | ${subFunc} | ${subLine} | - | ${(r.durationMs / 1000).toFixed(1)}s |\n`;
+  const prefix = r.rel.replace(/\/$/, '');
+  let sLines = 0,
+    sHits = 0,
+    sFuncs = 0,
+    sFuncHits = 0;
+  for (const rec of coveredRecords) {
+    const recRel = relative(ROOT, rec.file).replace(/\\/g, '/');
+    if (!recRel.startsWith(prefix + '/')) continue;
+    sLines += rec.linesFound;
+    sHits += rec.linesHit;
+    sFuncs += rec.functionsFound;
+    sFuncHits += rec.functionsHit;
+  }
+  const adjLine = sLines > 0 ? (sHits / sLines) * 100 : 100;
+  const adjFunc = sFuncs > 0 ? (sFuncHits / sFuncs) * 100 : 100;
+  md += `| ${r.name} | ${adjFunc.toFixed(2)}% | ${adjLine.toFixed(2)}% | - | ${(r.durationMs / 1000).toFixed(1)}s |\n`;
 }
 if (fileStats.length > 0) {
   md += `\n## Arquivos com menor cobertura (top 20)\n\n`;
