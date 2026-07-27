@@ -56,16 +56,41 @@ export { UserRepository } from './repository/users.repository.ts';
 export type { User, NewUser, UserPublic } from './repository/users.repository.ts';
 
 export { UserCredentialsRepository } from './repository/userCredentials.repository.ts';
-export type { UserCredentials, NewUserCredentials, UserCredentialsInput } from './repository/userCredentials.repository.ts';
+export type {
+  UserCredentials,
+  NewUserCredentials,
+  UserCredentialsInput,
+} from './repository/userCredentials.repository.ts';
 
 export { WhatsAppInstanceRepository } from './repository/whatsAppInstances.repository.ts';
-export type { WhatsAppInstance, NewWhatsAppInstance, WhatsAppInstancePublic } from './repository/whatsAppInstances.repository.ts';
+export type {
+  WhatsAppInstance,
+  NewWhatsAppInstance,
+  WhatsAppInstancePublic,
+} from './repository/whatsAppInstances.repository.ts';
 
 export { AffiliatesRepository } from './repository/affiliates.repository.ts';
-export type { Affiliate, NewAffiliate, NotificationConfig } from './repository/affiliates.repository.ts';
+export type {
+  Affiliate,
+  NewAffiliate,
+  NotificationConfig,
+} from './repository/affiliates.repository.ts';
 
 export { MirrorLogRepository } from './repository/mirrorLog.repository.ts';
-export type { MirrorLogRow, MirrorLogFilters, MirrorLogResponse } from './repository/mirrorLog.repository.ts';
+export type {
+  MirrorLogRow,
+  MirrorLogFilters,
+  MirrorLogResponse,
+} from './repository/mirrorLog.repository.ts';
 
 export { MirrorRepository } from './repository/mirrors.repository.ts';
-export type { Mirror, NewMirror, MirrorListFilters, MirrorListResponse, MirrorUpdateData } from './repository/mirrors.repository.ts';
+export type {
+  Mirror,
+  NewMirror,
+  MirrorListFilters,
+  MirrorListResponse,
+  MirrorUpdateData,
+} from './repository/mirrors.repository.ts';
+
+export { FeatureFlagRepository } from './repository/featureFlags.repository.ts';
+export type { FeatureFlagRow, NewFeatureFlagRow } from './repository/featureFlags.repository.ts';
