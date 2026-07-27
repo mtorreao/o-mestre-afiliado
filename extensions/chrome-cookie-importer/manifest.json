@@ -1,18 +1,14 @@
 {
   "manifest_version": 3,
   "name": "O Mestre Afiliado — Cookie Importer",
-  "description": "Importa cookies de sessão do Mercado Livre para gerar links curtos de afiliado",
-  "version": "1.0.0",
-  "permissions": [
-    "cookies",
-    "storage",
-    "tabs",
-    "scripting"
-  ],
+  "description": "Importa cookies de sessão do Mercado Livre e Magazine Você para gerar links de afiliado",
+  "version": "1.1.0",
+  "permissions": ["cookies", "storage", "tabs", "scripting"],
   "host_permissions": [
     "https://*.mercadolivre.com.br/*",
     "https://*.mercadolibre.com/*",
     "https://*.mercadolivre.com/*",
+    "https://*.magazinevoce.com.br/*",
     "https://dev.omestreafiliado.com.br/*",
     "http://127.0.0.1:5441/*",
     "http://127.0.0.1:5442/*"

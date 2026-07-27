@@ -70,6 +70,29 @@
       margin-top: 8px;
     }
     button.secondary:hover { background: #334155; }
+    .marketplace-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .marketplace-btn {
+      flex: 1;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .marketplace-btn:hover { background: #334155; color: #e2e8f0; }
+    .marketplace-btn.active {
+      background: #312e81;
+      border-color: #6366f1;
+      color: #e2e8f0;
+    }
     .status {
       margin-top: 12px;
       padding: 10px 12px;
@@ -144,9 +167,15 @@
       <img src="icons/icon128.png" alt="O Mestre Afiliado" class="header-logo" />
       <div class="header-text">
         <h1>O Mestre Afiliado</h1>
-        <div class="subtitle">Importar cookies de sessão do ML</div>
+        <div class="subtitle" id="subtitle">Importar cookies de sessão</div>
       </div>
-      <div class="badge" id="mlStatus">🔴 ML</div>
+      <div class="badge" id="marketplaceStatus">🔴 ML</div>
+    </div>
+
+    <label for="marketplace">Marketplace</label>
+    <div class="marketplace-row">
+      <button class="marketplace-btn active" data-mp="ml" id="mpMl">🛒 Mercado Livre</button>
+      <button class="marketplace-btn" data-mp="magalu" id="mpMagalu">🛍️ Magalu</button>
     </div>
 
     <label for="apiUrl">URL da API</label>
