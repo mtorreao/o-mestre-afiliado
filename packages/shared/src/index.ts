@@ -16,10 +16,10 @@ export interface ConversionResult {
 export type Marketplace = 'shopee' | 'mercadolivre' | 'amazon' | 'magalu' | 'unknown';
 
 export type ConversionMethod =
-  | 'api'        // API oficial (Shopee GraphQL, ML OAuth)
-  | 'cookies'    // Simulação via cookies (ML Link Builder)
-  | 'fallback'   // Parâmetros na URL (ML ?meliid=, Amazon ?tag=)
-  | 'promozone'  // Redirect via go.promozone.ai
+  | 'api' // API oficial (Shopee GraphQL, ML OAuth)
+  | 'cookies' // Simulação via cookies (ML Link Builder)
+  | 'fallback' // Parâmetros na URL (ML ?meliid=, Amazon ?tag=)
+  | 'promozone' // Redirect via go.promozone.ai
   | 'unknown';
 
 // ─── Configuração ────────────────────────────────────────────────────────
@@ -52,9 +52,30 @@ export interface AmazonConfig {
 // ─── Utilitários ─────────────────────────────────────────────────────────
 
 export const MARKETPLACE_DOMAINS: Record<Marketplace, RegExp[]> = {
-  shopee: [/shopee\.com\.br/i, /s\.shopee\.com\.br/i, /shopee\.com/i, /go\.promozone\.ai\/shopee/i, /go\.promozone\.ai\/shp/i],
-  mercadolivre: [/mercadolivre\.com\.br/i, /mercadolivr\.com\.br/i, /mercadolibre\.com(\.[a-z]{2})?/i, /meli\.la/i, /go\.promozone\.ai\/mercadolivre/i, /go\.promozone\.ai\/ml/i, /go\.promozone\.ai\/mercadolibre/i],
-  amazon: [/amazon\.com\.br/i, /amazon\.com/i, /amzn\.to/i, /go\.promozone\.ai\/amazon/i, /go\.promozone\.ai\/amzn/i, /go\.promozone\.ai\/amz/i],
+  shopee: [
+    /shopee\.com\.br/i,
+    /s\.shopee\.com\.br/i,
+    /shopee\.com/i,
+    /go\.promozone\.ai\/shopee/i,
+    /go\.promozone\.ai\/shp/i,
+  ],
+  mercadolivre: [
+    /mercadolivre\.com\.br/i,
+    /mercadolivr\.com\.br/i,
+    /mercadolibre\.com(\.[a-z]{2})?/i,
+    /meli\.la/i,
+    /go\.promozone\.ai\/mercadolivre/i,
+    /go\.promozone\.ai\/ml/i,
+    /go\.promozone\.ai\/mercadolibre/i,
+  ],
+  amazon: [
+    /amazon\.com\.br/i,
+    /amazon\.com/i,
+    /amzn\.to/i,
+    /go\.promozone\.ai\/amazon/i,
+    /go\.promozone\.ai\/amzn/i,
+    /go\.promozone\.ai\/amz/i,
+  ],
   magalu: [/magalu\.com\.br/i, /maga\.lu/i, /go\.promozone\.ai\/magalu/i],
   unknown: [],
 } as const;
@@ -128,10 +149,7 @@ export const KNOWN_PLACEHOLDERS = new Set([
  * Placeholders não reconhecidos são mantidos como texto literal.
  * Placeholders condicionais ({?...}, {/}) são passados sem modificação.
  */
-export function resolvePlaceholders(
-  input: string,
-  ctx: TemplateContext,
-): string {
+export function resolvePlaceholders(input: string, ctx: TemplateContext): string {
   let result = input;
 
   // Prepara o texto com link convertido
@@ -175,11 +193,7 @@ export function findUnknownPlaceholders(template: string): string[] {
   while ((match = placeholderRegex.exec(template)) !== null) {
     const name = match[1]!;
     // Ignora condicionais (começam com ?, :, /) e placeholders conhecidos
-    if (
-      name.startsWith('?') ||
-      name.startsWith(':') ||
-      name.startsWith('/')
-    ) continue;
+    if (name.startsWith('?') || name.startsWith(':') || name.startsWith('/')) continue;
     if (!KNOWN_PLACEHOLDERS.has(name)) {
       unknown.push(name);
     }
@@ -188,7 +202,26 @@ export function findUnknownPlaceholders(template: string): string[] {
   return unknown;
 }
 
-// ─── Parser de Condicionais ─────────────────────────────────────────────
+// ─── Logger ──────────────────────────────────────────────────────────
+
+export { makeLogger } from './logger.ts';
+export type { LogLevel, LogFn } from './logger.ts';
+
+// ─── Config Service ──────────────────────────────────────────────────
+
+export {
+  loadConfig,
+  resetConfigForTest,
+  loadBaseConfig,
+  baseConfigSchema,
+  str,
+  num,
+  bool,
+  enumVar,
+} from './config-service.ts';
+export type { ConfigType, Schema, InferSchema } from './config-service.ts';
+
+// ─── Parser de Condicionais ──────────────────────────────────────────
 
 export {
   evaluateCondition,
