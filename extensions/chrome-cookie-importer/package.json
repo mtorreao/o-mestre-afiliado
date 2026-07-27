@@ -1,0 +1,8 @@
+{
+  "name": "chrome-cookie-importer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test tests/pure.test.js"
+  }
+}

@@ -1,14 +1,9 @@
 {
   "manifest_version": 3,
   "name": "O Mestre Afiliado — Cookie Importer",
-  "description": "Importa cookies de sessão do Mercado Livre para gerar links curtos de afiliado",
-  "version": "1.0.0",
-  "permissions": [
-    "cookies",
-    "storage",
-    "tabs",
-    "scripting"
-  ],
+  "description": "Sincroniza e valida a sessão do Mercado Livre para operações de afiliado",
+  "version": "1.1.0",
+  "permissions": ["alarms", "cookies", "notifications", "storage", "tabs"],
   "host_permissions": [
     "https://*.mercadolivre.com.br/*",
     "https://*.mercadolibre.com/*",
@@ -17,6 +12,10 @@
     "http://127.0.0.1:5441/*",
     "http://127.0.0.1:5442/*"
   ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "options_page": "options.html",
   "action": {
     "default_popup": "popup.html",
     "default_title": "O Mestre Afiliado",

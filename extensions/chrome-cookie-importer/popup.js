@@ -1,10 +1,6 @@
 // popup.js — Lógica da extensão Cookie Importer
 
-const ML_DOMAINS = [
-  '.mercadolivre.com.br',
-  '.mercadolibre.com',
-  '.mercadolivre.com',
-];
+const ML_DOMAINS = ['.mercadolivre.com.br', '.mercadolibre.com', '.mercadolivre.com'];
 
 const $ = (id) => document.getElementById(id);
 
@@ -204,7 +200,9 @@ function updateSelectOptions() {
  */
 async function detectMelitat() {
   // Procura uma tab aberta do ML
-  const tabs = await chrome.tabs.query({ url: ['*://*.mercadolivre.com.br/*', '*://*.mercadolibre.com/*'] });
+  const tabs = await chrome.tabs.query({
+    url: ['*://*.mercadolivre.com.br/*', '*://*.mercadolibre.com/*'],
+  });
   if (tabs.length === 0) return null;
 
   const tab = tabs[0];
