@@ -5,6 +5,7 @@
  * - Token JWT no localStorage
  * - Login, Register, Logout
  * - Estado do usuário logado
+ * - isAdmin para feature flags
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -13,6 +14,7 @@ interface User {
   id: number;
   email: string;
   name: string;
+  isAdmin?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -99,6 +101,7 @@ export function useAuth() {
     token: state.token,
     loading: state.loading,
     isAuthenticated: !!state.user,
+    isAdmin: !!state.user?.isAdmin,
     login,
     register,
     logout,

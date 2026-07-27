@@ -18,22 +18,23 @@ import {
   X,
   ChevronRight,
   GitFork,
+  Flag,
 } from 'lucide-react';
 
-export type NavItem = 'dashboard' | 'settings' | 'mirrors' | 'mirror-logs' | 'mirror-form' | 'worker-status';
+export type NavItem = 'dashboard' | 'settings' | 'mirrors' | 'mirror-logs' | 'mirror-form' | 'worker-status' | 'feature-flags';
 
 interface AppShellLayoutProps {
   userName: string;
   onLogout: () => void;
+  isAdmin?: boolean;
 }
 
 /** Mapeia o pathname atual para um NavItem */
 function pathToNav(pathname: string): NavItem {
   const path = pathname.replace(/^\//, '') || 'dashboard';
-  if (['dashboard', 'settings', 'mirrors', 'mirror-form', 'mirror-logs', 'worker-status'].includes(path)) {
+  if (['dashboard', 'settings', 'mirrors', 'mirror-form', 'mirror-logs', 'worker-status', 'feature-flags'].includes(path)) {
     return path as NavItem;
   }
-  // Se for mirror-form/:id, também reconhece
   if (path.startsWith('mirror-form/')) return 'mirror-form';
   return 'dashboard';
 }
@@ -45,9 +46,10 @@ const pageTitles: Record<NavItem, string> = {
   'mirror-logs': 'Logs de Espelhamento',
   'mirror-form': 'Novo Espelhamento',
   'worker-status': 'Status do Worker',
+  'feature-flags': 'Feature Flags',
 };
 
-export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
+export function AppShellLayout({ userName, onLogout, isAdmin }: AppShellLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -56,10 +58,17 @@ export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { id: 'mirrors', label: 'Espelhamentos', icon: <GitFork size={18} /> },
+    { id: 'feature-flags', label: 'Feature Flags', icon: <Flag size={18} /> },
     { id: 'settings', label: 'Configurações', icon: <Settings size={18} /> },
     { id: 'mirror-logs', label: 'Logs de espelhamento', icon: <Repeat2 size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
+
+  // Filtra itens admin se não for admin
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.id === 'feature-flags') return !!isAdmin;
+    return true;
+  });
 
   function handleNavigate(id: NavItem) {
     const path = id === 'dashboard' ? '/' : `/${id}`;
@@ -99,7 +108,7 @@ export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
 
         {/* Navegação — padding 0.75rem vertical (≥ 44px total) */}
         <nav className="sidebar-nav">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = currentNav === item.id;
             return (
               <button
