@@ -1,54 +1,99 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { width: 380px; min-height: 240px; background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; }
-    .container { padding: 16px; }
-    h1 { font-size: 16px; margin-bottom: 4px; background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .subtitle { font-size: 12px; color: #64748b; margin-bottom: 16px; }
-    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
-    select, input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 13px; outline: none; margin-bottom: 12px; }
-    button { width: 100%; padding: 10px; border-radius: 8px; border: none; background: #6366f1; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-    button:hover { background: #4f46e5; }
-    button:disabled { background: #6366f180; cursor: not-allowed; }
-    button.secondary { background: #1e293b; border: 1px solid #334155; color: #94a3b8; margin-top: 8px; }
-    .status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; }
-    .status.success, .session-state.valid { display: block; background: #14532d; border: 1px solid #166534; color: #86efac; }
-    .status.error, .session-state.expired { display: block; background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; }
-    .status.loading { display: block; background: #1e3a5f; border: 1px solid #1d4ed8; color: #93c5fd; }
-    .session-state { margin: 8px 0 12px; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
-    .session-state.neutral { background: #1e293b; color: #94a3b8; }
-    .header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-    .header-logo { width: 40px; height: 40px; border-radius: 8px; }
-    .header-text { flex: 1; }
-    .badge { background: #1e293b; color: #64748b; font-size: 10px; padding: 3px 8px; border-radius: 12px; }
-    .footer { text-align: center; font-size: 11px; color: #475569; margin-top: 16px; line-height: 1.4; }
-  </style>
+<meta charset="utf-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { width: 400px; min-height: 300px; background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; }
+.container { padding: 16px; }
+h1 { font-size: 16px; margin-bottom: 2px; background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { font-size: 12px; color: #64748b; margin-bottom: 12px; }
+label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+select, input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 13px; outline: none; margin-bottom: 8px; }
+input.half { width: 48%; }
+.row { display: flex; gap: 4%; margin-bottom: 0; }
+button { width: 100%; padding: 10px; border-radius: 8px; border: none; background: #6366f1; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .2s; }
+button:hover { background: #4f46e5; }
+button:disabled { background: #6366f180; cursor: not-allowed; }
+button.secondary { background: #1e293b; border: 1px solid #334155; color: #94a3b8; margin-top: 6px; }
+button.success { background: #059669; }
+button.success:hover { background: #047857; }
+.status { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; }
+.status.success { display: block; background: #14532d; border: 1px solid #166534; color: #86efac; }
+.status.error { display: block; background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; }
+.status.loading { display: block; background: #1e3a5f; border: 1px solid #1d4ed8; color: #93c5fd; }
+.session-state { margin: 6px 0 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
+.session-state.neutral { background: #1e293b; color: #94a3b8; }
+.session-state.valid { background: #14532d; color: #86efac; }
+.session-state.expired { background: #7f1d1d; color: #fca5a5; }
+.header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.header-logo { width: 36px; height: 36px; border-radius: 8px; }
+.header-text { flex: 1; }
+.badge { background: #1e293b; color: #64748b; font-size: 10px; padding: 3px 8px; border-radius: 12px; }
+.hr { border: none; border-top: 1px solid #1e293b; margin: 12px 0; }
+.section-title { font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 8px; }
+.url-preview { font-size: 11px; color: #475569; word-break: break-all; margin-bottom: 8px; }
+.footer { text-align: center; font-size: 11px; color: #475569; margin-top: 12px; line-height: 1.4; }
+</style>
 </head>
 <body>
-  <div class="container">
-    <div class="header-row">
-      <img src="icons/icon128.png" alt="" class="header-logo">
-      <div class="header-text"><h1>O Mestre Afiliado</h1><div class="subtitle">Sincronização segura da sessão ML</div></div>
-      <div class="badge" id="mlStatus">🔴 ML</div>
+<div class="container">
+  <div class="header-row">
+    <img src="icons/icon128.png" alt="" class="header-logo">
+    <div class="header-text"><h1>O Mestre Afiliado</h1><div class="subtitle">Criar oferta para grupos</div></div>
+    <div class="badge" id="mlStatus">🔴 ML</div>
+  </div>
+
+  <label for="apiUrl">URL da API</label>
+  <input type="url" id="apiUrl" value="https://dev.omestreafiliado.com.br" placeholder="https://dev.omestreafiliado.com.br">
+
+  <label for="affiliateSelect">Afiliado</label>
+  <select id="affiliateSelect"><option value="">— Carregando... —</option></select>
+
+  <!-- Session UI (hidden when product detected) -->
+  <div class="session-ui">
+    <div id="sessionState" class="session-state neutral">Sessão ainda não validada</div>
+    <button id="importBtn" disabled>📥 Sincronizar cookies</button>
+    <button id="validateBtn" class="secondary" disabled>🔎 Validar sessão</button>
+    <hr class="hr">
+  </div>
+
+  <!-- Offer UI (hidden when no product) -->
+  <div class="offer-ui" style="display:none">
+    <hr class="hr">
+    <div class="section-title">📦 Nova oferta</div>
+    <label>Marketplace <span id="offerMarketplace" style="color:#94a3b8">—</span></label>
+    <div class="url-preview" id="offerUrlPreview"></div>
+
+    <label for="offerTitle">Título (opcional)</label>
+    <input id="offerTitle" placeholder="Ex: Oferta imperdível!">
+
+    <label for="offerProductName">Nome do produto</label>
+    <input id="offerProductName">
+
+    <div class="row">
+      <div style="width:48%">
+        <label for="offerPriceFrom">De</label>
+        <input id="offerPriceFrom" class="half" placeholder="R$ 199,90">
+      </div>
+      <div style="width:48%">
+        <label for="offerPrice">Por</label>
+        <input id="offerPrice" class="half" placeholder="R$ 149,90">
+      </div>
     </div>
 
-    <label for="apiUrl">URL da API</label>
-    <input type="url" id="apiUrl" value="https://dev.omestreafiliado.com.br" placeholder="https://dev.omestreafiliado.com.br">
+    <label for="offerCoupon">Cupom (opcional)</label>
+    <input id="offerCoupon" placeholder="Ex: AFILIADO10">
 
-    <label for="affiliateSelect">Afiliado Mercado Livre</label>
-    <select id="affiliateSelect"><option value="">— Carregando afiliados... —</option></select>
-    <div id="sessionState" class="session-state neutral">Sessão ainda não validada</div>
-
-    <button id="importBtn" disabled>📥 Sincronizar e validar</button>
-    <button id="validateBtn" class="secondary" disabled>🔎 Validar sessão atual</button>
-    <button id="optionsBtn" class="secondary">⚙️ Abrir configurações</button>
-
-    <div class="status" id="status"></div>
-    <div class="footer">Os cookies são lidos apenas após sua ação e enviados somente para a API configurada. Nenhum valor é exibido nesta interface.</div>
+    <button id="sendOfferBtn" class="success" disabled>🚀 Enviar para grupos</button>
   </div>
-  <script type="module" src="popup.js"></script>
+
+  <div class="status" id="status"></div>
+  <div class="footer" id="offerHelp">
+    Produto detectado automaticamente na página. Preencha e envie para seus grupos de destino.
+  </div>
+  <button id="optionsBtn" class="secondary" style="margin-top:8px">⚙️ Configurações</button>
+</div>
+<script type="module" src="popup.js"></script>
 </body>
 </html>

@@ -10,22 +10,44 @@ import {
 } from './lib/pure.js';
 
 const $ = (id) => document.getElementById(id);
+const PRODUCT_DATA_TTL = 5 * 60 * 1000; // 5 min
+
 let affiliates = [];
 let selectedUserId = null;
 let activeTab = null;
+let productData = null;
 
 void init();
 
 async function init() {
-  const saved = await chrome.storage.local.get(['apiUrl', 'sessionState']);
+  const saved = await chrome.storage.local.get([
+    'apiUrl',
+    'sessionState',
+    'productData',
+    'productDataAt',
+  ]);
   $('apiUrl').value = saved.apiUrl || DEFAULT_API_URL;
+
+  productData = getValidProductData(saved.productData, saved.productDataAt);
+
   await checkActiveTab();
   await loadAffiliates(saved.sessionState);
+
   $('apiUrl').addEventListener('change', saveApiUrl);
   $('affiliateSelect').addEventListener('change', onAffiliateChange);
   $('importBtn').addEventListener('click', importCookies);
   $('validateBtn').addEventListener('click', validateSession);
   $('optionsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  $('sendOfferBtn').addEventListener('click', sendOffer);
+
+  if (productData) renderOfferForm();
+  else renderSessionUi();
+}
+
+function getValidProductData(data, timestamp) {
+  if (!data || !timestamp) return null;
+  if (Date.now() - timestamp > PRODUCT_DATA_TTL) return null;
+  return data;
 }
 
 async function checkActiveTab() {
@@ -103,6 +125,33 @@ function setActionState() {
   const has = Boolean(selectedUserId);
   $('importBtn').disabled = !has;
   $('validateBtn').disabled = !has;
+  $('sendOfferBtn').disabled = !has || !productData;
+}
+
+function renderSessionUi() {
+  document.querySelectorAll('.session-ui').forEach((el) => (el.style.display = ''));
+  document.querySelectorAll('.offer-ui').forEach((el) => (el.style.display = 'none'));
+}
+
+function renderOfferForm() {
+  document.querySelectorAll('.session-ui').forEach((el) => (el.style.display = 'none'));
+  document.querySelectorAll('.offer-ui').forEach((el) => (el.style.display = ''));
+
+  if (productData) {
+    $('offerProductName').value = productData.name || '';
+    $('offerPrice').value = productData.price ? `R$ ${productData.price}` : '';
+    $('offerMarketplace').textContent =
+      {
+        mercadolivre: 'Mercado Livre',
+        shopee: 'Shopee',
+        amazon: 'Amazon',
+      }[productData.marketplace] || productData.marketplace;
+    $('offerUrlPreview').textContent = productData.url
+      ? productData.url.substring(0, 60) + '...'
+      : '';
+  }
+
+  setActionState();
 }
 
 async function importCookies() {
@@ -160,10 +209,7 @@ async function validateSession() {
   try {
     const res = await fetch(
       `${apiUrl}/api/ml/affiliates/${encodeURIComponent(selectedUserId)}/validate-cookies`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      },
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
     );
     const data = await res.json();
     const state = {
@@ -185,6 +231,53 @@ async function validateSession() {
     showStatus(`Erro ao validar: ${redactSensitiveText(error.message)}`, 'error');
   } finally {
     $('validateBtn').disabled = false;
+    setActionState();
+  }
+}
+
+async function sendOffer() {
+  if (!selectedUserId) {
+    showStatus('Selecione um afiliado antes de enviar.', 'error');
+    return;
+  }
+  if (!productData) {
+    showStatus('Nenhum produto detectado na página.', 'error');
+    return;
+  }
+
+  const apiUrl = getApiUrl();
+  if (!apiUrl) return showStatus('Configure uma URL de API válida.', 'error');
+
+  const button = $('sendOfferBtn');
+  button.disabled = true;
+  showStatus('Criando oferta e enviando para os grupos...', 'loading');
+
+  try {
+    const res = await fetch(`${apiUrl}/api/extension/offers/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: productData.url,
+        marketplace: productData.marketplace,
+        title: $('offerTitle').value.trim() || undefined,
+        productName: $('offerProductName').value.trim(),
+        coupon: $('offerCoupon').value.trim() || undefined,
+        priceFrom: $('offerPriceFrom').value.trim() || undefined,
+        priceTo: $('offerPrice').value.trim() || undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      const totalSent = data.sentTo?.length || 0;
+      showStatus(`✅ Oferta enviada para ${totalSent} grupo(s)!`, 'success');
+    } else {
+      showStatus(`❌ ${redactSensitiveText(data.error || 'Erro ao criar oferta')}`, 'error');
+    }
+  } catch (error) {
+    showStatus(`❌ Erro: ${redactSensitiveText(error.message)}`, 'error');
+  } finally {
+    button.disabled = false;
     setActionState();
   }
 }

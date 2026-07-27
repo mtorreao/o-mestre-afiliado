@@ -2,12 +2,15 @@
   "manifest_version": 3,
   "name": "O Mestre Afiliado — Cookie Importer",
   "description": "Sincroniza e valida a sessão do Mercado Livre para operações de afiliado",
-  "version": "1.1.0",
-  "permissions": ["alarms", "cookies", "notifications", "storage", "tabs"],
+  "version": "1.2.0",
+  "permissions": ["alarms", "cookies", "notifications", "storage", "tabs", "activeTab"],
   "host_permissions": [
     "https://*.mercadolivre.com.br/*",
     "https://*.mercadolibre.com/*",
     "https://*.mercadolivre.com/*",
+    "https://*.shopee.com.br/*",
+    "https://*.amazon.com.br/*",
+    "https://*.amazon.com/*",
     "https://dev.omestreafiliado.com.br/*",
     "http://127.0.0.1:5441/*",
     "http://127.0.0.1:5442/*"
@@ -29,5 +32,16 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.mercadolivre.com.br/*",
+        "https://*.mercadolibre.com/*",
+        "https://*.mercadolivre.com/*"
+      ],
+      "js": ["content/mercadolivre.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }

@@ -36,5 +36,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then(() => sendResponse({ success: true }));
     return true;
   }
+
+  if (message?.type === 'product-data') {
+    chrome.storage.local
+      .set({ productData: message.data, productDataAt: Date.now() })
+      .then(() => sendResponse({ success: true }));
+    return true;
+  }
+
   return false;
 });
