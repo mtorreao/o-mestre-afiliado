@@ -1,234 +1,210 @@
-// popup.js — Lógica da extensão Cookie Importer
-
-const ML_DOMAINS = ['.mercadolivre.com.br', '.mercadolibre.com', '.mercadolivre.com'];
+import {
+  DEFAULT_API_URL,
+  ML_DOMAINS,
+  cookieMetadata,
+  deduplicateCookies,
+  isMercadoLivreUrl,
+  normalizeApiUrl,
+  redactSensitiveText,
+  serializeCookies,
+} from './lib/pure.js';
 
 const $ = (id) => document.getElementById(id);
-
 let affiliates = [];
 let selectedUserId = null;
+let activeTab = null;
 
-// ─── Init ─────────────────────────────────────────────────────────────────
+void init();
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // Restore saved API URL
-  const saved = await chrome.storage.local.get('apiUrl');
-  if (saved.apiUrl) $('apiUrl').value = saved.apiUrl;
-
-  // Check if we're on ML
-  await checkMLTab();
-
-  // Load affiliates
-  await loadAffiliates();
-
-  // Events
+async function init() {
+  const saved = await chrome.storage.local.get(['apiUrl', 'sessionState']);
+  $('apiUrl').value = saved.apiUrl || DEFAULT_API_URL;
+  await checkActiveTab();
+  await loadAffiliates(saved.sessionState);
   $('apiUrl').addEventListener('change', saveApiUrl);
   $('affiliateSelect').addEventListener('change', onAffiliateChange);
   $('importBtn').addEventListener('click', importCookies);
-});
+  $('validateBtn').addEventListener('click', validateSession);
+  $('optionsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
+}
 
-// ─── Check ML tab ──────────────────────────────────────────────────────────
-
-async function checkMLTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.url) return;
-
-  const isML = ML_DOMAINS.some((d) => tab.url.includes(d));
+async function checkActiveTab() {
+  [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const isML = Boolean(activeTab?.url && isMercadoLivreUrl(activeTab.url));
   $('mlStatus').textContent = isML ? '🟢 ML detectado' : '🔴 Abra o ML';
   $('mlStatus').style.color = isML ? '#4ade80' : '#f87171';
 }
 
-// ─── Load affiliates ────────────────────────────────────────────────────────
-
-async function loadAffiliates() {
-  const apiUrl = $('apiUrl').value.replace(/\/+$/, '');
-  const sel = $('affiliateSelect');
-  const btn = $('importBtn');
+async function loadAffiliates(sessionState) {
+  const apiUrl = getApiUrl();
+  if (!apiUrl) {
+    showStatus('Configure uma URL de API válida.', 'error');
+    return;
+  }
 
   try {
     const res = await fetch(`${apiUrl}/api/ml/affiliates`);
     const data = await res.json();
-
     if (!data.success || !data.affiliates?.length) {
-      sel.innerHTML = '<option value="">Nenhum afiliado encontrado</option>';
-      btn.disabled = true;
+      renderAffiliates([], sessionState);
+      showStatus('Nenhum afiliado encontrado na API.', 'error');
       return;
     }
-
     affiliates = data.affiliates;
-    sel.innerHTML = '<option value="">— Selecione um afiliado —</option>';
-    affiliates.forEach((a) => {
-      const opt = document.createElement('option');
-      opt.value = a.mlUserId;
-      const hasCookies = a.hasSessionCookies ? ' 🔗' : '';
-      opt.textContent = `${a.nickname} (ID: ${a.mlUserId})${hasCookies}`;
-      sel.appendChild(opt);
-    });
-
-    btn.disabled = true;
-  } catch (err) {
-    sel.innerHTML = '<option value="">Erro ao conectar com a API</option>';
-    showStatus(`Erro de conexão: ${err.message}`, 'error');
+    renderAffiliates(affiliates, sessionState);
+  } catch (error) {
+    renderAffiliates([], sessionState);
+    showStatus(`Erro de conexão: ${redactSensitiveText(error.message)}`, 'error');
   }
 }
 
-// ─── Events ─────────────────────────────────────────────────────────────────
+function renderAffiliates(items, sessionState) {
+  const select = $('affiliateSelect');
+  select.innerHTML = '';
+  if (!items.length) {
+    select.innerHTML = '<option value="">Nenhum afiliado encontrado</option>';
+    setActionState();
+    renderSessionState(sessionState);
+    return;
+  }
+
+  select.appendChild(new Option('— Selecione um afiliado —', ''));
+  for (const a of items) {
+    const suffix = a.hasSessionCookies ? ' 🔗' : '';
+    select.appendChild(new Option(`${a.nickname} (ID: ${a.mlUserId})${suffix}`, a.mlUserId));
+  }
+
+  const remembered = sessionState?.mlUserId;
+  const onlyAffiliate = items.length === 1 ? items[0].mlUserId : null;
+  selectedUserId = remembered || onlyAffiliate || null;
+  select.value = selectedUserId || '';
+  setActionState();
+  renderSessionState(sessionState);
+}
 
 function saveApiUrl() {
-  chrome.storage.local.set({ apiUrl: $('apiUrl').value });
+  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  if (apiUrl) {
+    $('apiUrl').value = apiUrl;
+    void chrome.storage.local.set({ apiUrl });
+  }
+}
+
+function getApiUrl() {
+  return normalizeApiUrl($('apiUrl').value);
 }
 
 function onAffiliateChange() {
-  selectedUserId = $('affiliateSelect').value;
-  $('importBtn').disabled = !selectedUserId;
+  selectedUserId = $('affiliateSelect').value || null;
+  setActionState();
 }
 
-// ─── Import cookies ────────────────────────────────────────────────────────
+function setActionState() {
+  const has = Boolean(selectedUserId);
+  $('importBtn').disabled = !has;
+  $('validateBtn').disabled = !has;
+}
 
 async function importCookies() {
   if (!selectedUserId) return;
+  const apiUrl = getApiUrl();
+  if (!apiUrl) return showStatus('Configure uma URL de API válida.', 'error');
 
-  const apiUrl = $('apiUrl').value.replace(/\/+$/, '');
-  const btn = $('importBtn');
-  const status = $('status');
-
-  btn.disabled = true;
+  const button = $('importBtn');
+  button.disabled = true;
   showStatus('Lendo cookies do Mercado Livre...', 'loading');
 
   try {
-    // 1. Read ALL cookies from ML domains (including HttpOnly)
     const allCookies = [];
     for (const domain of ML_DOMAINS) {
-      const cookies = await chrome.cookies.getAll({ domain });
-      allCookies.push(...cookies);
+      allCookies.push(...(await chrome.cookies.getAll({ domain })));
     }
-
-    // Deduplicate by name+path (keep last occurrence)
-    const seen = new Map();
-    for (const c of allCookies) {
-      const key = `${c.name}:${c.path}`;
-      seen.set(key, c);
-    }
-
-    const uniqueCookies = [...seen.values()];
-
-    if (uniqueCookies.length === 0) {
-      showStatus('Nenhum cookie encontrado. Você está logado no ML?', 'error');
-      btn.disabled = false;
+    const cookies = deduplicateCookies(allCookies);
+    const meta = cookieMetadata(cookies);
+    if (!meta.count) {
+      showStatus('Nenhum cookie encontrado. Faça login no ML e tente novamente.', 'error');
       return;
     }
 
-    // Build cookie string
-    const cookieStr = uniqueCookies.map((c) => `${c.name}=${c.value}`).join('; ');
-
-    // Show preview (truncated)
-    $('cookiePreview').textContent =
-      `${uniqueCookies.length} cookies encontrados\n${cookieStr.substring(0, 200)}...`;
-    $('cookiePreview').style.display = 'block';
-
-    // 2. Send to API
-    showStatus(`Enviando ${uniqueCookies.length} cookies para o servidor...`, 'loading');
-
-    const res = await fetch(`${apiUrl}/api/ml/affiliates/${selectedUserId}`, {
+    showStatus(`Enviando ${meta.count} cookies para a API segura...`, 'loading');
+    const res = await fetch(`${apiUrl}/api/ml/affiliates/${encodeURIComponent(selectedUserId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionCookies: cookieStr }),
+      body: JSON.stringify({ sessionCookies: serializeCookies(cookies) }),
     });
-
     const data = await res.json();
-
-    if (data.success) {
-      // Tentar extrair melitat diretamente da página do linkbuilder
-      showStatus(`✅ Cookies salvos! Detectando etiqueta...`, 'loading');
-      try {
-        const tag = await detectMelitat();
-        if (tag) {
-          // Salvar melitat no servidor
-          await fetch(`${apiUrl}/api/ml/affiliates/${selectedUserId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ melitat: tag }),
-          });
-          showStatus(`✅ Etiqueta "${tag}" detectada e salva!`, 'success');
-        } else {
-          showStatus(`✅ Cookies importados! Etiqueta: configure manualmente.`, 'success');
-        }
-      } catch {
-        showStatus(`✅ Cookies importados para ${data.mlUserId}!`, 'success');
-      }
-
-      // Update the select option to show the 🔗 badge
-      const affiliate = affiliates.find((a) => a.mlUserId === selectedUserId);
-      if (affiliate) {
-        affiliate.hasSessionCookies = true;
-        updateSelectOptions();
-      }
-    } else {
-      showStatus(`❌ Erro do servidor: ${data.error}`, 'error');
+    if (!data.success) {
+      showStatus(
+        `Erro do servidor: ${redactSensitiveText(data.error || 'não informado')}`,
+        'error',
+      );
+      return;
     }
-  } catch (err) {
-    showStatus(`❌ Erro: ${err.message}`, 'error');
+
+    await validateSession();
+  } catch (error) {
+    showStatus(`Erro ao sincronizar: ${redactSensitiveText(error.message)}`, 'error');
   } finally {
-    btn.disabled = false;
+    button.disabled = false;
+    setActionState();
   }
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+async function validateSession() {
+  if (!selectedUserId) return;
+  const apiUrl = getApiUrl();
+  if (!apiUrl) return showStatus('Configure uma URL de API válida.', 'error');
 
-function showStatus(msg, type) {
-  const el = $('status');
-  el.textContent = msg;
-  el.className = `status ${type}`;
-}
-
-function updateSelectOptions() {
-  const sel = $('affiliateSelect');
-  const currentVal = sel.value;
-  sel.innerHTML = '<option value="">— Selecione um afiliado —</option>';
-  affiliates.forEach((a) => {
-    const opt = document.createElement('option');
-    opt.value = a.mlUserId;
-    const hasCookies = a.hasSessionCookies ? ' 🔗' : '';
-    opt.textContent = `${a.nickname} (ID: ${a.mlUserId})${hasCookies}`;
-    sel.appendChild(opt);
-  });
-  sel.value = currentVal;
-}
-
-/**
- * Extrai o melitat (etiqueta de afiliado) da página do linkbuilder.
- * Usa uma tab ativa do ML pra executar um script que lê o tag_in_use.
- */
-async function detectMelitat() {
-  // Procura uma tab aberta do ML
-  const tabs = await chrome.tabs.query({
-    url: ['*://*.mercadolivre.com.br/*', '*://*.mercadolibre.com/*'],
-  });
-  if (tabs.length === 0) return null;
-
-  const tab = tabs[0];
-
+  $('validateBtn').disabled = true;
+  showStatus('Validando a sessão no Link Builder...', 'loading');
   try {
-    // Navega a tab pra página do linkbuilder (se já não estiver)
-    const targetUrl = 'https://www.mercadolivre.com.br/afiliados/linkbuilder';
-    if (!tab.url?.includes('linkbuilder')) {
-      await chrome.tabs.update(tab.id, { url: targetUrl });
-      // Espera a página carregar
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-
-    // Executa script pra extrair o tag_in_use do HTML
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        // Procura no HTML o tag_in_use
-        const html = document.documentElement.innerHTML;
-        const match = html.match(/tag_in_use["']:\s*["']([^"']+)/i);
-        return match ? match[1] : null;
+    const res = await fetch(
+      `${apiUrl}/api/ml/affiliates/${encodeURIComponent(selectedUserId)}/validate-cookies`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
       },
-    });
-
-    return results?.[0]?.result || null;
-  } catch {
-    return null;
+    );
+    const data = await res.json();
+    const state = {
+      mlUserId: selectedUserId,
+      status: data.valid ? 'valid' : 'expired',
+      melitat: data.melitat || null,
+      checkedAt: new Date().toISOString(),
+    };
+    await chrome.storage.local.set({ sessionState: state });
+    await chrome.runtime.sendMessage({ type: 'set-session-state', state });
+    renderSessionState(state);
+    showStatus(
+      data.valid
+        ? `✅ Sessão válida${data.melitat ? ` — etiqueta: ${data.melitat}` : ''}`
+        : `❌ ${redactSensitiveText(data.error || 'Sessão inválida')}`,
+      data.valid ? 'success' : 'error',
+    );
+  } catch (error) {
+    showStatus(`Erro ao validar: ${redactSensitiveText(error.message)}`, 'error');
+  } finally {
+    $('validateBtn').disabled = false;
+    setActionState();
   }
+}
+
+function renderSessionState(state) {
+  const el = $('sessionState');
+  if (!state?.status) {
+    el.textContent = 'Sessão ainda não validada';
+    el.className = 'session-state neutral';
+    return;
+  }
+  const checkedAt = state.checkedAt ? new Date(state.checkedAt).toLocaleString('pt-BR') : '';
+  el.textContent =
+    state.status === 'valid'
+      ? `🟢 Sessão válida${state.melitat ? ` · ${state.melitat}` : ''}${checkedAt ? ` · ${checkedAt}` : ''}`
+      : `🔴 Sessão expirada${checkedAt ? ` · ${checkedAt}` : ''}`;
+  el.className = `session-state ${state.status}`;
+}
+
+function showStatus(message, type) {
+  $('status').textContent = redactSensitiveText(message);
+  $('status').className = `status ${type}`;
 }
