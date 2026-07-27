@@ -108,6 +108,26 @@ export async function convertOfferUrl(
       return await convertAmazonForAffiliate(resolvedUrl, userId);
     }
 
+    // Marketplaces conhecidos mas sem integração implementada
+    // Exibe mensagem amigável e aparece nos logs de espelhamento como 'blocked'
+    const unsupportedMarketplaces: Record<string, string> = {
+      magalu: 'Magalu (Magazine Luiza)',
+    };
+    const unsupportedName = unsupportedMarketplaces[effectiveMarketplace];
+    if (unsupportedName) {
+      log('warn', 'Marketplace ainda não integrado — oferta bloqueada', {
+        marketplace: effectiveMarketplace,
+        url: resolvedUrl,
+        userId,
+      });
+      return {
+        convertedUrl: null,
+        marketplace: effectiveMarketplace,
+        success: false,
+        error: `Marketplace ainda não liberado: ${unsupportedName}`,
+      };
+    }
+
     const { convertUrl } = await import('@omestre/converters');
     const result = await convertUrl(resolvedUrl);
     return {

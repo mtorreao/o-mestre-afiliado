@@ -86,6 +86,10 @@ export function isMeliProductUrl(url: string): boolean {
     // Extraído por resolveSocialProductUrl(), o formato é MLB-{id} no pathname
     // sem o prefixo /p/. Ex: /MLB-3310895673-tnis-fila-recovery-...
     if (/\/MLB-\d+/i.test(u.pathname)) return true;
+    // URL universal de produto: /up/MLBU<id> (novo formato 2025+, substitui /p/MLB)
+    // e /up/MLB<id> (coexistência com sufixo MLB). Confirmação: DuckDuckGo mostra
+    // "MLBU: o que mudou no Mercado Livre" e /up/MLBU retorna HTTP 200 no ML.
+    if (/\/up\/MLBU?\d+/i.test(u.pathname)) return true;
     return false;
   } catch {
     return false;
@@ -160,7 +164,12 @@ async function resolvePromozone(url: string): Promise<string | null> {
     } catch {
       return null;
     }
-    return data.destinationUrl;
+
+    // Se o destino Promozone é outro redirector (ex: meli.la, s.shopee.com.br),
+    // resolve recursivamente até chegar na URL final do marketplace.
+    // Isso garante que meli.la → ML não pare no meio do caminho.
+    const fullyResolved = await resolveRedirectUrl(data.destinationUrl);
+    return fullyResolved !== data.destinationUrl ? fullyResolved : data.destinationUrl;
   } catch {
     return null;
   }
@@ -169,18 +178,20 @@ async function resolvePromozone(url: string): Promise<string | null> {
 /**
  * Resolve um shortlink s.shopee.com.br/{code} para a URL de destino real.
  *
- * Faz um HEAD request com `redirect: 'manual'` para extrair o Location header
- * sem baixar o HTML (Shopee é 100% client-side rendered, então o HEAD é
- * suficiente — não precisamos do body para descobrir o destino).
+ * Faz um GET com `redirect: 'manual'` para extrair o Location header.
+ * OBSERVAÇÃO: Shopee/SGW NÃO retorna o header Location em respostas HEAD
+ * (anti-bot). GET funciona normalmente e a resposta 301 tem ~700 bytes
+ * (só o HTML do redirect, não a página do produto que é SSR Client-side).
  *
  * Retorna:
  *   - null se não foi possível resolver (erro, sem Location, link afiliado/cupom)
- *   - URL final se for uma página de produto (contém /-i.ShopId.ItemId)
+ *   - URL final se for uma página de produto (formato /-i.ShopId.ItemId
+ *     ou /&lt;slug&gt;/&lt;ShopId&gt;/&lt;ItemId&gt;)
  */
 async function resolveShopeeShortlink(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
-      method: 'HEAD',
+      method: 'GET',
       redirect: 'manual',
       headers: {
         'User-Agent':
@@ -208,13 +219,20 @@ async function resolveShopeeShortlink(url: string): Promise<string | null> {
     // um produto. Esses links não devem ser usados como originalLink para
     // dedup nem para extração de imagem.
     //
-    // NOTE: NÃO incluir /utm_/i.test(parsed.search) aqui! URLs de produto
+    // Determina se a URL final é página de produto:
+    // - Formato antigo: /-i.SHOPID.ITEMID (ex: /nome-produto-i.1006874942.23694247133)
+    // - Formato novo (2025+): /&lt;slug&gt;/SHOPID/ITEMID (ex: /opaanlp/1500679968/58256271370)
+    // Ambos os formatos levam a páginas de produto reais.
+    //
+    // ⚠️ NÃO incluir /utm_/i.test(parsed.search) aqui! URLs de produto
     // legítimas na Shopee frequentemente têm utm_campaign, utm_source,
-    // utm_medium, utm_content, utm_term — esses parâmetros são inseridos
-    // pelo próprio sistema de afiliados da Shopee para rastreamento e NÃO
-    // indicam que a página não é um produto. O padrão -i.SHOPID.ITEMID no
-    // pathname é o único indicador confiável de página de produto Shopee.
-    const isProductPage = /-i\.\d+\.\d+/i.test(parsed.pathname);
+    // utm_medium, utm_content, utm_term — esses parâmetros são de
+    // rastreamento e NÃO indicam que a página não é um produto. Os padrões
+    // -i.SHOPID.ITEMID e /&lt;slug&gt;/SHOPID/ITEMID são os únicos indicadores
+    // confiáveis de página de produto Shopee.
+    const isOldFormat = /-i\.\d+\.\d+/i.test(parsed.pathname);
+    const isNewFormat = /\/\d{6,}\/\d{6,}/i.test(parsed.pathname);
+    const isProductPage = isOldFormat || isNewFormat;
     const isLandingPage =
       /^\/user\//i.test(parsed.pathname) || /voucher-wallet/i.test(parsed.pathname);
 

@@ -12,23 +12,29 @@ import { resolveRedirectUrl, isMeliProductUrl } from './resolve-redirect.ts';
 
 describe('resolveRedirectUrl — Shopee', () => {
   /**
-   * s.shopee.com.br/1VxtkMJkHM redireciona para um produto real:
-   * /Controle-Sem-Fio-...-i.1495837089.58258815395?utm_campaign=...&utm_source=...
+   * s.shopee.com.br/1VxtkMJkHM shortlink real que redireciona para um
+   * produto. Antes do fix "HEAD→GET" (2026-07-27), o resolvedor usava HEAD
+   * e o Shopee/SGW não retornava o header Location em respostas HEAD
+   * (anti-bot), resultando em null → produto classificado como "informative".
    *
-   * BUG ATUAL (2026-07-26): resolveShopeeShortlink rejeita essa URL porque
-   * isLandingPage inclui /utm_/i.test(parsed.search), mas utm_ params são
-   * normais em links de afiliado Shopee mesmo para produtos reais.
-   *
-   * Esperado pós-fix: resolver para a URL do produto com padrão -i.\d+.\d+
+   * O formato de destino pode ser:
+   *   - Antigo: /...-i.SHOPID.ITEMID (ex: /Controle-Sem-Fio-...-i.1495837089.58258815395)
+   *   - Novo (2025+): /<slug>/SHOPID/ITEMID (ex: /opaanlp/1500679968/58256271370)
+   * Ambos são páginas de produto reais.
    */
-  test('shortlink que redireciona para produto real com utm_ params retorna URL do produto', async () => {
+  test('shortlink resolve para URL de produto Shopee (qualquer formato)', async () => {
     const url = 'https://s.shopee.com.br/1VxtkMJkHM';
     const resolved = await resolveRedirectUrl(url);
 
-    // BUG: atualmente retorna a URL original (curta) porque
-    // resolveShopeeShortlink retorna null devido ao isLandingPage com utm_
+    // Verifica que resolveu para uma URL diferente (não ficou no shortlink)
     expect(resolved).not.toBe(url);
-    expect(resolved).toMatch(/-i\.\d+\.\d+/);
+    // Verifica que a URL resolvida é da Shopee
+    const parsed = new URL(resolved);
+    expect(parsed.hostname).toMatch(/shopee\.com\.br/);
+    // Verifica que contém padrão de produto (formato antigo -i. ou novo /digits/digits)
+    const hasOldFormat = /-i\.\d+\.\d+/i.test(parsed.pathname);
+    const hasNewFormat = /\/\d{6,}\/\d{6,}/i.test(parsed.pathname);
+    expect(hasOldFormat || hasNewFormat).toBe(true);
   });
 
   /**
@@ -37,33 +43,42 @@ describe('resolveRedirectUrl — Shopee', () => {
    * /Drone-Profissional-Câmera-para-Fotografia-Aérea-...-i.1569849623.23098872648
    * Com params: gads_t_sig, mmp_pid, uls_trackid, utm_campaign, utm_content,
    * utm_medium, utm_source, utm_term (todos de tracking de afiliado).
-   * Antes do fix era rejeitado como "informative" por causa dos utm_ params.
+   // Antes do fix era rejeitado como "informative" (uty_ params no
+   // isLandingPage, HEAD sem Location, formato novo sem -i. não reconhecido).
+   // Agora resolve com GET e aceita os novos formatos.
    */
   test('shortlink real Promozone que redireciona para drone produto com tracking params', async () => {
     const url = 'https://s.shopee.com.br/1gHJwg5mb4';
     const resolved = await resolveRedirectUrl(url);
 
     expect(resolved).not.toBe(url);
-    expect(resolved).toMatch(/-i\.\d+\.\d+/);
     // Verifica que o hostname é shopee
     const parsed = new URL(resolved);
     expect(parsed.hostname).toMatch(/shopee\.com\.br/);
+    // Deve conter padrão de produto (qualquer formato)
+    const hasOldFormat = /-i\.\d+\.\d+/i.test(parsed.pathname);
+    const hasNewFormat = /\/\d{6,}\/\d{6,}/i.test(parsed.pathname);
+    expect(hasOldFormat || hasNewFormat).toBe(true);
     // Não deve conter /user/ nem /voucher-wallet (landing pages)
     expect(parsed.pathname).not.toMatch(/^\/user\//);
     expect(parsed.pathname).not.toMatch(/voucher-wallet/);
   });
 
   /**
-   * s.shopee.com.br/8pkV3MdTX8 redireciona para /opaanlp/... — landing page
-   * de afiliado sem produto real. Deve manter a URL original (não é produto).
+   * s.shopee.com.br/8pkV3MdTX8 redireciona para /opaanlp/<shopId>/<itemId>
+   * — formato novo (2025+) de URL de produto Shopee, antigamente considerado
+   * "landing page" porque o resolvedor com HEAD nunca resolvia (Shopee não
+   * retorna Location em HEAD). Agora com GET, resolve para produto real.
    */
-  test('shortlink que redireciona para landing page /opaanlp/ mantém URL original', async () => {
+  test('shortlink que resolve para produto no formato novo /opaanlp/<shopId>/<itemId>', async () => {
     const url = 'https://s.shopee.com.br/8pkV3MdTX8';
     const resolved = await resolveRedirectUrl(url);
 
-    // Não é produto → retorna URL original (não resolve)
-    expect(resolved).toBe(url);
-    expect(resolved).not.toMatch(/-i\.\d+\.\d+/);
+    expect(resolved).not.toBe(url);
+    const parsed = new URL(resolved);
+    expect(parsed.hostname).toMatch(/shopee\.com\.br/);
+    // Formato novo: /<slug>/<shopId>/<itemId>
+    expect(parsed.pathname).toMatch(/\/\d{6,}\/\d{6,}/);
   });
 
   /**
@@ -79,15 +94,18 @@ describe('resolveRedirectUrl — Shopee', () => {
   });
 
   /**
-   * s.shopee.com.br/9KglfLaLae redireciona para /opaanlp/... — landing page
-   * de afiliado sem produto real.
+   * s.shopee.com.br/9KglfLaLae redireciona para /opaanlp/<shopId>/<itemId>
+   * — mesmo padrão que o anterior. Antes era tratado como landing page
+   * (não resolvia com HEAD), agora é produto real com formato novo.
    */
-  test('shortlink que redireciona para /opaanlp/ mantém URL original (2)', async () => {
+  test('shortlink que resolve para produto /opaanlp/ (2)', async () => {
     const url = 'https://s.shopee.com.br/9KglfLaLae';
     const resolved = await resolveRedirectUrl(url);
 
-    expect(resolved).toBe(url);
-    expect(resolved).not.toMatch(/-i\.\d+\.\d+/);
+    expect(resolved).not.toBe(url);
+    const parsed = new URL(resolved);
+    expect(parsed.hostname).toMatch(/shopee\.com\.br/);
+    expect(parsed.pathname).toMatch(/\/\d{6,}\/\d{6,}/);
   });
 
   /**
@@ -179,6 +197,23 @@ describe('isMeliProductUrl', () => {
 
   test('URL de outro domínio NÃO é reconhecida como produto', () => {
     const url = 'https://www.amazon.com.br/dp/B0GLHZQ64K';
+    expect(isMeliProductUrl(url)).toBe(false);
+  });
+
+  test('/up/MLBU{id} (novo formato universal) é reconhecido como produto', () => {
+    const url =
+      'https://www.mercadolivre.com.br/camiseta-adidas-masculino-kf2404/up/MLBU3976717095';
+    expect(isMeliProductUrl(url)).toBe(true);
+  });
+
+  test('/up/MLB{id} (coexistência) é reconhecido como produto', () => {
+    const url =
+      'https://www.mercadolivre.com.br/kit-15-pares-meias-sport-algodao-cano-medio-sandrini-confort/up/MLB1142202325';
+    expect(isMeliProductUrl(url)).toBe(true);
+  });
+
+  test('URL /up/{id} SEM MLBU/MLB não é reconhecida como produto', () => {
+    const url = 'https://www.mercadolivre.com.br/algum-cupom/up/123';
     expect(isMeliProductUrl(url)).toBe(false);
   });
 });

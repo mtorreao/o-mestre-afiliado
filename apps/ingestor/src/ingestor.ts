@@ -53,6 +53,7 @@ import { resolveRedirectUrl, isMeliProductUrl } from './resolve-redirect.ts';
 import { fetchProductImage } from './product-image.ts';
 import { getRedis } from './redis.ts';
 import { steps } from './metrics.ts';
+import { logReflectedOffer } from './offer-logger.ts';
 
 // Re-exporta funções puras de url-extraction.ts para compatibilidade
 // com testes existentes e callers externos.
@@ -159,12 +160,17 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     // Classifica o destino resolvido
     const isProduct =
       resolvedMarketplace === 'shopee'
-        ? /-i\.\d+\.\d+/i.test(resolved)
+        ? /-i\.\d+\.\d+/i.test(resolved) || /\/\d{6,}\/\d{6,}/i.test(resolved)
         : resolvedMarketplace === 'mercadolivre'
           ? isMeliProductUrl(resolved)
           : resolvedMarketplace === 'amazon'
             ? /\/dp\/[A-Z0-9]{10}/i.test(resolved) || /\/gp\/product\/[A-Z0-9]{10}/i.test(resolved)
-            : false;
+            : // Marketplaces conhecidos mas sem integração (ex: Magalu) são
+              // tratados como "produto" para que cheguem à etapa de conversão,
+              // onde são bloqueados com a mensagem "Marketplace ainda não liberado"
+              resolvedMarketplace === 'magalu'
+              ? true
+              : false;
 
     resolvedLinks.push({
       originalUrl: link.url,
@@ -344,14 +350,34 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
         if (!conversion.success) {
           incrementCounter('pipeline_messages_blocked_total', { reason: 'conversion_failed' });
 
+          let failureReason: string | undefined;
+
           if (conversion.error) {
             const failureType = classifyConversionError(conversion.marketplace, conversion.error);
             if (failureType) {
               processFailure(config.instanceName, failureType, {
                 marketplace: conversion.marketplace,
               }).catch(() => {});
+              failureReason = failureType;
+            } else {
+              failureReason = conversion.error;
             }
           }
+
+          // Registra nos logs de espelhamento (reflected_offers) para que o
+          // usuário veja que a oferta foi capturada mas bloqueada por config.
+          logReflectedOffer({
+            affiliateId: config.affiliateId,
+            sourceGroupJid,
+            targetGroupJid: config.targetGroupJid,
+            originalLink: resolvedUrl,
+            convertedLink: null,
+            marketplace: conversion.marketplace,
+            messagePreview: conversion.error ?? 'Erro de conversão',
+            status: 'blocked',
+            failureReason: failureReason ?? 'conversion_failed',
+          }).catch(() => {});
+
           return null;
         }
 
@@ -487,12 +513,18 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   const totalDuration = performance.now() - totalStart;
   steps.total.observe(totalDuration);
 
-  log('info', 'Mensagem processada com sucesso', {
-    messageId,
-    durationMs: Math.round(totalDuration),
-    sendEventsCount: sendEvents.length,
-    affiliatesCount: sourceConfigs.length,
-  });
+  log(
+    sendEvents.length === 0 && sourceConfigs.length > 0 ? 'warn' : 'info',
+    sendEvents.length === 0 && sourceConfigs.length > 0
+      ? 'Mensagem processada sem SendEvents — todos os afiliados falharam na conversão'
+      : 'Mensagem processada com sucesso',
+    {
+      messageId,
+      durationMs: Math.round(totalDuration),
+      sendEventsCount: sendEvents.length,
+      affiliatesCount: sourceConfigs.length,
+    },
+  );
 
   return true;
 }

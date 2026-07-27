@@ -76,7 +76,12 @@ export const MARKETPLACE_DOMAINS: Record<Marketplace, RegExp[]> = {
     /go\.promozone\.ai\/amzn/i,
     /go\.promozone\.ai\/amz/i,
   ],
-  magalu: [/magalu\.com\.br/i, /maga\.lu/i, /go\.promozone\.ai\/magalu/i],
+  magalu: [
+    /magalu\.com\.br/i,
+    /maga\.lu/i,
+    /magazineluiza\.com\.br/i,
+    /go\.promozone\.ai\/magalu/i,
+  ],
   unknown: [],
 } as const;
 
