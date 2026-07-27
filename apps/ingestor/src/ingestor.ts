@@ -50,6 +50,15 @@ import {
 } from '@omestre/worker-common';
 import { MlAffiliateRepository } from '@omestre/db';
 import { resolveRedirectUrl, isMeliProductUrl } from './resolve-redirect.ts';
+import {
+  classifyResolvedProductUrl,
+  reconstructText,
+  buildTemplateContext,
+  buildSendEvent,
+  resolveSendDedupKey,
+  parseAffiliateUserId,
+  isSocialCommerceUrl,
+} from './ingestor-pure.ts';
 import { fetchProductImage } from './product-image.ts';
 import { getRedis } from './redis.ts';
 import { steps } from './metrics.ts';
@@ -66,7 +75,7 @@ export {
 export type { LinkKind, ExtractedLink } from './url-extraction.ts';
 
 import { sanitizeNonOfferLinks, extractAllMarketplaceLinks } from './url-extraction.ts';
-import { loadBlacklist, loadWhitelist } from './terms-lists.ts';
+import { loadBlacklist, loadWhitelist, matchAnyTerm } from './terms-lists.ts';
 import { getSourceGroupConfigs } from './source-group-cache.ts';
 import { convertOfferUrl } from './link-converters.ts';
 import { setCachedConversion } from './conversion-cache.ts';
@@ -157,20 +166,8 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
       continue;
     }
 
-    // Classifica o destino resolvido
-    const isProduct =
-      resolvedMarketplace === 'shopee'
-        ? /-i\.\d+\.\d+/i.test(resolved) || /\/\d{6,}\/\d{6,}/i.test(resolved)
-        : resolvedMarketplace === 'mercadolivre'
-          ? isMeliProductUrl(resolved)
-          : resolvedMarketplace === 'amazon'
-            ? /\/dp\/[A-Z0-9]{10}/i.test(resolved) || /\/gp\/product\/[A-Z0-9]{10}/i.test(resolved)
-            : // Marketplaces conhecidos mas sem integração (ex: Magalu) são
-              // tratados como "produto" para que cheguem à etapa de conversão,
-              // onde são bloqueados com a mensagem "Marketplace ainda não liberado"
-              resolvedMarketplace === 'magalu'
-              ? true
-              : false;
+    // Classifica o destino resolvido (lógica pura em ingestor-pure.ts)
+    const isProduct = classifyResolvedProductUrl(resolved, resolvedMarketplace);
 
     resolvedLinks.push({
       originalUrl: link.url,
@@ -222,10 +219,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   // Páginas /social/<id> do ML são social commerce: o Link Builder rejeita
   // essas URLs (erro 111). Precisamos extrair a URL real do produto (/p/MLB<id>)
   // navegando na página e clicando em "Ir para o Produto".
-  if (
-    marketplace === 'mercadolivre' &&
-    /^\/social\/[a-zA-Z0-9]+\/?$/i.test(new URL(resolvedUrl).pathname)
-  ) {
+  if (marketplace === 'mercadolivre' && isSocialCommerceUrl(resolvedUrl)) {
     const { resolveSocialProductUrl } = await import('./resolve-social-product.ts');
     const socialResolution = await resolveSocialProductUrl(resolvedUrl);
     if (socialResolution) {
@@ -249,27 +243,10 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     }
   }
 
-  // ── 4. Reconstrução do texto ──
-  // Substitui URLs originais pelas resolvidas no texto sanitizado:
-  //   - Produto: será substituído pela URL convertida no template (passo 6)
-  //   - Informativo: substituído pela URL resolvida (ex.: /sec/ → /ofertas)
-  //   - Descartado: removido do texto
-  let processedText = sanitizedText;
-  for (const rl of resolvedLinks) {
-    if (rl.role === 'informative') {
-      processedText = processedText.replace(rl.originalUrl, rl.resolvedUrl);
-    } else if (rl.role === 'discard') {
-      // Remove o link e separadores órfãos
-      processedText = processedText.replace(rl.originalUrl, '');
-    }
-    // 'product' não é substituído aqui — será substituído pela URL convertida
-    // no template (buildTemplateMessage faz text.replace(originalUrl, convertedUrl))
-  }
-  // Limpa espaços/separadores órfãos após remoções
-  processedText = processedText.replace(/\s*\|\s*$/gm, '');
-  processedText = processedText.replace(/[ \t]{2,}/g, ' ');
-  processedText = processedText.replace(/\n{3,}/g, '\n\n');
-  processedText = processedText.trim();
+  // ── 4. Reconstrução do texto (lógica pura em ingestor-pure.ts) ──
+  // 'product' não é substituído aqui — será substituído pela URL convertida
+  // no template (buildTemplateMessage faz text.replace(originalUrl, convertedUrl))
+  const processedText = reconstructText(sanitizedText, resolvedLinks);
 
   log('info', 'URL de marketplace detectada e resolvida', {
     messageId,
@@ -285,21 +262,18 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   // ── 5. Blacklist ──
   const blacklistTerms = await measureStep(steps.blacklist, async () => loadBlacklist());
   if (blacklistTerms.length > 0) {
-    const textLower = sanitizedText.toLowerCase();
-    for (const term of blacklistTerms) {
-      if (textLower.includes(term.toLowerCase())) {
-        log('info', 'Mensagem filtrada pela blacklist', { messageId, term });
-        incrementCounter('pipeline_messages_blocked_total', { reason: 'global_blacklist' });
-        return true;
-      }
+    const match = matchAnyTerm(sanitizedText, blacklistTerms);
+    if (match.matched) {
+      log('info', 'Mensagem filtrada pela blacklist', { messageId, term: match.term });
+      incrementCounter('pipeline_messages_blocked_total', { reason: 'global_blacklist' });
+      return true;
     }
   }
 
   // ── 6. Whitelist ──
   const whitelistTerms = await measureStep(steps.whitelist, async () => loadWhitelist());
   if (whitelistTerms.length > 0) {
-    const textLower = sanitizedText.toLowerCase();
-    const hasMatch = whitelistTerms.some((term) => textLower.includes(term.toLowerCase()));
+    const hasMatch = matchAnyTerm(sanitizedText, whitelistTerms).matched;
     if (!hasMatch) {
       log('info', 'Mensagem filtrada pela whitelist', { messageId });
       incrementCounter('pipeline_messages_blocked_total', { reason: 'global_whitelist' });
@@ -331,7 +305,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     const results = await Promise.allSettled(
       sourceConfigs.map(async (config) => {
         // Send-dedup: já publicamos para este mirror+messageId?
-        const sendDedupKey = `${MIRROR_SEND_DEDUP_PREFIX}${config.mirrorId}:${messageId}`;
+        const sendDedupKey = resolveSendDedupKey(config.mirrorId, messageId);
         const alreadySent = await r.get(sendDedupKey);
         if (alreadySent) {
           log('info', 'SendEvent já publicado — pulando (crash recovery)', {
@@ -402,28 +376,27 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
         });
 
         // Monta template — usa processedText (texto sanitizado + URLs resolvidas)
-        const ctx: TemplateContext = {
-          originalText: processedText,
+        const ctx = buildTemplateContext({
+          processedText,
           originalUrl,
-          convertedUrl: conversion.convertedUrl,
+          convertedUrl: conversion.convertedUrl!,
           marketplace: conversion.marketplace,
-          sourceGroupName: sourceGroupName || '(desconhecido)',
+          sourceGroupName,
           targetGroupName: config.targetGroupName,
           timestamp: new Date(),
-        };
+        });
         const templateText = buildTemplateMessage(ctx, config.messageTemplate);
 
-        const sendEvent: SendEvent = {
+        const sendEvent = buildSendEvent({
           id: randomUUID(),
           sourceMessageId: messageId,
           sourceGroupJid,
           mirrorId: config.mirrorId,
           text: templateText,
-          imageUrl: '', // preenchido abaixo, após o fan-out (busca única)
           marketplace: conversion.marketplace,
           originalUrl,
           convertedUrl: conversion.convertedUrl!,
-        };
+        });
 
         return sendEvent;
       }),
@@ -455,10 +428,10 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
         sendEvents.some((event) => event.mirrorId === config.mirrorId),
       );
       if (firstMlConfig) {
-        const userIdMatch = firstMlConfig.instanceName.match(/^user-(\d+)$/);
-        if (userIdMatch?.[1]) {
+        const userId = parseAffiliateUserId(firstMlConfig.instanceName);
+        if (userId != null) {
           const mlRepo = new MlAffiliateRepository();
-          const mlAffiliate = await mlRepo.findByPlatformUserId(parseInt(userIdMatch[1], 10));
+          const mlAffiliate = await mlRepo.findByPlatformUserId(userId);
           sessionCookies = mlAffiliate?.sessionCookies ?? null;
         }
       }
@@ -495,7 +468,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     for (const evt of sendEvents) {
       pipeline.xadd(MIRROR_SEND_STREAM, '*', 'payload', JSON.stringify(evt));
       // Marca send-dedup
-      const sendDedupKey = `${MIRROR_SEND_DEDUP_PREFIX}${evt.mirrorId}:${messageId}`;
+      const sendDedupKey = resolveSendDedupKey(evt.mirrorId, messageId);
       pipeline.setex(sendDedupKey, MIRROR_SEND_DEDUP_TTL, '1');
     }
     await pipeline.exec();

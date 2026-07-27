@@ -5,41 +5,26 @@
  * inspeção de rede (Playwright) no painel de afiliados.
  *
  * Requer cookies de sessão do ML (não OAuth Bearer token).
+ *
+ * A lógica PURA (constantes, headers, parsing, classificação, formatação
+ * de erros) vive em `ml-linkbuilder-pure.ts`. Este arquivo mantém SOMENTE
+ * a camada de I/O (fetch). Nenhuma URL/header de auth foi alterada.
  */
 
-export const ML_LINK_BUILDER_URL =
-  'https://www.mercadolivre.com.br/afiliados/linkbuilder';
-
-export const ML_CREATE_LINK_API =
-  'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
-
-const CSRF_REGEX = /<meta\s+name="csrf-token"\s+content="([^"]+)"/i;
-
-// ─── Interfaces ────────────────────────────────────────────────────────────
-
-interface CreateLinkResponse {
-  status: number;
-  urls?: Array<{
-    id?: string;
-    short_url?: string;
-    long_url?: string;
-    tag?: string;
-    type_url?: string;
-    message?: string;
-    error_code?: number;
-    status?: number;
-  }>;
-  total_items?: number;
-  total_success?: number;
-  total_error?: number;
-}
-
-export interface ShortLinkResult {
-  success: boolean;
-  shortUrl?: string;
-  longUrl?: string;
-  error?: string;
-}
+import {
+  type CreateLinkResponse,
+  type ShortLinkResult,
+  buildCreateLinkApiHeaders,
+  buildCreateLinkBody,
+  buildLinkBuilderPageHeaders,
+  CSRF_NOT_FOUND_MESSAGE,
+  extractCsrfToken,
+  formatCsrfRetrievalError,
+  formatLinkBuilderHttpError,
+  ML_CREATE_LINK_API,
+  ML_LINK_BUILDER_URL,
+  parseCreateLinkResponse,
+} from './ml-linkbuilder-pure.ts';
 
 // ─── Função principal ───────────────────────────────────────────────────────
 
@@ -67,106 +52,58 @@ export async function generateShortAffiliateLink(
 
     try {
       const pageRes = await fetch(ML_LINK_BUILDER_URL, {
-        headers: {
-          Cookie: sessionCookies,
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-        },
+        headers: buildLinkBuilderPageHeaders(sessionCookies),
       });
 
       if (!pageRes.ok) {
         return {
           success: false,
-          error: `Falha ao acessar Link Builder: HTTP ${pageRes.status}`,
+          error: formatLinkBuilderHttpError('page', pageRes.status),
         };
       }
 
       const html = await pageRes.text();
-      const match = html.match(CSRF_REGEX);
+      const token = extractCsrfToken(html);
 
-      if (!match?.[1]) {
+      if (!token) {
         return {
           success: false,
-          error: 'CSRF token não encontrado na página. Cookies podem estar expirados.',
+          error: CSRF_NOT_FOUND_MESSAGE,
         };
       }
 
-      csrfToken = match[1];
+      csrfToken = token;
     } catch (err) {
       return {
         success: false,
-        error: `Erro ao obter CSRF token: ${err instanceof Error ? err.message : String(err)}`,
+        error: formatCsrfRetrievalError(err),
       };
     }
 
     // ── 2. Chamar API createLink ──
-    const body: CreateLinkRequest = {
-      urls: [productUrl],
-      tag,
-    };
+    const body = buildCreateLinkBody(productUrl, tag);
 
     const apiRes = await fetch(ML_CREATE_LINK_API, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-csrf-token': csrfToken,
-        Cookie: sessionCookies,
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-        Referer: ML_LINK_BUILDER_URL,
-        Origin: 'https://www.mercadolivre.com.br',
-      },
+      headers: buildCreateLinkApiHeaders(sessionCookies, csrfToken),
       body: JSON.stringify(body),
     });
 
     if (!apiRes.ok) {
       return {
         success: false,
-        error: `API do Link Builder retornou HTTP ${apiRes.status}`,
+        error: formatLinkBuilderHttpError('api', apiRes.status),
       };
     }
 
     const data = (await apiRes.json()) as CreateLinkResponse;
 
     // ── 3. Validar resposta ──
-    if (!data.urls || data.urls.length === 0) {
-      return {
-        success: false,
-        error: 'API retornou sem URLs',
-      };
-    }
-
-    const result = data.urls[0]!;
-
-    // Verificar erro interno (ex: tag inválida)
-    if (result.error_code) {
-      return {
-        success: false,
-        error: result.message || `Erro do Link Builder: código ${result.error_code}`,
-      };
-    }
-
-    if (!result.short_url) {
-      return {
-        success: false,
-        error: 'API não retornou short_url. Produto pode não ser elegível.',
-      };
-    }
-
-    return {
-      success: true,
-      shortUrl: result.short_url,
-      longUrl: result.long_url,
-    };
+    return parseCreateLinkResponse(data);
   } catch (error) {
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-interface CreateLinkRequest {
-  urls: string[];
-  tag: string;
 }

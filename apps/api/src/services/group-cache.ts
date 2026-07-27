@@ -23,14 +23,23 @@
 import { getRedis, cacheDel } from './redis.ts';
 import { AffiliatesRepository, MirrorRepository } from '@omestre/db';
 import type { SourceGroupConfig } from '@omestre/shared';
+import {
+  CACHE_PREFIX,
+  CACHE_SET_KEY,
+  CACHE_TTL,
+  buildLegacySourceGroupValue,
+  buildSourceGroupConfig,
+  diffRemovedGroups,
+  firstAffiliateId,
+  firstConfig,
+  groupConfigsByJid,
+  instanceNameFromMirror,
+  mirrorHasSourceGroup,
+  parseCachedSourceGroupConfigs,
+  sourceGroupCacheKey,
+} from './group-cache-pure.ts';
 
 const affiliatesRepo = new AffiliatesRepository();
-
-const CACHE_PREFIX = 'mirror:source-group:';
-const CACHE_SET_KEY = 'mirror:source-groups:all';
-
-/** TTL padrão de 1 hora (3600s) para cada entrada no cache. */
-const CACHE_TTL = 3600;
 
 /**
  * Extrai o affiliateId e nome do grupo do cache para um JID de grupo de origem.
@@ -40,11 +49,9 @@ const CACHE_TTL = 3600;
  * 2. Se Redis não tem a chave, consulta PostgreSQL (fallback)
  * 3. Se encontrou no DB, popula o cache automaticamente
  */
-export async function getAffiliateIdBySourceGroup(
-  groupJid: string,
-): Promise<number | null> {
+export async function getAffiliateIdBySourceGroup(groupJid: string): Promise<number | null> {
   const configs = await getSourceGroupConfigs(groupJid);
-  return configs.length > 0 ? configs[0]!.affiliateId : null;
+  return firstAffiliateId(configs);
 }
 
 /**
@@ -55,35 +62,27 @@ export async function getAffiliateIdBySourceGroup(
  * 2. Se Redis não tem a chave, consulta PostgreSQL (fallback)
  * 3. Se encontrou no DB, popula o cache automaticamente
  */
-export async function getSourceGroupInfo(
-  groupJid: string,
-): Promise<SourceGroupConfig | null> {
+export async function getSourceGroupInfo(groupJid: string): Promise<SourceGroupConfig | null> {
   const configs = await getSourceGroupConfigs(groupJid);
-  return configs.length > 0 ? configs[0]! : null;
+  return firstConfig(configs);
 }
 
 /**
  * Busca todas as configurações de sourceGroup para um JID (1:N).
  * Retorna array vazio se não houver mirrors configurados.
  */
-export async function getSourceGroupConfigs(
-  groupJid: string,
-): Promise<SourceGroupConfig[]> {
+export async function getSourceGroupConfigs(groupJid: string): Promise<SourceGroupConfig[]> {
   // ── 1. Tenta Redis ──────────────────────────────────────────────────
   const r = getRedis();
   if (r) {
     try {
-      const raw = await r.get(`${CACHE_PREFIX}${groupJid}`);
+      const raw = await r.get(sourceGroupCacheKey(groupJid));
       if (raw) {
         // Renova o TTL no acesso
-        await r.expire(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL).catch(() => {});
-        const parsed = JSON.parse(raw);
+        await r.expire(sourceGroupCacheKey(groupJid), CACHE_TTL).catch(() => {});
         // Suporta tanto formato antigo (objeto) quanto novo (array)
-        if (Array.isArray(parsed)) {
-          return parsed as SourceGroupConfig[];
-        }
-        // Formato antigo: converte para array
-        return [parsed as SourceGroupConfig];
+        const parsed = parseCachedSourceGroupConfigs(raw);
+        if (parsed) return parsed;
       }
     } catch {
       // fallback silencioso para PostgreSQL
@@ -97,27 +96,12 @@ export async function getSourceGroupConfigs(
     const configs: SourceGroupConfig[] = [];
 
     for (const mirror of allMirrors.rows) {
-      const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
-      const found = groups?.find((g) => g.jid === groupJid);
-      if (found) {
-        const instanceName = `user-${mirror.userId}`;
+      if (mirrorHasSourceGroup(mirror, groupJid)) {
+        const instanceName = instanceNameFromMirror(mirror);
         const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
         if (affiliate) {
-          const targetGroups = mirror.targetGroups as { jid: string; name: string }[] | null;
-          const targetGroup = targetGroups?.[0];
-          if (targetGroup) {
-            const config: SourceGroupConfig = {
-              affiliateId: affiliate.id,
-              mirrorId: mirror.id,
-              instanceName,
-              targetGroupJid: targetGroup.jid,
-              targetGroupName: targetGroup.name,
-              messageTemplate: mirror.messageTemplate as string | null,
-              subRateMaxMsgs: mirror.subRateLimitMaxMsgs ?? 0,
-              subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
-            };
-            configs.push(config);
-          }
+          const config = buildSourceGroupConfig(mirror, affiliate.id);
+          if (config) configs.push(config);
         }
       }
     }
@@ -126,7 +110,7 @@ export async function getSourceGroupConfigs(
       await cacheSourceGroupConfigs(groupJid, configs);
       console.log(
         `[group-cache] Fallback mirror: sourceGroup ${groupJid} carregado ` +
-        `com ${configs.length} config(s)`,
+          `com ${configs.length} config(s)`,
       );
     }
 
@@ -150,11 +134,7 @@ export async function cacheSourceGroupConfigs(
   if (!r) return;
 
   try {
-    await r.setex(
-      `${CACHE_PREFIX}${groupJid}`,
-      CACHE_TTL,
-      JSON.stringify(configs),
-    );
+    await r.setex(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL, JSON.stringify(configs));
     // Mantém um set com todas as chaves para refresh bulk
     await r.sadd(CACHE_SET_KEY, groupJid);
   } catch {
@@ -181,20 +161,8 @@ export async function cacheSourceGroup(
       const mirrorRepo = new MirrorRepository();
       const mirror = await mirrorRepo.findById(mirrorId);
       if (mirror) {
-        const instanceName = `user-${mirror.userId}`;
-        const targetGroups = mirror.targetGroups as { jid: string; name: string }[] | null;
-        const targetGroup = targetGroups?.[0];
-        if (targetGroup) {
-          const config: SourceGroupConfig = {
-            affiliateId,
-            mirrorId,
-            instanceName,
-            targetGroupJid: targetGroup.jid,
-            targetGroupName: targetGroup.name,
-            messageTemplate: mirror.messageTemplate as string | null,
-            subRateMaxMsgs: mirror.subRateLimitMaxMsgs ?? 0,
-            subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
-          };
+        const config = buildSourceGroupConfig(mirror, affiliateId);
+        if (config) {
           await cacheSourceGroupConfigs(groupJid, [config]);
           return;
         }
@@ -205,7 +173,7 @@ export async function cacheSourceGroup(
     await r.setex(
       `${CACHE_PREFIX}${groupJid}`,
       CACHE_TTL,
-      JSON.stringify({ affiliateId, mirrorId, groupName: groupName ?? '' }),
+      buildLegacySourceGroupValue(affiliateId, groupJid, groupName, mirrorId),
     );
     await r.sadd(CACHE_SET_KEY, groupJid);
   } catch {
@@ -269,11 +237,9 @@ export async function replaceSourceGroups(
   const r = getRedis();
   if (!r) return;
 
-  const oldJids = new Set(oldGroups.map((g) => g.jid));
-  const newJids = new Set(newGroups.map((g) => g.jid));
-
   // Grupos que existiam mas não estão mais na nova config
-  const removed = [...oldJids].filter((jid) => !newJids.has(jid));
+  const removed = diffRemovedGroups(oldGroups, newGroups);
+  const newJids = new Set(newGroups.map((g) => g.jid));
 
   try {
     const pipeline = r.pipeline();
@@ -287,27 +253,10 @@ export async function replaceSourceGroups(
       const mirrorRepo = new MirrorRepository();
       const mirror = await mirrorRepo.findById(mirrorId);
       if (mirror) {
-        const instanceName = `user-${mirror.userId}`;
-        const targetGroups = mirror.targetGroups as { jid: string; name: string }[] | null;
-        const targetGroup = targetGroups?.[0];
-        if (targetGroup) {
+        const config = buildSourceGroupConfig(mirror, affiliateId);
+        if (config) {
           for (const jid of newJids) {
-            const newGroup = newGroups.find((g) => g.jid === jid);
-            const config: SourceGroupConfig = {
-              affiliateId,
-              mirrorId,
-              instanceName,
-              targetGroupJid: targetGroup.jid,
-              targetGroupName: targetGroup.name,
-              messageTemplate: mirror.messageTemplate as string | null,
-              subRateMaxMsgs: mirror.subRateLimitMaxMsgs ?? 0,
-              subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
-            };
-            pipeline.setex(
-              `${CACHE_PREFIX}${jid}`,
-              CACHE_TTL,
-              JSON.stringify([config]),
-            );
+            pipeline.setex(`${CACHE_PREFIX}${jid}`, CACHE_TTL, JSON.stringify([config]));
             pipeline.sadd(CACHE_SET_KEY, jid);
           }
         }
@@ -370,51 +319,35 @@ export async function warmSourceGroupCache(): Promise<void> {
     const mirrorRepo = new MirrorRepository();
     const mirrorResult = await mirrorRepo.list({ status: 'active', pageSize: 1000 });
 
-    // Map<sourceGroupJid, Map<mirrorId, SourceGroupConfig>> — dedup por (jid, mirrorId)
-    const grouped = new Map<string, Map<number, SourceGroupConfig>>();
+    // Coleta (jid, config) de todos os mirrors ativos
+    const entries: { jid: string; config: SourceGroupConfig }[] = [];
 
     for (const mirror of mirrorResult.rows) {
       const srcGroups = mirror.sourceGroups as { jid: string; name: string }[] | null;
       if (!srcGroups || srcGroups.length === 0) continue;
 
       // Encontra o affiliate pelo evolutionInstanceId (user-{userId})
-      const instanceName = `user-${mirror.userId}`;
+      const instanceName = instanceNameFromMirror(mirror);
       const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
       if (!affiliate) continue;
 
-      const targetGroups = mirror.targetGroups as { jid: string; name: string }[] | null;
-      const targetGroup = targetGroups?.[0];
-      if (!targetGroup) continue;
+      const config = buildSourceGroupConfig(mirror, affiliate.id);
+      if (!config) continue;
 
       for (const group of srcGroups) {
-        const config: SourceGroupConfig = {
-          affiliateId: affiliate.id,
-          mirrorId: mirror.id,
-          instanceName,
-          targetGroupJid: targetGroup.jid,
-          targetGroupName: targetGroup.name,
-          messageTemplate: mirror.messageTemplate as string | null,
-          subRateMaxMsgs: mirror.subRateLimitMaxMsgs ?? 0,
-          subRateWindowSec: mirror.subRateLimitWindowSec ?? 300,
-        };
-
-        let perJid = grouped.get(group.jid);
-        if (!perJid) {
-          perJid = new Map<number, SourceGroupConfig>();
-          grouped.set(group.jid, perJid);
-        }
-        // Dedup por mirrorId — último write vence (mesmo mirrorId não aparece 2x)
-        perJid.set(mirror.id, config);
+        entries.push({ jid: group.jid, config });
       }
     }
+
+    // Dedup por (jid, mirrorId) — último write vence
+    const grouped = groupConfigsByJid(entries);
 
     // Persiste uma vez por sourceGroupJid (DB é a única fonte de verdade)
     const r = getRedis();
     const pipeline = r ? r.pipeline() : null;
     let totalGroups = 0;
 
-    for (const [jid, perMirror] of grouped.entries()) {
-      const configs = [...perMirror.values()];
+    for (const [jid, configs] of grouped.entries()) {
       if (pipeline) {
         pipeline.setex(`${CACHE_PREFIX}${jid}`, CACHE_TTL, JSON.stringify(configs));
         pipeline.sadd(CACHE_SET_KEY, jid);

@@ -16,6 +16,22 @@ import { MirrorRepository, AffiliatesRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { replaceSourceGroups, removeSourceGroups } from '../../services/group-cache.ts';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
+import {
+  parseListQuery,
+  parseIdParam,
+  isValidMirrorStatus,
+  buildInvalidStatusError,
+  buildCreateMirrorInput,
+  buildUpdateData,
+  updateTouchesSourceGroups,
+  hasSourceGroups,
+  sourceGroupJids,
+  buildErrorResult,
+  buildDetailResponse,
+  buildListResponse,
+  buildDeletedResponse,
+  type GroupItem,
+} from './mirrors-pure.ts';
 
 const mirrorRepo = new MirrorRepository();
 const affiliatesRepo = new AffiliatesRepository();
@@ -63,23 +79,20 @@ export const mirrorRoutes = new Elysia()
       const auth = await getAuthUser(jwt, request.headers);
       if (!auth) {
         set.status = 401;
-        return { success: false, error: 'Não autenticado' };
+        return buildErrorResult('Não autenticado');
       }
 
-      const page = parseInt(query.page ?? '1', 10);
-      const pageSize = parseInt(query.pageSize ?? '25', 10);
-      const status = query.status as string | undefined;
-      const search = query.search as string | undefined;
+      const { status, search, page, pageSize } = parseListQuery(query);
 
       const result = await mirrorRepo.list({
         status,
         search,
         userId: auth.userId,
-        page: isNaN(page) ? 1 : page,
-        pageSize: isNaN(pageSize) ? 25 : pageSize,
+        page,
+        pageSize,
       });
 
-      return { success: true, ...result };
+      return buildListResponse(result);
     },
     {
       query: t.Object({
@@ -98,22 +111,23 @@ export const mirrorRoutes = new Elysia()
       const auth = await getAuthUser(jwt, request.headers);
       if (!auth) {
         set.status = 401;
-        return { success: false, error: 'Não autenticado' };
+        return buildErrorResult('Não autenticado');
       }
 
-      const id = parseInt(params.id, 10);
-      if (isNaN(id)) {
+      const idParsed = parseIdParam(params.id);
+      if (!idParsed.ok) {
         set.status = 400;
-        return { success: false, error: 'ID inválido' };
+        return buildErrorResult('ID inválido');
       }
+      const id = idParsed.id;
 
       const mirror = await mirrorRepo.findById(id);
       if (!mirror) {
         set.status = 404;
-        return { success: false, error: 'Espelhamento não encontrado' };
+        return buildErrorResult('Espelhamento não encontrado');
       }
 
-      return { success: true, mirror };
+      return buildDetailResponse(mirror);
     },
     {
       params: t.Object({
@@ -129,22 +143,13 @@ export const mirrorRoutes = new Elysia()
       const auth = await getAuthUser(jwt, request.headers);
       if (!auth) {
         set.status = 401;
-        return { success: false, error: 'Não autenticado' };
+        return buildErrorResult('Não autenticado');
       }
 
-      const mirror = await mirrorRepo.create({
-        name: body.name,
-        status: body.status ?? 'active',
-        userId: auth.userId,
-        sourceGroups: body.sourceGroups ?? [],
-        targetGroups: body.targetGroups ?? [],
-        messageTemplate: body.messageTemplate ?? null,
-        subRateLimitMaxMsgs: body.subRateLimitMaxMsgs ?? null,
-        subRateLimitWindowSec: body.subRateLimitWindowSec ?? null,
-      });
+      const mirror = await mirrorRepo.create(buildCreateMirrorInput(body, auth.userId));
 
       // Popula cache Redis com os sourceGroups do novo mirror
-      if (mirror.sourceGroups && (mirror.sourceGroups as { jid: string; name: string }[]).length > 0) {
+      if (hasSourceGroups(mirror.sourceGroups as GroupItem[] | null)) {
         const instanceName = instanceNameFromUserId(auth.userId);
         const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
         if (affiliate) {
@@ -157,7 +162,7 @@ export const mirrorRoutes = new Elysia()
         }
       }
 
-      return { success: true, mirror };
+      return buildDetailResponse(mirror);
     },
     {
       body: createBodySchema,
@@ -171,49 +176,44 @@ export const mirrorRoutes = new Elysia()
       const auth = await getAuthUser(jwt, request.headers);
       if (!auth) {
         set.status = 401;
-        return { success: false, error: 'Não autenticado' };
+        return buildErrorResult('Não autenticado');
       }
 
-      const id = parseInt(params.id, 10);
-      if (isNaN(id)) {
+      const idParsed = parseIdParam(params.id);
+      if (!idParsed.ok) {
         set.status = 400;
-        return { success: false, error: 'ID inválido' };
+        return buildErrorResult('ID inválido');
       }
+      const id = idParsed.id;
 
-      const updateData: Record<string, unknown> = {};
-      if (body.name !== undefined) updateData.name = body.name;
-      if (body.status !== undefined) updateData.status = body.status;
-      if (body.sourceGroups !== undefined) updateData.sourceGroups = body.sourceGroups;
-      if (body.targetGroups !== undefined) updateData.targetGroups = body.targetGroups;
-      if (body.messageTemplate !== undefined) updateData.messageTemplate = body.messageTemplate;
-      if (body.subRateLimitMaxMsgs !== undefined) updateData.subRateLimitMaxMsgs = body.subRateLimitMaxMsgs;
-      if (body.subRateLimitWindowSec !== undefined) updateData.subRateLimitWindowSec = body.subRateLimitWindowSec;
+      const updateData = buildUpdateData(body);
 
       // Busca o mirror ANTES de atualizar para ter a lista antiga de sourceGroups
       const currentMirror = await mirrorRepo.findById(id);
-      const oldSourceGroups = (currentMirror?.sourceGroups as { jid: string; name: string }[]) ?? [];
+      const oldSourceGroups =
+        (currentMirror?.sourceGroups as { jid: string; name: string }[]) ?? [];
 
       const mirror = await mirrorRepo.update(id, updateData);
       if (!mirror) {
         set.status = 404;
-        return { success: false, error: 'Espelhamento não encontrado' };
+        return buildErrorResult('Espelhamento não encontrado');
       }
 
       // Atualiza cache Redis se os sourceGroups mudaram
-      if (body.sourceGroups !== undefined) {
+      if (updateTouchesSourceGroups(body)) {
         const instanceName = instanceNameFromUserId(auth.userId);
         const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
         if (affiliate) {
           await replaceSourceGroups(
             oldSourceGroups,
-            body.sourceGroups,
+            body.sourceGroups ?? [],
             affiliate.id,
             mirror.id, // mirrorId
           );
         }
       }
 
-      return { success: true, mirror };
+      return buildDetailResponse(mirror);
     },
     {
       params: t.Object({ id: t.String() }),
@@ -228,36 +228,33 @@ export const mirrorRoutes = new Elysia()
       const auth = await getAuthUser(jwt, request.headers);
       if (!auth) {
         set.status = 401;
-        return { success: false, error: 'Não autenticado' };
+        return buildErrorResult('Não autenticado');
       }
 
-      const id = parseInt(params.id, 10);
-      if (isNaN(id)) {
+      const idParsed = parseIdParam(params.id);
+      if (!idParsed.ok) {
         set.status = 400;
-        return { success: false, error: 'ID inválido' };
+        return buildErrorResult('ID inválido');
       }
+      const id = idParsed.id;
 
-      const validStatuses = ['active', 'inactive'];
-      if (!validStatuses.includes(body.status)) {
+      if (!isValidMirrorStatus(body.status)) {
         set.status = 400;
-        return {
-          success: false,
-          error: `Status inválido. Valores aceitos: ${validStatuses.join(', ')}`,
-        };
+        return buildErrorResult(buildInvalidStatusError());
       }
 
       const mirror = await mirrorRepo.patchStatus(id, body.status);
       if (!mirror) {
         set.status = 404;
-        return { success: false, error: 'Espelhamento não encontrado' };
+        return buildErrorResult('Espelhamento não encontrado');
       }
 
       // Se desativou, remove sourceGroups do cache Redis
       // Se ativou, adiciona de volta
       if (body.status === 'inactive') {
         const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
-        if (groups && groups.length > 0) {
-          await removeSourceGroups(groups.map((g) => g.jid));
+        if (hasSourceGroups(groups)) {
+          await removeSourceGroups(sourceGroupJids(groups));
         }
       } else if (body.status === 'active') {
         // Re-popula cache ao reativar
@@ -265,10 +262,10 @@ export const mirrorRoutes = new Elysia()
         const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
         if (affiliate) {
           const groups = mirror.sourceGroups as { jid: string; name: string }[] | null;
-          if (groups && groups.length > 0) {
+          if (hasSourceGroups(groups)) {
             await replaceSourceGroups(
               [], // oldGroups: vazio (reativando)
-              groups,
+              groups as { jid: string; name: string }[],
               affiliate.id,
               mirror.id,
             );
@@ -276,7 +273,7 @@ export const mirrorRoutes = new Elysia()
         }
       }
 
-      return { success: true, mirror };
+      return buildDetailResponse(mirror);
     },
     {
       params: t.Object({ id: t.String() }),
@@ -291,35 +288,36 @@ export const mirrorRoutes = new Elysia()
       const auth = await getAuthUser(jwt, request.headers);
       if (!auth) {
         set.status = 401;
-        return { success: false, error: 'Não autenticado' };
+        return buildErrorResult('Não autenticado');
       }
 
-      const id = parseInt(params.id, 10);
-      if (isNaN(id)) {
+      const idParsed = parseIdParam(params.id);
+      if (!idParsed.ok) {
         set.status = 400;
-        return { success: false, error: 'ID inválido' };
+        return buildErrorResult('ID inválido');
       }
+      const id = idParsed.id;
 
       // Busca o mirror ANTES de deletar para ter os sourceGroups e limpar o cache
       const existingMirror = await mirrorRepo.findById(id);
       if (!existingMirror) {
         set.status = 404;
-        return { success: false, error: 'Espelhamento não encontrado' };
+        return buildErrorResult('Espelhamento não encontrado');
       }
 
       const deleted = await mirrorRepo.delete(id);
       if (!deleted) {
         set.status = 404;
-        return { success: false, error: 'Espelhamento não encontrado' };
+        return buildErrorResult('Espelhamento não encontrado');
       }
 
       // Remove sourceGroups do cache Redis
       const groups = existingMirror.sourceGroups as { jid: string; name: string }[] | null;
-      if (groups && groups.length > 0) {
-        await removeSourceGroups(groups.map((g) => g.jid));
+      if (hasSourceGroups(groups)) {
+        await removeSourceGroups(sourceGroupJids(groups));
       }
 
-      return { success: true, message: 'Espelhamento excluído com sucesso' };
+      return buildDeletedResponse('Espelhamento excluído com sucesso');
     },
     {
       params: t.Object({ id: t.String() }),

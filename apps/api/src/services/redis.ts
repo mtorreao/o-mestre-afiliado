@@ -11,6 +11,12 @@
 import Redis from 'ioredis';
 import { makeLogger } from '@omestre/shared';
 import { config } from '../config.ts';
+import {
+  buildStreamAddArgs,
+  computeRetryDelay,
+  deserializeCacheValue,
+  serializeCacheValue,
+} from './redis-pure.ts';
 
 const log = makeLogger('api');
 
@@ -37,11 +43,12 @@ export function getRedis(): Redis | null {
     client = new Redis(url, {
       maxRetriesPerRequest: 1,
       retryStrategy(times) {
-        if (times > 3) {
+        const delay = computeRetryDelay(times);
+        if (delay === null) {
           enabled = false;
           return null;
         }
-        return Math.min(times * 200, 1000);
+        return delay;
       },
       lazyConnect: true,
     });
@@ -65,8 +72,7 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   if (!r) return null;
   try {
     const raw = await r.get(key);
-    if (!raw) return null;
-    return JSON.parse(raw) as T;
+    return deserializeCacheValue<T>(raw);
   } catch (err) {
     log('warn', 'Falha ao ler do cache', {
       key,
@@ -83,7 +89,7 @@ export async function cacheSet(key: string, value: unknown, ttlSeconds = 300): P
   const r = getRedis();
   if (!r) return;
   try {
-    await r.setex(key, ttlSeconds, JSON.stringify(value));
+    await r.setex(key, ttlSeconds, serializeCacheValue(value));
   } catch (err) {
     log('warn', 'Falha ao salvar no cache', {
       key,
@@ -123,7 +129,7 @@ export async function streamAdd(stream: string, message: object): Promise<string
   const r = getRedis();
   if (!r) return false;
   try {
-    const id = await r.xadd(stream, '*', 'payload', JSON.stringify(message));
+    const id = await r.xadd(...buildStreamAddArgs(stream, message));
     return id ?? false;
   } catch (err) {
     log('warn', 'Falha ao adicionar ao stream', {

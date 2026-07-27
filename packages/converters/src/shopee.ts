@@ -3,18 +3,33 @@
  *
  * Endpoint: https://open-api.affiliate.shopee.com.br/graphql
  * Credenciais via env vars: SHOPEE_APP_ID, SHOPEE_SECRET
+ *
+ * A lógica PURA (assinatura SHA-256, extração de itemId/slug, normalização
+ * de keyword, montagem de queries GraphQL, parsing de respostas) vive em
+ * `shopee-pure.ts`. Este arquivo mantém SOMENTE a camada de I/O (fetch) e
+ * os pontos de entrada públicos — nenhum header de auth ou lógica de fetch
+ * foi alterado.
  */
 
-import { createHash } from 'node:crypto';
 import type { ConversionResult } from '@omestre/shared';
 import { detectMarketplace } from '@omestre/shared';
+import {
+  buildGenerateShortLinkMutation,
+  buildProductOfferV2ByIdMutation,
+  buildProductOfferV2ByKeywordMutation,
+  buildShopeeAuthHeaders,
+  extractFirstProductOffer,
+  extractShopeeItemIdFromUrl as pureExtractShopeeItemIdFromUrl,
+  extractShopeeShopIdFromUrl,
+  extractShopeeSlug as pureExtractShopeeSlug,
+  normalizeShopeeKeyword,
+  parseGenerateShortLinkPayload,
+  type ProductOfferV2Response,
+  type ShopeeCredentials,
+  type ShopeeProductOffer,
+} from './shopee-pure.ts';
 
 const API_URL = 'https://open-api.affiliate.shopee.com.br/graphql';
-
-export interface ShopeeCredentials {
-  appId: string;
-  secret: string;
-}
 
 function getCredentials(): ShopeeCredentials {
   const appId = process.env.SHOPEE_APP_ID;
@@ -31,13 +46,34 @@ function getCredentials(): ShopeeCredentials {
 
 function generateAuthHeaders(appId: string, secret: string, body: string) {
   const timestamp = Math.floor(Date.now() / 1000);
-  const payload = `${appId}${timestamp}${body}${secret}`;
-  const signature = createHash('sha256').update(payload).digest('hex');
+  return buildShopeeAuthHeaders(appId, secret, body, timestamp);
+}
 
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`,
-  };
+/**
+ * Faz a chamada GraphQL com autenticação SHA-256.
+ * Retorna null em caso de erro (network, auth, malformed).
+ */
+async function shopeeGraphqlRequest(
+  credentials: ShopeeCredentials,
+  body: string,
+): Promise<Record<string, unknown> | null> {
+  const { appId, secret } = credentials;
+  const timestamp = Math.floor(Date.now() / 1000);
+
+  try {
+    const res = await fetch('https://open-api.affiliate.shopee.com.br/graphql', {
+      method: 'POST',
+      headers: buildShopeeAuthHeaders(appId, secret, body, timestamp),
+      body,
+      signal: AbortSignal.timeout(8_000),
+    });
+
+    if (!res.ok) return null;
+
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -46,13 +82,7 @@ function generateAuthHeaders(appId: string, secret: string, body: string) {
 export async function generateShortLink(originUrl: string): Promise<string | null> {
   const { appId, secret } = getCredentials();
 
-  const body = JSON.stringify({
-    query: `mutation {
-      generateShortLink(input: { originUrl: "${originUrl}" }) {
-        shortLink
-      }
-    }`,
-  });
+  const body = buildGenerateShortLinkMutation(originUrl);
 
   const headers = generateAuthHeaders(appId, secret, body);
 
@@ -64,17 +94,14 @@ export async function generateShortLink(originUrl: string): Promise<string | nul
 
   const data = (await res.json()) as Record<string, unknown>;
 
-  const dataNode = data?.data as Record<string, unknown> | undefined;
-  const generateNode = dataNode?.generateShortLink as Record<string, unknown> | undefined;
-  const shortLink = generateNode?.shortLink as string | undefined;
+  const { shortLink, errors } = parseGenerateShortLinkPayload(data);
 
   if (shortLink) {
     return shortLink;
   }
 
   // Erro da API
-  if (data?.errors) {
-    const errors = data.errors as Array<{ message: string; extensions?: { code?: string } }>;
+  if (errors?.length) {
     const err = errors[0];
     if (err) {
       throw new Error(`Shopee API error ${err.extensions?.code ?? ''}: ${err.message}`);
@@ -107,26 +134,16 @@ export async function convertShopeeUrlWithCredentials(
     }
 
     const { appId, secret } = credentials;
-    const body = JSON.stringify({
-      query: `mutation {
-      generateShortLink(input: { originUrl: "${url}" }) {
-        shortLink
-      }
-    }`,
-    });
-
-    const headers = generateAuthHeaders(appId, secret, body);
+    const body = buildGenerateShortLinkMutation(url);
 
     const res = await fetch(API_URL, {
       method: 'POST',
-      headers,
+      headers: generateAuthHeaders(appId, secret, body),
       body,
     });
 
     const data = (await res.json()) as Record<string, unknown>;
-    const dataNode = data?.data as Record<string, unknown> | undefined;
-    const generateNode = dataNode?.generateShortLink as Record<string, unknown> | undefined;
-    const shortLink = generateNode?.shortLink as string | undefined;
+    const { shortLink, errors } = parseGenerateShortLinkPayload(data);
 
     if (shortLink) {
       return {
@@ -139,8 +156,7 @@ export async function convertShopeeUrlWithCredentials(
     }
 
     // Erro da API
-    if (data?.errors) {
-      const errors = data.errors as Array<{ message: string }>;
+    if (errors?.length) {
       const err = errors[0];
       return {
         success: false,
@@ -172,21 +188,7 @@ export async function convertShopeeUrlWithCredentials(
   }
 }
 
-/**
- * Interface de retorno da query productOfferV2 (Shopee Affiliate GraphQL).
- * Retorna metadados de uma oferta de produto, incluindo imageUrl.
- */
-export interface ShopeeProductOffer {
-  itemId: number;
-  shopId: number;
-  productName?: string;
-  imageUrl?: string;
-  offerLink?: string;
-  price?: number;
-  priceMin?: number;
-  priceMax?: number;
-  commissionRate?: string;
-}
+export type { ShopeeCredentials, ShopeeProductOffer, ProductOfferV2Response };
 
 /**
  * Busca metadados de uma oferta de produto Shopee via GraphQL Affiliate API.
@@ -205,9 +207,8 @@ export async function getProductOffer(
   originUrl: string,
   credentials: ShopeeCredentials,
 ): Promise<ShopeeProductOffer | null> {
-  const itemId = extractShopeeItemIdFromUrl(originUrl);
-  const shopIdMatch = originUrl.match(/-i\.(\d+)\.(\d+)/i);
-  const shopId = shopIdMatch ? parseInt(shopIdMatch[1]!, 10) : null;
+  const itemId = pureExtractShopeeItemIdFromUrl(originUrl);
+  const shopId = extractShopeeShopIdFromUrl(originUrl);
 
   // ── Estratégia 1: productOfferV2 com itemId+shopId ─
   if (itemId && shopId) {
@@ -216,7 +217,7 @@ export async function getProductOffer(
   }
 
   // ── Estratégia 2: productOfferV2 com keyword (slug) ─
-  const slug = extractShopeeSlug(originUrl);
+  const slug = pureExtractShopeeSlug(originUrl);
   if (slug) {
     const offer = await queryProductOfferV2ByKeyword(credentials, slug);
     if (offer) return offer;
@@ -234,41 +235,10 @@ async function queryProductOfferV2(
   itemId: number,
   shopId: number,
 ): Promise<ShopeeProductOffer | null> {
-  const body = JSON.stringify({
-    query: `query {
-      productOfferV2(itemId: ${itemId}, shopId: ${shopId}) {
-        nodes {
-          itemId
-          shopId
-          productName
-          imageUrl
-          offerLink
-          price
-          priceMin
-          priceMax
-          commissionRate
-        }
-      }
-    }`,
-  });
+  const body = buildProductOfferV2ByIdMutation(itemId, shopId);
 
   const response = await shopeeGraphqlRequest(credentials, body);
-  if (!response) return null;
-
-  const data = response as {
-    data?: {
-      productOfferV2?: {
-        nodes?: Array<ShopeeProductOffer>;
-      };
-    };
-    errors?: Array<{ message: string }>;
-  };
-
-  if (data.errors?.length) {
-    return null;
-  }
-
-  return data.data?.productOfferV2?.nodes?.[0] ?? null;
+  return extractFirstProductOffer(response as ProductOfferV2Response | null);
 }
 
 /**
@@ -279,107 +249,20 @@ async function queryProductOfferV2ByKeyword(
   credentials: ShopeeCredentials,
   keyword: string,
 ): Promise<ShopeeProductOffer | null> {
-  // Limpa o slug: remove acentos, mantém só alfanumérico + espaços
-  const cleanKeyword = keyword.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+  const cleanKeyword = normalizeShopeeKeyword(keyword);
 
-  const body = JSON.stringify({
-    query: `query {
-      productOfferV2(keyword: "${cleanKeyword.replace(/"/g, '\\"')}", limit: 5, sortType: 1) {
-        nodes {
-          itemId
-          shopId
-          productName
-          imageUrl
-          offerLink
-          price
-          priceMin
-          priceMax
-          commissionRate
-        }
-      }
-    }`,
-  });
+  const body = buildProductOfferV2ByKeywordMutation(cleanKeyword);
 
   const response = await shopeeGraphqlRequest(credentials, body);
-  if (!response) return null;
-
-  const data = response as {
-    data?: {
-      productOfferV2?: {
-        nodes?: Array<ShopeeProductOffer>;
-      };
-    };
-    errors?: Array<{ message: string }>;
-  };
-
-  if (data.errors?.length) {
-    return null;
-  }
-
-  return data.data?.productOfferV2?.nodes?.[0] ?? null;
-}
-
-/**
- * Faz a chamada GraphQL com autenticação SHA-256.
- * Retorna null em caso de erro (network, auth, malformed).
- */
-async function shopeeGraphqlRequest(
-  credentials: ShopeeCredentials,
-  body: string,
-): Promise<Record<string, unknown> | null> {
-  const { appId, secret } = credentials;
-  const timestamp = Math.floor(Date.now() / 1000);
-  const payload = `${appId}${timestamp}${body}${secret}`;
-  const signature = createHash('sha256').update(payload).digest('hex');
-
-  try {
-    const res = await fetch('https://open-api.affiliate.shopee.com.br/graphql', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`,
-      },
-      body,
-      signal: AbortSignal.timeout(8_000),
-    });
-
-    if (!res.ok) return null;
-
-    return (await res.json()) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Extrai o itemId (segundo número no padrão -i.SHOPID.ITEMID) de uma URL Shopee.
- */
-function extractShopeeItemIdFromUrl(url: string): number | null {
-  const m = url.match(/-i\.(\d+)\.(\d+)/i);
-  if (m?.[2]) return parseInt(m[2], 10);
-  // Tenta formato /product/{shopid}/{itemid}
-  const productMatch = url.match(/\/product\/(\d+)\/(\d+)/i);
-  if (productMatch?.[2]) return parseInt(productMatch[2], 10);
-  return null;
-}
-
-/**
- * Extrai o slug do produto de uma URL Shopee.
- * Ex: shopee.com.br/Capinha-iPhone-i.123.456 → "Capinha-iPhone"
- */
-function extractShopeeSlug(url: string): string | null {
-  const m = url.match(/shopee\.com\.br\/([^/?#]+)-i\./i);
-  if (m?.[1]) return m[1];
-  // slug puro sem -i.
-  const m2 = url.match(/shopee\.com\.br\/([^/?#]+)/i);
-  if (m2?.[1] && !m2[1].startsWith('product')) return m2[1];
-  return null;
+  return extractFirstProductOffer(response as ProductOfferV2Response | null);
 }
 
 /** Exportado apenas para teste unitário. */
-export const _testExtractShopeeItemIdFromUrl = extractShopeeItemIdFromUrl;
+export const _testExtractShopeeItemIdFromUrl = pureExtractShopeeItemIdFromUrl;
 /** Exportado apenas para teste unitário. */
-export const _testExtractShopeeSlug = extractShopeeSlug;
+export const _testExtractShopeeSlug = pureExtractShopeeSlug;
+/** Exportado apenas para teste unitário (lógica pura de assinatura SHA-256). */
+export const _testGenerateAuthHeaders = generateAuthHeaders;
 
 /**
  * Converte uma URL de produto Shopee em link de afiliado

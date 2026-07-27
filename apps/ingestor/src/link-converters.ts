@@ -14,6 +14,10 @@
  *  - Amazon: afiliado com trackingIds → usa. Senão, fallback global.
  *
  * Cache hit (Redis) retorna imediatamente sem re-converter.
+ *
+ * Toda a lógica PURA de decisão/classificação/construção vive em
+ * `link-converters-pure.ts` (100% coberta por link-converters-pure.test.ts).
+ * Este módulo é a camada fina de I/O que resolve dados e delega.
  */
 import {
   convertShopeeUrlWithCredentials,
@@ -30,6 +34,31 @@ import {
 import { resolveRedirectUrl } from './resolve-redirect.ts';
 import { resolveMeliRedirect, isMeliProductUrl } from './resolve-redirect.ts';
 import { getCachedConversion } from './conversion-cache.ts';
+import type { ConversionResult } from './link-converters-pure.ts';
+import {
+  extractUserIdFromInstanceName,
+  buildInstanceName,
+  resolveEffectiveMarketplace,
+  classifyUnsupportedMarketplace,
+  buildUnsupportedMarketplaceError,
+  toConversionResult,
+  buildCachedConversionResult,
+  buildBlockedResult,
+  decideMeliProductStatus,
+  buildMeliNotProductError,
+  classifyMlShortLinkResult,
+  hasShopeeCredentials,
+  hasAmazonTrackingIds,
+  ML_NO_COOKIES_ERROR,
+  ML_NO_TAG_ERROR,
+} from './link-converters-pure.ts';
+
+// Re-export das puras para compatibilidade com consumidores/testes antigos.
+export {
+  extractUserIdFromInstanceName,
+  resolveEffectiveMarketplace,
+  classifyUnsupportedMarketplace,
+} from './link-converters-pure.ts';
 
 const log = makeLogger('ingestor');
 
@@ -44,29 +73,20 @@ export async function convertOfferUrl(
   originalUrl: string,
   affiliateId: number,
   instanceName: string,
-): Promise<{
-  convertedUrl: string | null;
-  marketplace: string;
-  success: boolean;
-  error?: string;
-}> {
+): Promise<ConversionResult> {
   const marketplace = detectMarketplace(originalUrl);
   if (marketplace === 'unknown') {
     return { convertedUrl: null, marketplace, success: false };
   }
 
   let resolvedUrl = await resolveRedirectUrl(originalUrl);
-  let effectiveMarketplace = marketplace;
+  let effectiveMarketplace = resolveEffectiveMarketplace(marketplace, originalUrl, resolvedUrl);
   if (resolvedUrl !== originalUrl) {
     log('info', 'URL de redirector resolvida', {
       original: originalUrl,
       resolved: resolvedUrl,
       marketplace,
     });
-    const resolvedMp = detectMarketplace(resolvedUrl);
-    if (resolvedMp !== 'unknown') {
-      effectiveMarketplace = resolvedMp;
-    }
   }
 
   const cached = await getCachedConversion(resolvedUrl);
@@ -76,27 +96,16 @@ export async function convertOfferUrl(
       marketplace: cached.marketplace,
       cachedAt: cached.timestamp,
     });
-    return {
-      convertedUrl: cached.convertedUrl,
-      marketplace: cached.marketplace,
-      success: cached.convertedUrl !== null,
-    };
+    return buildCachedConversionResult(cached);
   }
 
   try {
-    const userIdMatch = instanceName.match(/^user-(\d+)$/);
-    if (!userIdMatch) {
+    const userId = extractUserIdFromInstanceName(instanceName);
+    if (userId === null) {
       const { convertUrl } = await import('@omestre/converters');
       const result = await convertUrl(resolvedUrl);
-      return {
-        convertedUrl: result.affiliateUrl,
-        marketplace: effectiveMarketplace,
-        success: result.success,
-        error: result.error,
-      };
+      return toConversionResult(effectiveMarketplace, result);
     }
-
-    const userId = parseInt(userIdMatch[1]!, 10);
 
     if (effectiveMarketplace === 'shopee') {
       return await convertShopeeForAffiliate(resolvedUrl, userId);
@@ -110,32 +119,22 @@ export async function convertOfferUrl(
 
     // Marketplaces conhecidos mas sem integração implementada
     // Exibe mensagem amigável e aparece nos logs de espelhamento como 'blocked'
-    const unsupportedMarketplaces: Record<string, string> = {
-      magalu: 'Magalu (Magazine Luiza)',
-    };
-    const unsupportedName = unsupportedMarketplaces[effectiveMarketplace];
+    const unsupportedName = classifyUnsupportedMarketplace(effectiveMarketplace);
     if (unsupportedName) {
       log('warn', 'Marketplace ainda não integrado — oferta bloqueada', {
         marketplace: effectiveMarketplace,
         url: resolvedUrl,
         userId,
       });
-      return {
-        convertedUrl: null,
-        marketplace: effectiveMarketplace,
-        success: false,
-        error: `Marketplace ainda não liberado: ${unsupportedName}`,
-      };
+      return buildBlockedResult(
+        effectiveMarketplace,
+        buildUnsupportedMarketplaceError(unsupportedName),
+      );
     }
 
     const { convertUrl } = await import('@omestre/converters');
     const result = await convertUrl(resolvedUrl);
-    return {
-      convertedUrl: result.affiliateUrl,
-      marketplace: effectiveMarketplace,
-      success: result.success,
-      error: result.error,
-    };
+    return toConversionResult(effectiveMarketplace, result);
   } catch (err) {
     log('warn', 'Falha ao converter URL', {
       url: resolvedUrl,
@@ -143,12 +142,7 @@ export async function convertOfferUrl(
       affiliateId,
       error: String(err),
     });
-    return {
-      convertedUrl: null,
-      marketplace: effectiveMarketplace,
-      success: false,
-      error: String(err),
-    };
+    return buildBlockedResult(effectiveMarketplace, String(err));
   }
 }
 
@@ -156,43 +150,26 @@ export async function convertOfferUrl(
  * Conversão Shopee — usa credenciais do UserCredentialsRepository.
  * Fallback global via .env se afiliado não tem credenciais.
  */
-async function convertShopeeForAffiliate(
-  url: string,
-  userId: number,
-): Promise<{
-  convertedUrl: string | null;
-  marketplace: string;
-  success: boolean;
-  error?: string;
-}> {
+async function convertShopeeForAffiliate(url: string, userId: number): Promise<ConversionResult> {
   const credsRepo = new UserCredentialsRepository();
   const creds = await credsRepo.findByUserId(userId);
 
-  if (creds?.shopeeAppId && creds?.shopeeAppSecret) {
+  if (hasShopeeCredentials(creds)) {
     const result = await convertShopeeUrlWithCredentials(url, {
-      appId: creds.shopeeAppId,
-      secret: creds.shopeeAppSecret,
+      appId: creds!.shopeeAppId!,
+      secret: creds!.shopeeAppSecret!,
     });
-    return {
-      convertedUrl: result.affiliateUrl,
-      marketplace: 'shopee',
-      success: result.success,
-      error: result.error,
-    };
+    return toConversionResult('shopee', result);
   }
 
   log('info', 'Sem credenciais Shopee específicas — usando fallback global', { userId });
-  const instanceName = `user-${userId}`;
-  processFailure(instanceName, 'invalid_shopee_creds', { marketplace: 'shopee' }).catch(() => {});
+  processFailure(buildInstanceName(userId), 'invalid_shopee_creds', {
+    marketplace: 'shopee',
+  }).catch(() => {});
 
   const { convertUrl } = await import('@omestre/converters');
   const result = await convertUrl(url);
-  return {
-    convertedUrl: result.affiliateUrl,
-    marketplace: 'shopee',
-    success: result.success,
-    error: result.error,
-  };
+  return toConversionResult('shopee', result);
 }
 
 /**
@@ -205,32 +182,20 @@ async function convertShopeeForAffiliate(
  * segue o redirect, faz strip de params de tracking (matt_word/matt_tool/ref)
  * e retorna isProduct.
  */
-async function convertMlForAffiliate(
-  url: string,
-  userId: number,
-): Promise<{
-  convertedUrl: string | null;
-  marketplace: string;
-  success: boolean;
-  error?: string;
-}> {
+async function convertMlForAffiliate(url: string, userId: number): Promise<ConversionResult> {
   const mlRepo = new MlAffiliateRepository();
   const mlAffiliate = await mlRepo.findByPlatformUserId(userId);
 
   if (mlAffiliate?.melitat) {
     // Resolve meli.la ANTES de tudo — o Link Builder só aceita URL real de
-    // produto. meli.la/XXX é o próprio link curto de afiliado do ML, então
-    // o redirect tipicamente leva para /social/<outro-afiliado>/lists — não
-    // para um produto único. Mesmo assim tentamos o createLink porque
-    // existem casos onde o redirect leva para uma página de produto real.
-    //
-    // `resolveMeliRedirect` já:
-    //  - segue o redirect
-    //  - strip de params de tracking do afiliado original (matt_word/matt_tool/ref)
-    //  - detecta se URL final é /p/MLB<id> (produto) ou /social/... (perfil/lista)
+    // produto. `resolveMeliRedirect` já segue o redirect, faz strip de params
+    // de tracking do afiliado original e detecta se a URL final é produto.
     const resolved = await resolveMeliRedirect(url);
-    const isProductFromRedirect = /meli\.la/i.test(url);
-    const isProduct = isProductFromRedirect ? resolved.isProduct : isMeliProductUrl(resolved.url);
+    const isProduct = decideMeliProductStatus(
+      url,
+      resolved.isProduct,
+      isMeliProductUrl(resolved.url),
+    );
     const targetUrl = resolved.url;
 
     // Bloqueia oferta se a URL (meli.la OU direta ML) não leva a uma página
@@ -244,12 +209,7 @@ async function convertMlForAffiliate(
         reason: resolved.reason ?? 'not_product_url',
         droppedParams: resolved.droppedParams ?? [],
       });
-      return {
-        convertedUrl: null,
-        marketplace: 'mercadolivre',
-        success: false,
-        error: `meli.la não redireciona para produto: ${resolved.reason ?? 'not_product_url'}`,
-      };
+      return buildBlockedResult('mercadolivre', buildMeliNotProductError(resolved.reason));
     }
 
     // Log info quando houve strip de params de tracking (indicador de que
@@ -272,12 +232,7 @@ async function convertMlForAffiliate(
         userId,
         url: targetUrl,
       });
-      return {
-        convertedUrl: null,
-        marketplace: 'mercadolivre',
-        success: false,
-        error: 'Sem cookies de sessão ML para usar o Link Builder',
-      };
+      return buildBlockedResult('mercadolivre', ML_NO_COOKIES_ERROR);
     }
 
     const shortResult = await generateShortAffiliateLink(
@@ -286,92 +241,57 @@ async function convertMlForAffiliate(
       mlAffiliate.sessionCookies,
     );
 
-    if (shortResult.success && shortResult.shortUrl) {
+    const outcome = classifyMlShortLinkResult(shortResult);
+
+    if (outcome.kind === 'success') {
       return {
-        convertedUrl: shortResult.shortUrl,
+        convertedUrl: outcome.shortUrl,
         marketplace: 'mercadolivre',
         success: true,
       };
     }
 
-    // Link builder falhou — classifica o motivo.
-    const errorMsg = shortResult.error ?? 'erro desconhecido';
-    const isCookieError =
-      errorMsg.includes('HTTP 40') ||
-      errorMsg.includes('Cookies podem estar expirados') ||
-      errorMsg.toLowerCase().includes('unauthorized');
-
-    if (isCookieError) {
-      const instanceName = `user-${userId}`;
-      processFailure(instanceName, 'cookie_expired', { marketplace: 'mercadolivre' }).catch(
-        () => {},
-      );
+    if (outcome.kind === 'cookie_error') {
+      processFailure(buildInstanceName(userId), 'cookie_expired', {
+        marketplace: 'mercadolivre',
+      }).catch(() => {});
     } else {
       log('info', 'Link builder ML rejeitou a oferta — bloqueando', {
         userId,
         url: targetUrl,
-        error: errorMsg,
+        error: outcome.errorMsg,
       });
     }
 
     // Em QUALQUER falha do Link Builder, bloqueia a oferta para este
     // targetGroup. Sem fallback de URL params — gera comissão para o
     // afiliado errado e polui o espelho com links não-confiáveis.
-    return {
-      convertedUrl: null,
-      marketplace: 'mercadolivre',
-      success: false,
-      error: errorMsg,
-    };
+    return buildBlockedResult('mercadolivre', outcome.errorMsg);
   }
 
   log('info', 'Afiliado ML sem tag (melitat) — bloqueando oferta', { userId });
-  const instanceName = `user-${userId}`;
-  processFailure(instanceName, 'ml_account_not_linked', { marketplace: 'mercadolivre' }).catch(
-    () => {},
-  );
-
-  return {
-    convertedUrl: null,
+  processFailure(buildInstanceName(userId), 'ml_account_not_linked', {
     marketplace: 'mercadolivre',
-    success: false,
-    error: 'Afiliado ML sem tag (melitat) configurada. Reimporte os cookies pela extensão Chrome.',
-  };
+  }).catch(() => {});
+
+  return buildBlockedResult('mercadolivre', ML_NO_TAG_ERROR);
 }
 
 /**
  * Conversão Amazon — usa trackingIds do AmazonAffiliateRepository.
  * Fallback global via .env se afiliado não tem tracking IDs.
  */
-async function convertAmazonForAffiliate(
-  url: string,
-  userId: number,
-): Promise<{
-  convertedUrl: string | null;
-  marketplace: string;
-  success: boolean;
-  error?: string;
-}> {
+async function convertAmazonForAffiliate(url: string, userId: number): Promise<ConversionResult> {
   const amazonRepo = new AmazonAffiliateRepository();
   const amazonAffiliate = await amazonRepo.findByUserId(userId);
 
-  if (amazonAffiliate && (amazonAffiliate.trackingIds ?? []).length > 0) {
-    const result = await convertAmazonUrlWithAffiliate(url, amazonAffiliate.trackingIds ?? []);
-    return {
-      convertedUrl: result.affiliateUrl,
-      marketplace: 'amazon',
-      success: result.success,
-      error: result.error,
-    };
+  if (hasAmazonTrackingIds(amazonAffiliate)) {
+    const result = await convertAmazonUrlWithAffiliate(url, amazonAffiliate!.trackingIds ?? []);
+    return toConversionResult('amazon', result);
   }
 
   log('info', 'Afiliado Amazon sem tracking IDs — usando fallback global', { userId });
   const { convertUrl } = await import('@omestre/converters');
   const result = await convertUrl(url);
-  return {
-    convertedUrl: result.affiliateUrl,
-    marketplace: 'amazon',
-    success: result.success,
-    error: result.error,
-  };
+  return toConversionResult('amazon', result);
 }

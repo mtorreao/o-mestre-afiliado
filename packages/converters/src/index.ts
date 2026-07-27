@@ -24,7 +24,7 @@ export {
 export type { MercadoLivreCredentials, MlConversionOptions, MlStrategy } from './mercadolivre.ts';
 
 export { generateShortAffiliateLink } from './ml-linkbuilder.ts';
-export type { ShortLinkResult } from './ml-linkbuilder.ts';
+export type { ShortLinkResult } from './ml-linkbuilder-pure.ts';
 
 export {
   extractAsin,

@@ -10,14 +10,32 @@
 
 import { makeLogger } from '@omestre/shared';
 import { config } from '../config.ts';
+import {
+  buildCreateInstanceBody,
+  buildEvolutionHeaders,
+  buildEvolutionUrl,
+  buildFindMessagesBody,
+  buildSendTextBody,
+  evolutionEndpoints,
+  extractGroupList,
+  extractMessageList,
+  filterAndLimitMessages,
+  httpErrorMessage,
+  isDeleteStatusAcceptable,
+  isInstanceAlreadyInUseError,
+  normalizeGroups,
+  normalizeMessages,
+  parseConnectionState,
+  parseCreateInstanceResponse,
+  parseGroupInfo,
+  parseQrCode,
+  parseSendTextResponse,
+} from './evolution-pure.ts';
+import type { QrCodeResult } from './evolution-pure.ts';
+
+export type { QrCodeResult } from './evolution-pure.ts';
 
 const log = makeLogger('api');
-
-export interface QrCodeResult {
-  base64: string | null;
-  code: string | null;
-  pairingCode: string | null;
-}
 
 export interface InstanceConnectionState {
   instanceName: string;
@@ -32,10 +50,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    apikey: config.EVOLUTION_API_KEY,
-  };
+  return buildEvolutionHeaders(config.EVOLUTION_API_KEY);
+}
+
+/** URL completa de um endpoint da Evolution API. */
+function url(path: string): string {
+  return buildEvolutionUrl(config.EVOLUTION_API_URL, path);
 }
 
 /**
@@ -69,55 +89,21 @@ export async function createInstance(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${config.EVOLUTION_API_URL}/instance/create`, {
+    const res = await fetch(url(evolutionEndpoints.createInstance()), {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({
-        instanceName,
-        token: config.EVOLUTION_API_KEY,
-        integration: 'WHATSAPP-BAILEYS',
-        qrcode: true,
-        webhook: {
-          enabled: true,
-          url: config.WEBHOOK_URL,
-          events: [
-            'messages.upsert',
-            'connection.update',
-            'qrcode.updated',
-            'groups.upsert',
-            'group-participants.update',
-          ],
-          byEvents: true,
-          base64: false,
-        },
-      }),
+      body: JSON.stringify(
+        buildCreateInstanceBody(instanceName, config.EVOLUTION_API_KEY, config.WEBHOOK_URL),
+      ),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+      return { success: false, error: httpErrorMessage(res.status, text) };
     }
 
     const data = (await res.json()) as Record<string, unknown>;
-    const instance = data.instance as Record<string, unknown> | undefined;
-    const qrcode = data.qrcode as Record<string, unknown> | undefined;
-
-    return {
-      success: true,
-      instance: instance
-        ? {
-            instanceName: String(instance.instanceName ?? ''),
-            status: String(instance.status ?? 'close'),
-          }
-        : undefined,
-      qrcode: qrcode
-        ? {
-            base64: (qrcode.base64 as string) ?? null,
-            code: (qrcode.code as string) ?? null,
-            pairingCode: (qrcode.pairingCode as string) ?? null,
-          }
-        : undefined,
-    };
+    return { success: true, ...parseCreateInstanceResponse(data) };
   } catch (err) {
     return {
       success: false,
@@ -135,25 +121,21 @@ export async function getQrCode(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${config.EVOLUTION_API_URL}/instance/qrcode/${instanceName}`, {
+    const res = await fetch(url(evolutionEndpoints.qrCode(instanceName)), {
       method: 'GET',
       headers: headers(),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+      return { success: false, error: httpErrorMessage(res.status, text) };
     }
 
     const data = (await res.json()) as Record<string, unknown>;
 
     return {
       success: true,
-      qrcode: {
-        base64: (data.base64 as string) ?? null,
-        code: (data.code as string) ?? null,
-        pairingCode: (data.pairingCode as string) ?? null,
-      },
+      qrcode: parseQrCode(data),
     };
   } catch (err) {
     return {
@@ -172,17 +154,14 @@ export async function getConnectionState(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(
-      `${config.EVOLUTION_API_URL}/instance/connectionState/${instanceName}`,
-      {
-        method: 'GET',
-        headers: headers(),
-      },
-    );
+    const res = await fetch(url(evolutionEndpoints.connectionState(instanceName)), {
+      method: 'GET',
+      headers: headers(),
+    });
 
     if (!res.ok) {
       const text = await res.text();
-      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+      return { success: false, error: httpErrorMessage(res.status, text) };
     }
 
     const data = (await res.json()) as {
@@ -190,16 +169,9 @@ export async function getConnectionState(instanceName: string): Promise<{
       instance?: { state?: string };
     };
 
-    // Evolution API v2.3.7 retorna { instance: { state: "connecting" } }
-    // (versões anteriores usavam { state: { connectionState: "..." } })
-    const rawState = data.instance?.state ?? data.state?.connectionState;
-    let state: 'open' | 'close' | 'connecting' = 'close';
-    if (rawState === 'open') state = 'open';
-    else if (rawState === 'connecting') state = 'connecting';
-
     return {
       success: true,
-      state: { instanceName, state },
+      state: { instanceName, state: parseConnectionState(data) },
     };
   } catch (err) {
     return {
@@ -217,14 +189,14 @@ export async function deleteInstance(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${config.EVOLUTION_API_URL}/instance/delete/${instanceName}`, {
+    const res = await fetch(url(evolutionEndpoints.deleteInstance(instanceName)), {
       method: 'DELETE',
       headers: headers(),
     });
 
-    if (!res.ok && res.status !== 404) {
+    if (!isDeleteStatusAcceptable(res.ok, res.status)) {
       const text = await res.text();
-      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+      return { success: false, error: httpErrorMessage(res.status, text) };
     }
 
     return { success: true };
@@ -249,46 +221,18 @@ export async function fetchGroups(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(
-      `${config.EVOLUTION_API_URL}/group/fetchAllGroups/${instanceName}?getParticipants=true`,
-      {
-        method: 'GET',
-        headers: headers(),
-      },
-    );
+    const res = await fetch(url(evolutionEndpoints.fetchGroups(instanceName)), {
+      method: 'GET',
+      headers: headers(),
+    });
 
     if (!res.ok) {
       const text = await res.text();
-      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+      return { success: false, error: httpErrorMessage(res.status, text) };
     }
 
     const raw = (await res.json()) as Record<string, unknown>;
-
-    // Evolution API v2 retorna o objeto no formato:
-    // { [instanceName]: [ { jid, name, ... }, ... ] }
-    // ou direto um array
-    let groupList: unknown[] = [];
-
-    if (Array.isArray(raw)) {
-      groupList = raw;
-    } else {
-      // Tenta extrair do campo com nome da instância
-      for (const key of Object.keys(raw)) {
-        if (Array.isArray(raw[key])) {
-          groupList = raw[key] as unknown[];
-          break;
-        }
-      }
-    }
-
-    const groups = groupList
-      .map((g) => {
-        const item = g as Record<string, unknown>;
-        const jid = String(item.jid ?? item.id ?? '');
-        const name = String(item.name ?? item.subject ?? '');
-        return { jid, name };
-      })
-      .filter((g) => g.jid && g.name);
+    const groups = normalizeGroups(extractGroupList(raw));
 
     return { success: true, groups };
   } catch (err) {
@@ -314,22 +258,16 @@ export async function fetchGroupInfo(
 ): Promise<{ jid: string; name: string } | null> {
   // Tenta endpoint específico primeiro (Evolution API v2+)
   try {
-    const res = await fetch(
-      `${config.EVOLUTION_API_URL}/group/groupInfo/${instanceName}/${encodeURIComponent(groupJid)}`,
-      {
-        method: 'GET',
-        headers: headers(),
-      },
-    );
+    const res = await fetch(url(evolutionEndpoints.groupInfo(instanceName, groupJid)), {
+      method: 'GET',
+      headers: headers(),
+    });
 
     if (res.ok) {
       const data = (await res.json()) as Record<string, unknown>;
       // Resposta pode ser { jid, subject, name, ... } ou { id, subject, ... }
-      const jid = String(data.jid ?? data.id ?? '');
-      const name = String(data.name ?? data.subject ?? '');
-      if (jid && name) {
-        return { jid, name };
-      }
+      const info = parseGroupInfo(data);
+      if (info) return info;
     }
   } catch {
     // Fallback silencioso para fetchGroups
@@ -343,72 +281,6 @@ export async function fetchGroupInfo(
   } catch {
     return null;
   }
-}
-
-/**
- * Extrai caption de mensagens efêmeras (ephemeralMessage).
- * Evolution API v2: mensagens com tempo de expiração usam este formato.
- */
-function extractEphemeralCaption(msg: Record<string, unknown> | undefined): string | undefined {
-  if (!msg) return undefined;
-
-  // ephemeralMessage > message > {imageMessage|videoMessage|documentMessage}.caption
-  const ephemeral = msg.ephemeralMessage as Record<string, unknown> | undefined;
-  if (!ephemeral) return undefined;
-
-  const innerMsg = ephemeral.message as Record<string, unknown> | undefined;
-  if (!innerMsg) return undefined;
-
-  // Tenta imageMessage > caption
-  const imgMsg = innerMsg.imageMessage as Record<string, unknown> | undefined;
-  if (imgMsg?.caption) return String(imgMsg.caption);
-
-  // Tenta videoMessage > caption
-  const vidMsg = innerMsg.videoMessage as Record<string, unknown> | undefined;
-  if (vidMsg?.caption) return String(vidMsg.caption);
-
-  // Tenta documentMessage > caption
-  const docMsg = innerMsg.documentMessage as Record<string, unknown> | undefined;
-  if (docMsg?.caption) return String(docMsg.caption);
-
-  // Tenta conversation direta dentro da ephemeral
-  if (innerMsg.conversation) return String(innerMsg.conversation);
-
-  // Tenta extendedTextMessage
-  const extMsg = innerMsg.extendedTextMessage as Record<string, unknown> | undefined;
-  if (extMsg?.text) return String(extMsg.text);
-
-  // Tenta audioMessage
-  const audMsg = innerMsg.audioMessage as Record<string, unknown> | undefined;
-  if (audMsg?.caption) return String(audMsg.caption);
-
-  return undefined;
-}
-
-/**
- * Extrai caption de mensagens de mídia NÃO efêmeras.
- * Mensagens comuns de imagem/vídeo/documento sem disappearing messages.
- */
-function extractMediaCaption(msg: Record<string, unknown> | undefined): string | undefined {
-  if (!msg) return undefined;
-
-  // imageMessage > caption
-  const imgMsg = msg.imageMessage as Record<string, unknown> | undefined;
-  if (imgMsg?.caption) return String(imgMsg.caption);
-
-  // videoMessage > caption
-  const vidMsg = msg.videoMessage as Record<string, unknown> | undefined;
-  if (vidMsg?.caption) return String(vidMsg.caption);
-
-  // documentMessage > caption
-  const docMsg = msg.documentMessage as Record<string, unknown> | undefined;
-  if (docMsg?.caption) return String(docMsg.caption);
-
-  // audioMessage (voice/podcast) > caption
-  const audMsg = msg.audioMessage as Record<string, unknown> | undefined;
-  if (audMsg?.caption) return String(audMsg.caption);
-
-  return undefined;
 }
 
 /**
@@ -427,87 +299,30 @@ export async function fetchGroupMessages(
   error?: string;
 }> {
   try {
-    const res = await fetch(`${config.EVOLUTION_API_URL}/chat/findMessages/${instanceName}`, {
+    const res = await fetch(url(evolutionEndpoints.findMessages(instanceName)), {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({
-        jid: groupJid,
-        count: limit,
-      }),
+      body: JSON.stringify(buildFindMessagesBody(groupJid, limit)),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+      return { success: false, error: httpErrorMessage(res.status, text) };
     }
 
     const data = (await res.json()) as Record<string, unknown>;
 
-    // Evolution API v2 retorna a lista de mensagens de várias formas:
-    // 1. Direto como array no root
-    // 2. Dentro de { messages: [...] } (array direto)
-    // 3. Dentro de { messages: { records: [...] } } (objeto paginado)
-    // 4. Dentro de uma chave com nome da instância
-    let messageList: unknown[] = [];
-
-    if (Array.isArray(data)) {
-      messageList = data;
-    } else if (Array.isArray(data.messages)) {
-      messageList = data.messages as unknown[];
-    } else if (data.messages && typeof data.messages === 'object') {
-      // Formato paginado: { messages: { records: [...], total, pages } }
-      const msgObj = data.messages as Record<string, unknown>;
-      if (Array.isArray(msgObj.records)) {
-        messageList = msgObj.records as unknown[];
-      }
-    }
-
-    // Se ainda não encontrou, tenta extrair de qualquer chave que tenha array
-    if (messageList.length === 0) {
-      for (const key of Object.keys(data)) {
-        if (Array.isArray(data[key])) {
-          messageList = data[key] as unknown[];
-          break;
-        }
-      }
-    }
-
-    // A Evolution API v2 ignora o filtro jid no POST /chat/findMessages
-    // e retorna mensagens de TODOS os grupos. Filtramos pelo remoteJid.
-    messageList = messageList.filter((m) => {
-      const item = m as Record<string, unknown>;
-      const key = item.key as Record<string, unknown> | undefined;
-      return key?.remoteJid === groupJid;
-    });
-
-    // Garante que respeitamos o limite solicitado, mesmo que a Evolution API
-    // retorne mais itens que o `count` enviado.
-    if (messageList.length > limit) {
+    // A Evolution API v2 ignora o filtro jid e o count no POST
+    // /chat/findMessages — filtramos pelo remoteJid e aplicamos o limite.
+    const rawList = extractMessageList(data);
+    const messageList = filterAndLimitMessages(rawList, groupJid, limit);
+    if (rawList.length > limit) {
       console.log(
-        `[fetchGroupMessages] Evolution API retornou ${messageList.length} itens para count=${limit}. Cortando para ${limit}.`,
+        `[fetchGroupMessages] Evolution API retornou ${rawList.length} itens para count=${limit}. Cortando para ${limit}.`,
       );
-      messageList = messageList.slice(0, limit);
     }
 
-    const messages = messageList
-      .map((m) => {
-        const item = m as Record<string, unknown>;
-        // Extrai texto da mensagem — pode estar em diferentes campos
-        const msg = item.message as Record<string, unknown> | undefined;
-        const text = String(
-          item.text ??
-            msg?.conversation ??
-            (msg?.extendedTextMessage as Record<string, unknown> | undefined)?.text ??
-            // Caption de mídia não efêmera (imageMessage/videoMessage/documentMessage)
-            extractMediaCaption(msg) ??
-            // Mensagens efêmeras (ephemeralMessage) com caption em imageMessage/videoMessage
-            extractEphemeralCaption(msg) ??
-            '',
-        );
-        const timestamp = item.messageTimestamp ? Number(item.messageTimestamp) : undefined;
-        return { text: text || '', timestamp };
-      })
-      .filter((m) => m.text.length > 0);
+    const messages = normalizeMessages(messageList);
 
     return { success: true, messages };
   } catch (err) {
@@ -526,14 +341,14 @@ export async function logoutInstance(instanceName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${config.EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
+    const res = await fetch(url(evolutionEndpoints.logoutInstance(instanceName)), {
       method: 'DELETE',
       headers: headers(),
     });
 
-    if (!res.ok && res.status !== 404) {
+    if (!isDeleteStatusAcceptable(res.ok, res.status)) {
       const text = await res.text();
-      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${text}` };
+      return { success: false, error: httpErrorMessage(res.status, text) };
     }
 
     return { success: true };
@@ -617,7 +432,7 @@ export async function refreshInstance(instanceName: string): Promise<{
   const result = await createInstanceWithQR(instanceName);
 
   // ─── 3. Se "already in use", repete ciclo ─────────────────────
-  if (!result.success && result.error?.includes('already in use')) {
+  if (!result.success && isInstanceAlreadyInUseError(result.error)) {
     await logoutInstance(instanceName);
     await deleteInstance(instanceName);
     await sleep(2000);
@@ -645,31 +460,22 @@ export async function sendGroupMessage(
   error?: string;
 }> {
   try {
-    const res = await fetch(`${config.EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+    const res = await fetch(url(evolutionEndpoints.sendText(instanceName)), {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({
-        number: groupJid,
-        text,
-        delay: delayMs,
-        linkPreview: true,
-      }),
+      body: JSON.stringify(buildSendTextBody(groupJid, text, delayMs)),
     });
 
     if (!res.ok) {
       const body = await res.text();
-      return { success: false, error: `Evolution API retornou HTTP ${res.status}: ${body}` };
+      return { success: false, error: httpErrorMessage(res.status, body) };
     }
 
-    const data = (await res.json()) as {
-      key?: { id: string; remoteJid: string };
-      status?: string;
-    };
+    const data = (await res.json()) as Record<string, unknown>;
 
     return {
       success: true,
-      key: data.key,
-      status: data.status,
+      ...parseSendTextResponse(data),
     };
   } catch (err) {
     return {

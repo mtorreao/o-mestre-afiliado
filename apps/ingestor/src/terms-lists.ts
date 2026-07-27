@@ -9,16 +9,22 @@
  *
  * Formato JSON esperado:
  *   { "terms": ["termo1", "termo2", ...] }
+ *
+ * A lógica de PARSE/normalização/matching é 100% PURA (sem I/O) e vive em
+ * `terms-lists-pure.ts`, permitindo cobertura total via teste unitário.
+ * Este módulo orquestra apenas o cache em globalThis + leitura de disco.
  */
 import { existsSync, readFileSync } from 'fs';
 import { makeLogger } from '@omestre/shared';
 import { config } from './config.ts';
+import {
+  parseTermsFile,
+  type TermsFileParseResult,
+  matchAnyTerm,
+  type TermMatch,
+} from './terms-lists-pure.ts';
 
 const log = makeLogger('ingestor');
-
-interface TermsFile {
-  terms?: string[];
-}
 
 function loadTermsList(envPath: string, defaultPath: string, label: string): string[] {
   const cacheKey = `_cache_${label}` as keyof typeof globalThis;
@@ -27,11 +33,12 @@ function loadTermsList(envPath: string, defaultPath: string, label: string): str
   }
 
   const filePath = process.env[envPath] || defaultPath;
+  let parsed: TermsFileParseResult | null = null;
   try {
     if (existsSync(filePath)) {
       const raw = readFileSync(filePath, 'utf-8');
-      const parsed = JSON.parse(raw) as TermsFile;
-      const terms = parsed.terms ?? [];
+      parsed = parseTermsFile(raw);
+      const terms = parsed.terms;
       (globalThis as Record<string, unknown>)[cacheKey] = terms;
       log('info', `${label} carregada: ${terms.length} termo(s) de ${filePath}`);
       return terms;
@@ -44,8 +51,16 @@ function loadTermsList(envPath: string, defaultPath: string, label: string): str
     });
   }
 
-  (globalThis as Record<string, unknown>)[cacheKey] = [];
-  return [];
+  // Fallback: lista vazia (parse falhou ou arquivo ausente).
+  if (parsed === null) {
+    (globalThis as Record<string, unknown>)[cacheKey] = [];
+    return [];
+  }
+
+  // parseTermsFile nunca retorna null em caso de JSON inválido — retorna
+  // { terms: [] } com erro registrado. Chegamos aqui se o arquivo não existe.
+  (globalThis as Record<string, unknown>)[cacheKey] = parsed.terms;
+  return parsed.terms;
 }
 
 export function loadBlacklist(): string[] {
@@ -55,3 +70,7 @@ export function loadBlacklist(): string[] {
 export function loadWhitelist(): string[] {
   return loadTermsList('WHITELIST_PATH', config.WHITELIST_PATH, 'Whitelist');
 }
+
+// ─── Re-exporta as puras para reunir tudo de terms-lists em um só módulo ─
+export { parseTermsFile, matchAnyTerm };
+export type { TermsFileParseResult, TermMatch };

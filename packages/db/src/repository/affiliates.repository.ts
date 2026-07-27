@@ -2,6 +2,7 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { eq } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { affiliates } from '../schema/index.ts';
+import { toNotificationConfig } from './affiliates-pure.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
@@ -18,11 +19,7 @@ export interface NotificationConfig {
 export class AffiliatesRepository {
   async findById(id: number): Promise<Affiliate | null> {
     const db = getDb();
-    const rows = await db
-      .select()
-      .from(affiliates)
-      .where(eq(affiliates.id, id))
-      .limit(1);
+    const rows = await db.select().from(affiliates).where(eq(affiliates.id, id)).limit(1);
     return rows[0] ?? null;
   }
 
@@ -36,12 +33,10 @@ export class AffiliatesRepository {
     return rows[0] ?? null;
   }
 
-  async findNotificationConfig(
-    evolutionInstanceId: string,
-  ): Promise<NotificationConfig | null> {
+  async findNotificationConfig(evolutionInstanceId: string): Promise<NotificationConfig | null> {
     try {
       const db = getDb();
-      const rows = await db
+      const [row] = await db
         .select({
           notificationChannel: affiliates.notificationChannel,
           notificationJid: affiliates.notificationJid,
@@ -50,11 +45,7 @@ export class AffiliatesRepository {
         .where(eq(affiliates.evolutionInstanceId, evolutionInstanceId))
         .limit(1);
 
-      if (!rows[0]) return null;
-      return {
-        channel: rows[0].notificationChannel,
-        jid: rows[0].notificationJid,
-      };
+      return toNotificationConfig(row ?? null);
     } catch {
       return null;
     }
@@ -88,10 +79,7 @@ export class AffiliatesRepository {
     const existing = await this.findByEvolutionInstanceId(evolutionInstanceId);
     if (!existing) return null;
 
-    const [row] = await db
-      .delete(affiliates)
-      .where(eq(affiliates.id, existing.id))
-      .returning();
+    const [row] = await db.delete(affiliates).where(eq(affiliates.id, existing.id)).returning();
     return row ?? null;
   }
 

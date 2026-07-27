@@ -2,23 +2,15 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { eq } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { userCredentials } from '../schema/index.ts';
+import { buildCredentialsUpdate, buildCredentialsInsert } from './user-credentials-pure.ts';
+import type { UserCredentialsInput } from './user-credentials-pure.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
 export type UserCredentials = InferSelectModel<typeof userCredentials>;
 export type NewUserCredentials = InferInsertModel<typeof userCredentials>;
 
-/**
- * Dados para criar ou atualizar credenciais.
- * Campos undefined = não alterar.
- *
- * NOTA: tracking IDs Amazon ficam em `amazon_affiliates.tracking_ids`
- * (jsonb) — gerenciados via `/api/amazon/affiliate/tracking-ids`.
- */
-export interface UserCredentialsInput {
-  shopeeAppId?: string | null;
-  shopeeAppSecret?: string | null;
-}
+export type { UserCredentialsInput } from './user-credentials-pure.ts';
 
 // ─── Repository ──────────────────────────────────────────────────────
 
@@ -46,9 +38,7 @@ export class UserCredentialsRepository {
     const existing = await this.findByUserId(userId);
 
     if (existing) {
-      const updateData: Record<string, unknown> = {};
-      if (data.shopeeAppId !== undefined) updateData.shopeeAppId = data.shopeeAppId;
-      if (data.shopeeAppSecret !== undefined) updateData.shopeeAppSecret = data.shopeeAppSecret;
+      const updateData = buildCredentialsUpdate(data);
 
       if (Object.keys(updateData).length === 0) return existing;
 
@@ -63,11 +53,7 @@ export class UserCredentialsRepository {
 
     const [row] = await db
       .insert(userCredentials)
-      .values({
-        userId,
-        shopeeAppId: data.shopeeAppId ?? null,
-        shopeeAppSecret: data.shopeeAppSecret ?? null,
-      })
+      .values(buildCredentialsInsert(userId, data))
       .returning();
 
     return row!;

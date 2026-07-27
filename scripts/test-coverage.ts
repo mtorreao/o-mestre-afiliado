@@ -18,7 +18,7 @@
  *   bun run scripts/test-coverage.ts
  */
 import { spawn } from 'node:child_process';
-import { resolve, join } from 'node:path';
+import { resolve, join, relative } from 'node:path';
 import {
   readdirSync,
   statSync,
@@ -163,7 +163,7 @@ interface LcovRecord {
   branchesHit: number;
 }
 
-function parseLcov(content: string): LcovRecord {
+function parseLcov(content: string, baseDir: string): LcovRecord {
   const rec: LcovRecord = {
     file: '',
     linesFound: 0,
@@ -174,8 +174,13 @@ function parseLcov(content: string): LcovRecord {
     branchesHit: 0,
   };
   for (const line of content.split('\n')) {
-    if (line.startsWith('SF:')) rec.file = line.slice(3);
-    else if (line.startsWith('LF:')) rec.linesFound = Number(line.slice(3));
+    if (line.startsWith('SF:')) {
+      // Normaliza para caminho absoluto. O Bun emite SF: relativo ao
+      // cwd do subprojeto (ex: "../../packages/db/..." ou "db/...").
+      // Resolver contra o baseDir evita contar o mesmo arquivo físico
+      // múltiplas vezes quando é compartilhado entre workspaces.
+      rec.file = resolve(baseDir, line.slice(3));
+    } else if (line.startsWith('LF:')) rec.linesFound = Number(line.slice(3));
     else if (line.startsWith('LH:')) rec.linesHit = Number(line.slice(3));
     else if (line.startsWith('FNF:')) rec.functionsFound = Number(line.slice(4));
     else if (line.startsWith('FNH:')) rec.functionsHit = Number(line.slice(4));
@@ -190,12 +195,13 @@ for (const r of results) {
   if (r.hasLcov) {
     try {
       const content = readFileSync(r.lcovPath, 'utf-8');
+      const baseDir = resolve(ROOT, r.rel);
       // lcov pode ter múltiplos records (separados por 'end_of_record')
       const records = content
         .split('end_of_record')
         .map((chunk) => {
           const trimmed = chunk.trim();
-          return trimmed ? parseLcov(trimmed + '\nend_of_record\n') : null;
+          return trimmed ? parseLcov(trimmed + '\nend_of_record\n', baseDir) : null;
         })
         .filter((x): x is LcovRecord => x !== null && x.file !== '');
       allRecords.push(...records);
@@ -205,6 +211,33 @@ for (const r of results) {
   }
 }
 
+// ─── Deduplicação por arquivo físico ─────────────────────────────────
+// Arquivos de workspace compartilhado (ex: @omestre/db) aparecem no lcov
+// de CADA subprojeto que os importa, com paths relativos diferentes.
+// Para não contar o mesmo arquivo N vezes, mantemos UM record por caminho
+// absoluto — o de maior `linesFound` (o subprojeto que mais exercitou
+// aquele arquivo, logo a cobertura mais representativa).
+const deduped = new Map<string, LcovRecord>();
+for (const rec of allRecords) {
+  const existing = deduped.get(rec.file);
+  // Mantém o record mais representativo para o arquivo físico.
+  // Critério: MAIOR taxa de cobertura (linesHit/linesFound), pois um
+  // arquivo de workspace compartilhado é coberto de fato pelo subprojeto
+  // que o exercita (ex: o pacote `shared` com seus testes dedicados),
+  // enquanto subprojetos que só o importam geram records com quase
+  // nenhuma linha coberta. Manter "maior linesFound" induziria a suplantar
+  // a medição real (341/10 vencendo 256/251). Desempate: maior linesFound.
+  const rate = (r: LcovRecord) => (r.linesFound > 0 ? r.linesHit / r.linesFound : -1);
+  if (
+    !existing ||
+    rate(rec) > rate(existing) ||
+    (rate(rec) === rate(existing) && rec.linesFound > existing.linesFound)
+  ) {
+    deduped.set(rec.file, rec);
+  }
+}
+const uniqueRecords = [...deduped.values()];
+
 // ─── Sumariza ─────────────────────────────────────────────────────────
 let totalLines = 0,
   hitLines = 0;
@@ -212,7 +245,7 @@ let totalFuncs = 0,
   hitFuncs = 0;
 let totalBranches = 0,
   hitBranches = 0;
-for (const rec of allRecords) {
+for (const rec of uniqueRecords) {
   totalLines += rec.linesFound;
   hitLines += rec.linesHit;
   totalFuncs += rec.functionsFound;
@@ -267,9 +300,9 @@ for (const r of results) {
   console.log(
     r.name.padEnd(34) +
       ' ' +
-      subFunc.padStart(8) +
+      (subFunc ?? '-').padStart(8) +
       '% ' +
-      subLine.padStart(8) +
+      (subLine ?? '-').padStart(8) +
       '% ' +
       '-'.padStart(9) +
       ' ' +
@@ -278,8 +311,8 @@ for (const r of results) {
 }
 console.log('-'.repeat(78));
 
-// Top 20 piores (menor % de linhas cobertas)
-const fileStats = allRecords
+// Top 20 piores (menor % de linhas cobertas) — usa records deduplicados
+const fileStats = uniqueRecords
   .filter((r) => r.linesFound > 0)
   .map((r) => ({
     file: r.file,
@@ -296,7 +329,8 @@ if (fileStats.length > 0) {
   console.log('Arquivo'.padEnd(60) + ' ' + 'Linhas'.padStart(14) + ' ' + '%'.padStart(7));
   console.log('-'.repeat(78));
   for (const f of fileStats) {
-    const shortName = f.file.length > 58 ? '...' + f.file.slice(-55) : f.file;
+    const rel = relative(ROOT, f.file);
+    const shortName = rel.length > 58 ? '...' + rel.slice(-55) : rel;
     console.log(
       shortName.padEnd(60) +
         ' ' +
@@ -328,7 +362,8 @@ if (fileStats.length > 0) {
   md += `\n## Arquivos com menor cobertura (top 20)\n\n`;
   md += `| Arquivo | Linhas | % |\n|---|---|---|\n`;
   for (const f of fileStats) {
-    md += `| ${f.file} | ${f.hits}/${f.lines} | ${f.pct.toFixed(1)}% |\n`;
+    const rel = relative(ROOT, f.file);
+    md += `| ${rel} | ${f.hits}/${f.lines} | ${f.pct.toFixed(1)}% |\n`;
   }
 }
 writeFileSync(reportPath, md, 'utf-8');

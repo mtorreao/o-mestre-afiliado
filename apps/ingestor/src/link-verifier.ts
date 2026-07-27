@@ -7,10 +7,20 @@
  *
  * Apenas ML e Amazon são verificados — Shopee não tem como o Link Builder
  * retornar URL com credenciais de outro afiliado.
+ *
+ * A lógica de comparação de parâmetros foi extraída para
+ * `link-verifier-pure.ts` (funções puras, sem I/O), e este módulo apenas
+ * orquestra o acesso a DB/repositórios e alimenta aquelas funções.
  */
 import { eq } from 'drizzle-orm';
 import { getDb, affiliates, MlAffiliateRepository, AmazonAffiliateRepository } from '@omestre/db';
 import { makeLogger } from '@omestre/shared';
+import {
+  extractAffiliateParams,
+  verifyMlParams,
+  verifyAmazonTag,
+  extractUserIdFromInstanceId,
+} from './link-verifier-pure.ts';
 
 const log = makeLogger('ingestor');
 
@@ -49,6 +59,21 @@ export async function verifyAffiliateLink(
   }
 }
 
+/** Busca o userId da plataforma a partir do affiliateId (via evolutionInstanceId). */
+async function resolveUserId(affiliateId: number): Promise<number | null> {
+  const db = getDb();
+  const affRows = await db
+    .select({ evolutionInstanceId: affiliates.evolutionInstanceId })
+    .from(affiliates)
+    .where(eq(affiliates.id, affiliateId))
+    .limit(1);
+
+  if (!affRows[0]?.evolutionInstanceId) {
+    return null;
+  }
+  return extractUserIdFromInstanceId(affRows[0].evolutionInstanceId);
+}
+
 /**
  * Verifica que os parâmetros ML no convertedUrl (meliid/melitat/matt_word)
  * correspondem ao afiliado configurado. Sem um deles, considera válido
@@ -58,39 +83,23 @@ async function verifyMercadoLivreLink(
   convertedUrl: string,
   affiliateId: number,
 ): Promise<{ valid: boolean; reason?: string }> {
-  let url: URL;
+  let extracted;
   try {
-    url = new URL(convertedUrl);
+    extracted = extractAffiliateParams(convertedUrl);
   } catch {
     return { valid: false, reason: 'URL convertida inválida para verificação ML' };
   }
 
-  const params = url.searchParams;
-  const urlMeliid = params.get('meliid');
-  const urlMelitat = params.get('melitat');
-  const urlMattWord = params.get('matt_word');
-
-  if (!urlMeliid && !urlMelitat && !urlMattWord) {
+  // URL sem nenhum parâmetro ML → válida por definição.
+  if (!extracted.meliid && !extracted.melitat && !extracted.mattWord) {
     return { valid: true };
   }
 
-  const db = getDb();
-  const affRows = await db
-    .select({ evolutionInstanceId: affiliates.evolutionInstanceId })
-    .from(affiliates)
-    .where(eq(affiliates.id, affiliateId))
-    .limit(1);
-
-  if (!affRows[0]?.evolutionInstanceId) {
+  const userId = await resolveUserId(affiliateId);
+  if (userId === null) {
     return { valid: false, reason: 'Afiliado sem evolutionInstanceId' };
   }
 
-  const userIdMatch = affRows[0].evolutionInstanceId.match(/^user-(\d+)$/);
-  if (!userIdMatch) {
-    return { valid: false, reason: 'evolutionInstanceId sem formato user-{userId}' };
-  }
-
-  const userId = parseInt(userIdMatch[1]!, 10);
   const mlRepo = new MlAffiliateRepository();
   const mlAffiliate = await mlRepo.findByPlatformUserId(userId);
 
@@ -98,44 +107,10 @@ async function verifyMercadoLivreLink(
     return { valid: false, reason: 'URL com parâmetros ML mas afiliado não vinculado' };
   }
 
-  if (urlMelitat && mlAffiliate.melitat) {
-    if (urlMelitat !== mlAffiliate.melitat) {
-      return {
-        valid: false,
-        reason: `melitat não corresponde ao afiliado: esperado ${mlAffiliate.melitat}, recebido ${urlMelitat}`,
-      };
-    }
-  } else if (urlMelitat && !mlAffiliate.melitat) {
-    return {
-      valid: false,
-      reason: 'melitat presente na URL mas afiliado não possui melitat configurado',
-    };
-  }
-
-  if (urlMattWord && mlAffiliate.melitat) {
-    if (urlMattWord !== mlAffiliate.melitat) {
-      return {
-        valid: false,
-        reason: `matt_word não corresponde ao afiliado: esperado ${mlAffiliate.melitat}, recebido ${urlMattWord}`,
-      };
-    }
-  } else if (urlMattWord && !mlAffiliate.melitat) {
-    return {
-      valid: false,
-      reason: 'matt_word presente na URL mas afiliado não possui melitat configurado',
-    };
-  }
-
-  if (urlMeliid && mlAffiliate.meliid) {
-    if (urlMeliid !== mlAffiliate.meliid) {
-      return {
-        valid: false,
-        reason: `meliid não corresponde ao afiliado: esperado ${mlAffiliate.meliid}, recebido ${urlMeliid}`,
-      };
-    }
-  }
-
-  return { valid: true };
+  return verifyMlParams(extracted, {
+    meliid: mlAffiliate.meliid,
+    melitat: mlAffiliate.melitat,
+  });
 }
 
 /**
@@ -146,46 +121,25 @@ async function verifyAmazonLink(
   convertedUrl: string,
   affiliateId: number,
 ): Promise<{ valid: boolean; reason?: string }> {
-  let url: URL;
+  let extracted;
   try {
-    url = new URL(convertedUrl);
+    extracted = extractAffiliateParams(convertedUrl);
   } catch {
     return { valid: false, reason: 'URL convertida inválida para verificação Amazon' };
   }
 
-  const urlTag = url.searchParams.get('tag');
-  if (!urlTag) return { valid: true };
+  if (!extracted.tag) return { valid: true };
 
-  const db = getDb();
-  const affRows = await db
-    .select({ evolutionInstanceId: affiliates.evolutionInstanceId })
-    .from(affiliates)
-    .where(eq(affiliates.id, affiliateId))
-    .limit(1);
-
-  if (!affRows[0]?.evolutionInstanceId) {
+  const userId = await resolveUserId(affiliateId);
+  if (userId === null) {
     return { valid: false, reason: 'Afiliado sem evolutionInstanceId' };
   }
 
-  const userIdMatch = affRows[0].evolutionInstanceId.match(/^user-(\d+)$/);
-  if (!userIdMatch) {
-    return { valid: false, reason: 'evolutionInstanceId sem formato user-{userId}' };
-  }
-
-  const userId = parseInt(userIdMatch[1]!, 10);
   const amazonRepo = new AmazonAffiliateRepository();
   const amazonAffiliate = await amazonRepo.findByUserId(userId);
 
   if (amazonAffiliate && (amazonAffiliate.trackingIds ?? []).length > 0) {
-    const activeTags = (amazonAffiliate.trackingIds ?? [])
-      .filter((t) => t.active)
-      .map((t) => t.tag);
-    if (urlTag && !activeTags.includes(urlTag)) {
-      return {
-        valid: false,
-        reason: `Amazon tag não corresponde ao afiliado: esperado um de [${activeTags.join(', ')}], recebido ${urlTag}`,
-      };
-    }
+    return verifyAmazonTag(extracted.tag, amazonAffiliate.trackingIds ?? []);
   }
 
   return { valid: true };

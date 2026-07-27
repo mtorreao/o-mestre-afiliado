@@ -17,6 +17,15 @@ import {
 } from '@omestre/worker-common';
 import { getRedis } from './redis.ts';
 import { config } from '../config.ts';
+import {
+  buildMetricsAuthHeaders,
+  computeEffectiveDlqLimit,
+  inferRequeueTargetStream,
+  normalizeDlqFilters,
+} from './worker-metrics-pure.ts';
+import type { ListDlqFilters } from './worker-metrics-pure.ts';
+
+export type { ListDlqFilters } from './worker-metrics-pure.ts';
 
 export type WorkerServiceName = 'ingestor' | 'dispatcher';
 
@@ -42,7 +51,7 @@ export interface AggregatedWorkerStatus {
 }
 
 function authHeaders(): Record<string, string> {
-  return config.METRICS_API_KEY ? { 'x-api-key': config.METRICS_API_KEY } : {};
+  return buildMetricsAuthHeaders(config.METRICS_API_KEY);
 }
 
 async function fetchServiceStatus(name: WorkerServiceName): Promise<ServiceStatus> {
@@ -97,17 +106,6 @@ export async function getAggregatedWorkerStatus(): Promise<AggregatedWorkerStatu
 
 // ─── DLQ — operações diretas na fila compartilhada ───────────────────────
 
-export interface ListDlqFilters {
-  offset?: number;
-  limit?: number;
-  /** Filtro server-side. Aceita 'A' ou 'B'. */
-  queue?: 'A' | 'B';
-  /** Filtro server-side. Match exato em failureReason. */
-  failureReason?: string;
-  /** Filtro server-side. Epoch ms (Date.now()). */
-  since?: number;
-}
-
 /**
  * Aceita filtros server-side. Quando filtros são aplicados, aumentamos
  * o limit automaticamente (até 100) porque a UI precisa ver o suficiente
@@ -119,15 +117,8 @@ export async function listDlqItems(
 ) {
   // Back-compat: assinatura antiga (offset, limit) — usada internamente
   // se algum outro lugar chamar assim. A API HTTP usa a forma nova.
-  let filters: ListDlqFilters;
-  if (typeof offsetOrFilters === 'number') {
-    filters = { offset: offsetOrFilters, limit: legacyLimit };
-  } else {
-    filters = offsetOrFilters;
-  }
-
-  const hasFilter = Boolean(filters.queue || filters.failureReason || filters.since != null);
-  const effectiveLimit = hasFilter ? Math.max(filters.limit ?? 100, 100) : (filters.limit ?? 20);
+  const filters = normalizeDlqFilters(offsetOrFilters, legacyLimit);
+  const effectiveLimit = computeEffectiveDlqLimit(filters);
 
   return await dlqList({
     offset: filters.offset ?? 0,
@@ -150,7 +141,7 @@ export async function requeueDlqItem(
   if (!item) return { success: false };
 
   const event = item.event as MirrorDLQEntry['event'];
-  const targetStream = 'messageId' in event ? MIRROR_RAW_STREAM : MIRROR_SEND_STREAM;
+  const targetStream = inferRequeueTargetStream(event);
   const ok = await requeueFromDLQ(itemId, targetStream);
   return { success: ok, targetStream };
 }

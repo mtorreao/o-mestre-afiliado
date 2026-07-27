@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { mlAffiliates } from '../schema/index.ts';
 import { encrypt, decrypt } from '../crypto.ts';
+import { toMlSummaryPure, computeExpiresAt } from './ml-affiliate-pure.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
@@ -32,7 +33,7 @@ export interface MlAffiliateUpsertData {
   nickname: string;
   accessToken: string;
   refreshToken: string;
-  expiresIn: number;   // segundos (vem do OAuth)
+  expiresIn: number; // segundos (vem do OAuth)
   connectedAt?: Date;
   userId?: number | null;
   meliid?: string | null;
@@ -58,18 +59,7 @@ export class MlAffiliateRepository {
   async findAll(): Promise<MlAffiliateSummary[]> {
     const db = getDb();
     const rows = await db.select().from(mlAffiliates).orderBy(mlAffiliates.lastUsedAt);
-    const now = new Date();
-    return rows.map((r) => ({
-      mlUserId: r.mlUserId,
-      nickname: r.nickname,
-      connectedAt: r.connectedAt,
-      lastUsedAt: r.lastUsedAt,
-      expiresAt: r.expiresAt,
-      expired: r.expiresAt < now,
-      meliid: r.meliid,
-      melitat: r.melitat,
-      hasSessionCookies: !!r.sessionCookies,
-    }));
+    return rows.map((r) => toMlSummaryPure(r));
   }
 
   /**
@@ -121,7 +111,7 @@ export class MlAffiliateRepository {
     const db = getDb();
     const existing = await this.findByUserId(data.mlUserId);
     const now = new Date();
-    const expiresAt = new Date(Date.now() + data.expiresIn * 1000);
+    const expiresAt = computeExpiresAt(data.expiresIn);
 
     if (existing) {
       const updateData: Record<string, unknown> = {
@@ -210,7 +200,7 @@ export class MlAffiliateRepository {
       .set({
         accessToken,
         refreshToken,
-        expiresAt: new Date(Date.now() + expiresIn * 1000),
+        expiresAt: computeExpiresAt(expiresIn),
         lastUsedAt: new Date(),
       })
       .where(eq(mlAffiliates.mlUserId, mlUserId))

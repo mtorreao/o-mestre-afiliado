@@ -168,7 +168,7 @@ export const affiliateRoutes = new Elysia()
         sourceGroupJid,
         targetGroupJid,
         status: (status as 'sent' | 'failed' | 'blocked' | undefined),
-        marketplace: (marketplace as 'shopee' | 'mercadolivre' | 'amazon' | 'unknown' | undefined),
+        marketplace: (marketplace as 'shopee' | 'mercadolivre' | 'amazon' | 'magalu' | 'unknown' | undefined),
         dateFrom,
         dateTo,
         search,

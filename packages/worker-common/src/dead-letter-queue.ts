@@ -13,6 +13,11 @@ import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import type { MirrorDLQEntry, RawMessageEvent, SendEvent } from '@omestre/shared';
 import { MIRROR_DLQ_LIST, MIRROR_DLQ_INDEX, MIRROR_DLQ_TTL, makeLogger } from '@omestre/shared';
+import {
+  buildReprocessedEntry,
+  resolveDlqFetchLimit,
+  sliceDlqPage,
+} from './dead-letter-queue-pure.ts';
 import { config } from './config.ts';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
@@ -52,6 +57,135 @@ export interface DLQListResult {
    * Útil pra UI saber "estou vendo X de Y".
    */
   totalFiltered: number;
+}
+
+// ─── Lógica PURA (sem Redis) ───────────────────────────────────────────
+//
+// As funções abaixo extraem o PARSE/SERIALIZE de um item da DLQ e a
+// filtragem in-memory da listagem. São 100% testáveis sem conexão ao
+// Redis. A camada de I/O (xadd/xread/lpush/lrange) fica nos callers
+// `pushToDLQ` / `listDLQ` / etc.
+
+/**
+ * Tipagem do item cru serializado na DLQ (antes do parse).
+ */
+export type RawDLQItem = string;
+
+/**
+ * Constrói uma entrada da DLQ a partir do evento + metadados.
+ * Gera `id` e `failedAt` no momento da criação (caller pode sobrescrever
+ * via `now`/`idGen` em casos de replay/teste).
+ *
+ * Função PURO: não toca no Redis.
+ */
+export function buildDlqEntry(
+  params: DLQPushParams,
+  now: () => string = () => new Date().toISOString(),
+  idGen: () => string = () => randomUUID(),
+): MirrorDLQEntry {
+  return {
+    id: idGen(),
+    event: params.event,
+    failureReason: params.failureReason,
+    attempts: params.attempts,
+    lastError: params.lastError,
+    failedAt: now(),
+    marketplace: params.marketplace,
+    originalUrl: params.originalUrl,
+    conversionSuccess: params.conversionSuccess,
+    targetGroupJids: params.targetGroupJids,
+    reprocessed: false,
+  };
+}
+
+/**
+ * Serializa uma entrada da DLQ para o payload JSON armazenado no Redis.
+ * Função PURO.
+ */
+export function serializeDlqItem(entry: MirrorDLQEntry): string {
+  return JSON.stringify(entry);
+}
+
+/**
+ * Parser tolerante de um item da DLQ a partir do payload JSON cru.
+ *
+ * Retorna `null` quando o JSON é inválido ou quando o objeto não possui
+ * os campos obrigatórios mínimos (`id` e `event`) — esses itens são
+ * considerados corruptos e devem ser ignorados pelo caller.
+ *
+ * Campos ausentes são preenchidos com defaults seguros:
+ *   - `reprocessed` → false
+ *   - `failureReason` / `lastError` / `attempts` → ''
+ *   - `failedAt` → '' (ISO vazio)
+ *   - `marketplace` / `originalUrl` / `conversionSuccess` / `targetGroupJids`
+ *     → undefined (opcionais)
+ *
+ * Função PURO.
+ */
+export function parseDlqItem(raw: RawDLQItem): MirrorDLQEntry | null {
+  let parsed: Partial<MirrorDLQEntry>;
+  try {
+    parsed = JSON.parse(raw) as Partial<MirrorDLQEntry>;
+  } catch {
+    // JSON malformado → item corrupto
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (typeof parsed.id !== 'string' || parsed.id.length === 0) return null;
+  if (!parsed.event || typeof parsed.event !== 'object') return null;
+
+  return {
+    id: parsed.id,
+    event: parsed.event,
+    failureReason: parsed.failureReason ?? '',
+    attempts: parsed.attempts ?? 0,
+    lastError: parsed.lastError ?? '',
+    failedAt: parsed.failedAt ?? '',
+    marketplace: parsed.marketplace,
+    originalUrl: parsed.originalUrl,
+    conversionSuccess: parsed.conversionSuccess,
+    targetGroupJids: parsed.targetGroupJids,
+    reprocessed: parsed.reprocessed ?? false,
+    reprocessedAt: parsed.reprocessedAt,
+    reprocessResult: parsed.reprocessResult,
+  };
+}
+
+/**
+ * Determina a fila de origem ('A' = Ingestor / RawMessageEvent,
+ * 'B' = Dispatcher / SendEvent) a partir do evento.
+ */
+export function dlqItemQueue(entry: MirrorDLQEntry): 'A' | 'B' {
+  const isRawEvent = 'messageId' in entry.event;
+  return isRawEvent ? 'A' : 'B';
+}
+
+/**
+ * Aplica os filtros in-memory (failureReason / queue / since) a uma lista
+ * de entradas já ordenada (mais nova → mais velha). Usado por `listDLQ`.
+ *
+ * - `failureReason`: match exato (case-sensitive) contra `entry.failureReason`.
+ * - `queue`: 'A' ou 'B' (vide {@link dlqItemQueue}).
+ * - `since`: mantém apenas entradas com `failedAt` (ISO) >= since (ms epoch).
+ *   Quando `failedAt` é vazio/inválido, o item NÃO passa no filtro `since`.
+ *
+ * Função PURO — não altera o array original (retorna novo array).
+ */
+export function filterDlqItems(
+  entries: MirrorDLQEntry[],
+  filters: { failureReason?: string; queue?: 'A' | 'B'; since?: number } = {},
+): MirrorDLQEntry[] {
+  const { failureReason, queue, since } = filters;
+  return entries.filter((entry) => {
+    if (failureReason && entry.failureReason !== failureReason) return false;
+    if (queue && dlqItemQueue(entry) !== queue) return false;
+    if (since != null) {
+      const ts = Date.parse(entry.failedAt);
+      if (Number.isNaN(ts) || ts < since) return false;
+    }
+    return true;
+  });
 }
 
 // ─── Conexão Redis (lazy singleton) ──────────────────────────────────
@@ -101,26 +235,11 @@ export async function pushToDLQ(params: DLQPushParams): Promise<void> {
   }
 
   try {
-    const id = randomUUID();
-    const now = new Date().toISOString();
-
-    const entry: MirrorDLQEntry = {
-      id,
-      event: params.event,
-      failureReason: params.failureReason,
-      attempts: params.attempts,
-      lastError: params.lastError,
-      failedAt: now,
-      marketplace: params.marketplace,
-      originalUrl: params.originalUrl,
-      conversionSuccess: params.conversionSuccess,
-      targetGroupJids: params.targetGroupJids,
-      reprocessed: false,
-    };
-
+    const entry = buildDlqEntry(params);
+    const id = entry.id;
     const score = Date.now();
     const pipeline = r.pipeline();
-    pipeline.rpush(MIRROR_DLQ_LIST, JSON.stringify(entry));
+    pipeline.rpush(MIRROR_DLQ_LIST, serializeDlqItem(entry));
     pipeline.zadd(MIRROR_DLQ_INDEX, score, id);
     await pipeline.exec();
 
@@ -170,7 +289,7 @@ export async function listDLQ(options: DLQListOptions = {}): Promise<DLQListResu
     //    O "limit" do ZREVRANGE existe só como salvaguarda — com since
     //    o score já limita, sem since queremos o conjunto todo pra
     //    que totalFiltered reflita a realidade após filtros in-memory.
-    const fetchLimit = since != null ? (offset + limit) * 10 + 100 : 100_000;
+    const fetchLimit = resolveDlqFetchLimit(since, offset, limit);
     const ids: string[] =
       since != null
         ? await r.zrevrangebyscore(MIRROR_DLQ_INDEX, '+inf', since, 'LIMIT', 0, fetchLimit)
@@ -184,32 +303,21 @@ export async function listDLQ(options: DLQListOptions = {}): Promise<DLQListResu
     const rawItems = await r.lrange(MIRROR_DLQ_LIST, 0, -1);
     const itemMap = new Map<string, MirrorDLQEntry>();
     for (const raw of rawItems) {
-      try {
-        const parsed = JSON.parse(raw) as MirrorDLQEntry;
-        itemMap.set(parsed.id, parsed);
-      } catch {
-        // pula itens corrompidos
-      }
+      const parsed = parseDlqItem(raw);
+      if (parsed) itemMap.set(parsed.id, parsed);
     }
 
     // 3) Monta a lista na ordem dos IDs (mais novo → mais velho),
     //    aplicando filtros in-memory. totalFiltered conta quantos
     //    passaram pelos filtros — diferente de `total` (zcard global).
-    const filtered: MirrorDLQEntry[] = [];
-    for (const id of ids) {
-      const item = itemMap.get(id);
-      if (!item) continue;
-      if (failureReason && item.failureReason !== failureReason) continue;
-      if (queue) {
-        const isRawEvent = 'messageId' in item.event;
-        const itemQueue = isRawEvent ? 'A' : 'B';
-        if (itemQueue !== queue) continue;
-      }
-      filtered.push(item);
-    }
+    const ordered: MirrorDLQEntry[] = ids
+      .map((id) => itemMap.get(id))
+      .filter((item): item is MirrorDLQEntry => item != null);
+
+    const filtered = filterDlqItems(ordered, { failureReason, queue, since });
 
     const totalFiltered = filtered.length;
-    const sliced = filtered.slice(offset, offset + limit);
+    const sliced = sliceDlqPage(filtered, offset, limit);
 
     return {
       items: sliced,
@@ -233,12 +341,8 @@ export async function getDLQItem(itemId: string): Promise<MirrorDLQEntry | null>
   try {
     const rawItems = await r.lrange(MIRROR_DLQ_LIST, 0, -1);
     for (const raw of rawItems) {
-      try {
-        const parsed = JSON.parse(raw) as MirrorDLQEntry;
-        if (parsed.id === itemId) return parsed;
-      } catch {
-        // pula itens corrompidos
-      }
+      const parsed = parseDlqItem(raw);
+      if (parsed?.id === itemId) return parsed;
     }
     return null;
   } catch {
@@ -259,18 +363,12 @@ export async function requeueFromDLQ(itemId: string, targetStream: string): Prom
 
     await r.xadd(targetStream, '*', 'payload', JSON.stringify(item.event));
 
-    const now = new Date().toISOString();
-    const updatedEntry: MirrorDLQEntry = {
-      ...item,
-      reprocessed: true,
-      reprocessedAt: now,
-      reprocessResult: 're-enfileirado no stream',
-    };
+    const updatedEntry = buildReprocessedEntry(item);
 
     const pipeline = r.pipeline();
-    const oldRaw = JSON.stringify(item);
+    const oldRaw = serializeDlqItem(item);
     pipeline.lrem(MIRROR_DLQ_LIST, 1, oldRaw);
-    pipeline.rpush(MIRROR_DLQ_LIST, JSON.stringify(updatedEntry));
+    pipeline.rpush(MIRROR_DLQ_LIST, serializeDlqItem(updatedEntry));
     await pipeline.exec();
 
     log('info', 'Item re-enfileirado do DLQ para o stream', {
@@ -300,7 +398,7 @@ export async function removeFromDLQ(itemId: string): Promise<boolean> {
     }
 
     const pipeline = r.pipeline();
-    pipeline.lrem(MIRROR_DLQ_LIST, 1, JSON.stringify(item));
+    pipeline.lrem(MIRROR_DLQ_LIST, 1, serializeDlqItem(item));
     pipeline.zrem(MIRROR_DLQ_INDEX, itemId);
     await pipeline.exec();
 
@@ -341,15 +439,11 @@ export async function purgeOldDLQItems(): Promise<number> {
     let removed = 0;
 
     for (const raw of rawItems) {
-      try {
-        const parsed = JSON.parse(raw) as MirrorDLQEntry;
-        if (oldIdSet.has(parsed.id)) {
-          pipeline.lrem(MIRROR_DLQ_LIST, 1, raw);
-          pipeline.zrem(MIRROR_DLQ_INDEX, parsed.id);
-          removed++;
-        }
-      } catch {
-        // pula itens corrompidos
+      const parsed = parseDlqItem(raw);
+      if (parsed && oldIdSet.has(parsed.id)) {
+        pipeline.lrem(MIRROR_DLQ_LIST, 1, raw);
+        pipeline.zrem(MIRROR_DLQ_INDEX, parsed.id);
+        removed++;
       }
     }
 

@@ -23,18 +23,51 @@
  * Cache Redis:
  *   Chave: product-image:{sha256(url)}
  *   TTL: 1 hora (configurável via WORKER_IMAGE_CACHE_TTL)
+ *
+ * Toda a lógica PURA (parse/extração/construção de URL) vive em
+ * `product-image-pure.ts` (coberta por product-image-pure.test.ts).
  */
 
-import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 import { getProductOffer } from '@omestre/converters';
 import { UserCredentialsRepository } from '@omestre/db';
+import type { CachedImage } from './product-image-pure.ts';
+import {
+  productImageCacheKey,
+  parseCachedImage,
+  buildCachedImagePayload,
+  extractAnyProductImage,
+  extractShopeeItemId,
+  extractMlItemId,
+  extractAmazonAsin,
+  buildShopeeCdnCandidates,
+  buildAmazonCdnCandidates,
+  buildMlItemApiUrl,
+  buildAmazonDpUrl,
+  extractMlApiImage,
+  isImageContentType,
+  ensureHttps,
+  buildImageStrategyLogEntry,
+} from './product-image-pure.ts';
+
+// Re-export das puras para compatibilidade com consumidores/testes antigos.
+export {
+  productImageCacheKey,
+  extractOgImage,
+  extractAmazonDynamicImage,
+  extractOgImageFromHtml,
+  extractShopeeItemId,
+  extractShopeeShopId,
+  extractShopeeSlug,
+  extractMlItemId,
+  extractAmazonAsin,
+  ensureHttps,
+} from './product-image-pure.ts';
 
 // ─── Config ───────────────────────────────────────────────────────────
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:5455';
 const IMAGE_CACHE_TTL = parseInt(process.env.WORKER_IMAGE_CACHE_TTL || '3600', 10);
-const IMAGE_FETCH_TIMEOUT_MS = 8_000;
 const PAGE_FETCH_TIMEOUT_MS = 8_000;
 
 const BROWSER_UA =
@@ -74,24 +107,13 @@ function getImageCacheRedis(): Redis | null {
   return redis;
 }
 
-function urlToCacheKey(url: string): string {
-  const hash = createHash('sha256').update(url).digest('hex');
-  return `product-image:${hash}`;
-}
-
-interface CachedImage {
-  imageUrl: string | null;
-  fetchedAt: string;
-}
-
 async function getCachedImage(url: string): Promise<CachedImage | null> {
   const r = getImageCacheRedis();
   if (!r) return null;
 
   try {
-    const raw = await r.get(urlToCacheKey(url));
-    if (!raw) return null;
-    return JSON.parse(raw) as CachedImage;
+    const raw = await r.get(productImageCacheKey(url));
+    return parseCachedImage(raw);
   } catch {
     return null;
   }
@@ -103,9 +125,9 @@ async function setCachedImage(url: string, imageUrl: string | null): Promise<voi
 
   try {
     await r.setex(
-      urlToCacheKey(url),
+      productImageCacheKey(url),
       IMAGE_CACHE_TTL,
-      JSON.stringify({ imageUrl, fetchedAt: new Date().toISOString() }),
+      buildCachedImagePayload(imageUrl, new Date().toISOString()),
     );
   } catch {
     // silencia
@@ -141,88 +163,9 @@ async function fetchOgImage(pageUrl: string, cookies?: string): Promise<string |
 
     // og:image (ou twitter:image) — cobre a maioria dos marketplaces.
     // Amazon não expõe og:image para bots; usa data-a-dynamic-image.
-    const image = extractAnyProductImage(html, finalUrl);
-    return image;
+    return extractAnyProductImage(html, finalUrl);
   } catch {
     return null;
-  }
-}
-
-/**
- * Extrai og:image/twitter:image de um HTML, tolerante à ordem de
- * atributos (property antes ou depois de content) e a aspas simples.
- */
-function extractOgImage(html: string): string | null {
-  const patterns = [
-    // property/name antes de content
-    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*?content=["']([^"']+)["']/i,
-    // content antes de property/name
-    /<meta[^>]+content=["']([^"']+)["'][^>]*?(?:property|name)=["'](?:og:image|twitter:image)["']/i,
-  ];
-
-  for (const re of patterns) {
-    const m = html.match(re);
-    if (m?.[1]) {
-      const value = m[1].trim();
-      // Alguns sites colocam múltiplas URLs separadas por vírgula/espaço
-      const first = value.split(/[,\s]+/)[0]!;
-      if (first.startsWith('http') || first.startsWith('/')) return first;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Amazon embute as imagens do produto em um atributo
- * `data-a-dynamic-image='{"https://...jpg":[w,h],...}'` (JSON com
- * entidades HTML escapadas). og:image costuma estar ausente para bots.
- */
-function extractAmazonDynamicImage(html: string): string | null {
-  const m = html.match(/data-a-dynamic-image=["']([^"']+)["']/i);
-  if (!m?.[1]) return null;
-
-  try {
-    const decoded = m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-    const obj = JSON.parse(decoded) as Record<string, unknown>;
-    const keys = Object.keys(obj);
-    // Pega a maior (primeira chave geralmente é a imagem principal)
-    for (const k of keys) {
-      if (/^https?:\/\//.test(k)) return k;
-    }
-  } catch {
-    // ignora JSON inválido
-  }
-  return null;
-}
-
-/**
- * Extrai a primeira URL de imagem “de produto” de um HTML, cobrindo:
- *   - og:image / twitter:image
- *   - data-a-dynamic-image (Amazon)
- *   - <img> com src de domínio de imagem conhecido
- * Retorna URL absoluta quando possível.
- */
-export function extractOgImageFromHtml(html: string, baseUrl: string): string | null {
-  const image = extractOgImage(html);
-  return image ? toAbsolute(image, baseUrl) : null;
-}
-
-function extractAnyProductImage(html: string, baseUrl: string): string | null {
-  const og = extractOgImageFromHtml(html, baseUrl);
-  if (og) return og;
-
-  const amazon = extractAmazonDynamicImage(html);
-  if (amazon) return toAbsolute(amazon, baseUrl);
-
-  return null;
-}
-
-function toAbsolute(url: string, baseUrl: string): string {
-  try {
-    return new URL(url, baseUrl).toString();
-  } catch {
-    return url;
   }
 }
 
@@ -238,82 +181,11 @@ function logImageStrategy(
   url: string,
   imageUrl: string | null,
 ): void {
-  if (imageUrl) {
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'product-image',
-        message: `Imagem encontrada (${strategy})`,
-        marketplace,
-        productUrl: url,
-        imageUrl,
-        strategy,
-      }),
-    );
-  } else {
-    console.log(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'debug',
-        service: 'product-image',
-        message: `Estratégia ${strategy} falhou`,
-        marketplace,
-        productUrl: url,
-      }),
-    );
-  }
-}
-
-/**
- * Extrai o itemId (número do item na Shopee) de uma URL.
- * Suporta tanto o formato -i.SHOPID.ITEMID quanto /product/SHOPID/ITEMID.
- */
-function extractShopeeItemId(url: string): string | null {
-  const m = url.match(/-i\.(\d+)\.(\d+)/i);
-  if (m?.[2]) return m[2];
-  const productMatch = url.match(/\/product\/(\d+)\/(\d+)/i);
-  if (productMatch?.[2]) return productMatch[2];
-  return null;
-}
-
-/**
- * Extrai o shopId (vendedor) de uma URL Shopee.
- * Suporta tanto o formato -i.SHOPID.ITEMID quanto /product/SHOPID/ITEMID.
- */
-function extractShopeeShopId(url: string): string | null {
-  const m = url.match(/-i\.(\d+)\.(\d+)/i);
-  if (m?.[1]) return m[1];
-  const productMatch = url.match(/\/product\/(\d+)\/(\d+)/i);
-  if (productMatch?.[1]) return productMatch[1];
-  return null;
-}
-
-/**
- * Extrai o slug (parte textual) de uma URL Shopee.
- * Ex: shopee.com.br/Capinha-iPhone-i.123.456 → "Capinha-iPhone"
- */
-function extractShopeeSlug(url: string): string | null {
-  const m = url.match(/shopee\.com\.br\/([^/?#]+)-i\./i);
-  if (m?.[1]) return m[1];
-  const m2 = url.match(/shopee\.com\.br\/([^/?#]+)/i);
-  if (m2?.[1] && !m2[1].startsWith('product')) return m2[1];
-  return null;
-}
-
-/** Extrai item_id da URL do Mercado Livre (MLB-XXXXXXXXXX) */
-function extractMlItemId(url: string): string | null {
-  const match = url.match(/ML[BMU]-\d+/i);
-  return match?.[0] ?? null;
-}
-
-/** Extrai ASIN da URL da Amazon */
-function extractAmazonAsin(url: string): string | null {
-  const dpMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
-  if (dpMatch?.[1]) return dpMatch[1];
-  const gpMatch = url.match(/\/gp\/product\/([A-Z0-9]{10})/i);
-  if (gpMatch?.[1]) return gpMatch[1];
-  return null;
+  console.log(
+    JSON.stringify(
+      buildImageStrategyLogEntry(marketplace, strategy, url, imageUrl, new Date().toISOString()),
+    ),
+  );
 }
 
 // ─── Estratégia por marketplace ──────────────────────────────────────
@@ -362,11 +234,7 @@ async function fetchShopeeImage(productUrl: string): Promise<string | null> {
   // Funciona quando o itemId é válido, mesmo sem renderizar a página.
   const itemId = extractShopeeItemId(productUrl);
   if (itemId) {
-    const cdnCandidates = [
-      `https://cf.shopee.com.br/file/${itemId}_tn`,
-      `https://down-br.img.susercontent.com/file-${itemId}_tn`,
-    ];
-    for (const cdn of cdnCandidates) {
+    for (const cdn of buildShopeeCdnCandidates(itemId)) {
       const ok = await checkImageUrl(cdn);
       if (ok) {
         logImageStrategy('shopee', 'cdn_direct', productUrl, cdn);
@@ -388,13 +256,14 @@ async function fetchMercadoLivreImage(
   // Se temos o item_id, a API pública do ML é a fonte mais confiável.
   if (itemId) {
     try {
-      const res = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+      const res = await fetch(buildMlItemApiUrl(itemId), {
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(5_000),
       });
       if (res.ok) {
         const data = (await res.json()) as { pictures?: Array<{ url: string }> };
-        if (data.pictures?.[0]?.url) return data.pictures[0].url;
+        const apiImage = extractMlApiImage(data);
+        if (apiImage) return apiImage;
       }
     } catch {
       // fallback para og:image
@@ -417,7 +286,7 @@ async function fetchAmazonImage(productUrl: string): Promise<string | null> {
 
   // Estratégia 1+2: og:image / data-a-dynamic-image
   if (asin) {
-    const ogByAsin = await fetchOgImage(`https://www.amazon.com.br/dp/${asin}`);
+    const ogByAsin = await fetchOgImage(buildAmazonDpUrl(asin));
     if (ogByAsin) {
       logImageStrategy('amazon', 'og_image', productUrl, ogByAsin);
       return ogByAsin;
@@ -430,13 +299,7 @@ async function fetchAmazonImage(productUrl: string): Promise<string | null> {
   // no ASIN. O caminho `/images/P/{ASIN}.01._SCRM_.jpg` é usado pelo
   // próprio site para o "main image" e não requer autenticação.
   if (asin) {
-    const cdnCandidates = [
-      `https://m.media-amazon.com/images/P/${asin}.01._SCRM_.jpg`,
-      `https://images-na.ssl-images-amazon.com/images/P/${asin}.01._SCRM_.jpg`,
-      `https://images-na.ssl-images-amazon.com/images/P/${asin}.01._AC_SCRM_.jpg`,
-      `https://images-na.ssl-images-amazon.com/images/P/${asin}.01.LZZZZZZZ.jpg`,
-    ];
-    for (const cdn of cdnCandidates) {
+    for (const cdn of buildAmazonCdnCandidates(asin)) {
       const ok = await checkImageUrl(cdn);
       if (ok) {
         logImageStrategy('amazon', 'cdn_direct', productUrl, cdn);
@@ -466,17 +329,10 @@ async function checkImageUrl(url: string): Promise<boolean> {
 
     if (!res.ok) return false;
 
-    const contentType = res.headers.get('content-type') || '';
-    return contentType.startsWith('image/');
+    return isImageContentType(res.headers.get('content-type'));
   } catch {
     return false;
   }
-}
-
-function ensureHttps(url: string): string {
-  if (url.startsWith('//')) return `https:${url}`;
-  if (url.startsWith('http://')) return url.replace(/^http:\/\//, 'https://');
-  return url;
 }
 
 // ─── API Pública ──────────────────────────────────────────────────────

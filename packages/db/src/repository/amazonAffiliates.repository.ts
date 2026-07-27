@@ -3,6 +3,14 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { amazonAffiliates } from '../schema/index.ts';
 import type { AmazonTrackingId } from '../schema/index.ts';
+import {
+  addTrackingIdPure,
+  removeTrackingIdPure,
+  updateTrackingIdPure,
+  getDefaultTrackingIdPure,
+  getActiveTrackingIdPure,
+  toAmazonSummary,
+} from './amazon-tracking-ids.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
@@ -96,10 +104,7 @@ export class AmazonAffiliateRepository {
    */
   async findAll(): Promise<AmazonAffiliateSummary[]> {
     const db = getDb();
-    const rows = await db
-      .select()
-      .from(amazonAffiliates)
-      .orderBy(amazonAffiliates.lastUsedAt);
+    const rows = await db.select().from(amazonAffiliates).orderBy(amazonAffiliates.lastUsedAt);
     return rows.map((r) => this.toSummary(r));
   }
 
@@ -144,27 +149,17 @@ export class AmazonAffiliateRepository {
    * Se for o primeiro, vira `isDefault: true` automaticamente.
    * Se nenhum `isDefault` existir quando adicionar, o novo vira default.
    */
-  async addTrackingId(userId: number, input: AmazonTrackingIdInput): Promise<AmazonAffiliate | null> {
+  async addTrackingId(
+    userId: number,
+    input: AmazonTrackingIdInput,
+  ): Promise<AmazonAffiliate | null> {
     const db = getDb();
     const existing = await this.findByUserId(userId);
     if (!existing) return null;
 
     const current = existing.trackingIds ?? [];
-    if (current.length >= 100) {
-      throw new Error('Limite de 100 tracking IDs por afiliado excedido (regra Amazon Associates)');
-    }
+    const updated = addTrackingIdPure(current, input);
 
-    const hasAnyDefault = current.some((t) => t.isDefault);
-    const newTrackingId: AmazonTrackingId = {
-      tag: input.tag,
-      label: input.label,
-      region: input.region ?? detectRegion(input.tag),
-      active: input.active ?? true,
-      isDefault: input.isDefault ?? !hasAnyDefault,
-      createdAt: new Date().toISOString(),
-    };
-
-    const updated = [...current, newTrackingId];
     const [row] = await db
       .update(amazonAffiliates)
       .set({ trackingIds: updated })
@@ -183,17 +178,8 @@ export class AmazonAffiliateRepository {
     if (!existing) return null;
 
     const current = existing.trackingIds ?? [];
-    const filtered = current.filter((t) => t.tag !== tag);
-    if (filtered.length === current.length) return existing; // tag não existia
-
-    // Se removeu o default, promover o próximo
-    const wasDefaultRemoved = current.find((t) => t.tag === tag)?.isDefault ?? false;
-    if (wasDefaultRemoved) {
-      const firstActive = filtered.find((t) => t.active);
-      if (firstActive) {
-        firstActive.isDefault = true;
-      }
-    }
+    const filtered = removeTrackingIdPure(current, tag);
+    if (filtered === current) return existing; // tag não existia
 
     const [row] = await db
       .update(amazonAffiliates)
@@ -217,25 +203,8 @@ export class AmazonAffiliateRepository {
     if (!existing) return null;
 
     const current = existing.trackingIds ?? [];
-    const idx = current.findIndex((t) => t.tag === tag);
-    if (idx === -1) return existing;
-
-    const updated = [...current];
-    const currentItem = updated[idx]!;
-    const patched: AmazonTrackingId = {
-      ...currentItem,
-      ...patch,
-      // `tag` e `createdAt` são imutáveis
-    };
-
-    // Se marcou isDefault, desmarca os outros
-    if (patch.isDefault === true) {
-      updated.forEach((t, i) => {
-        if (i !== idx) t.isDefault = false;
-      });
-    }
-
-    updated[idx] = patched;
+    const updated = updateTrackingIdPure(current, tag, patch);
+    if (updated === current) return existing; // tag não existe
 
     const [row] = await db
       .update(amazonAffiliates)
@@ -252,8 +221,7 @@ export class AmazonAffiliateRepository {
   async getDefaultTrackingId(userId: number): Promise<string | null> {
     const affiliate = await this.findByUserId(userId);
     if (!affiliate) return null;
-    const defaultItem = affiliate.trackingIds?.find((t) => t.isDefault && t.active);
-    return defaultItem?.tag ?? null;
+    return getDefaultTrackingIdPure(affiliate.trackingIds);
   }
 
   /**
@@ -262,8 +230,7 @@ export class AmazonAffiliateRepository {
   async getActiveTrackingId(userId: number, tag: string): Promise<string | null> {
     const affiliate = await this.findByUserId(userId);
     if (!affiliate) return null;
-    const item = affiliate.trackingIds?.find((t) => t.tag === tag && t.active);
-    return item?.tag ?? null;
+    return getActiveTrackingIdPure(affiliate.trackingIds, tag);
   }
 
   /**
@@ -292,16 +259,6 @@ export class AmazonAffiliateRepository {
   // ─── Helpers privados ────────────────────────────────────────────────
 
   private toSummary(r: AmazonAffiliate): AmazonAffiliateSummary {
-    const ids = r.trackingIds ?? [];
-    return {
-      id: r.id,
-      userId: r.userId,
-      nickname: r.nickname,
-      trackingIds: ids,
-      activeTrackingCount: ids.filter((t) => t.active).length,
-      active: r.active,
-      connectedAt: r.connectedAt,
-      lastUsedAt: r.lastUsedAt,
-    };
+    return toAmazonSummary(r);
   }
 }

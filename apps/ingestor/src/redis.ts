@@ -4,9 +4,14 @@
  * Lazy connect + retryStrategy com backoff. Retorna null se a conexão
  * falhar na inicialização — callers devem tratar o modo degradado
  * (fail-open).
+ *
+ * A lógica de cálculo do backoff de retry (`redisRetryDelay`) é PURA
+ * (sem I/O) e foi extraída para permitir teste unitário — vive inline
+ * abaixo (é trivial) porém também exportada para cobertura 100%.
  */
 import Redis from 'ioredis';
 import { config } from './config.ts';
+import { redisRetryDelay } from './redis-pure.ts';
 
 let redisClient: Redis | null = null;
 
@@ -21,9 +26,7 @@ export function getRedis(): Redis | null {
   try {
     redisClient = new Redis(config.REDIS_URL, {
       maxRetriesPerRequest: 3,
-      retryStrategy(times) {
-        return Math.min(times * 200, 5000);
-      },
+      retryStrategy: redisRetryDelay,
       lazyConnect: true,
     });
   } catch {

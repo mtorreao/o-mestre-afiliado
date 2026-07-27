@@ -8,10 +8,55 @@
  *
  * Variáveis de ambiente:
  *  - REDIS_URL (default: redis://localhost:5455)
+ *
+ * A lógica de parse/filtro do payload do Redis foi extraída para a
+ * função PURA `parseSourceGroupConfigs` — testável sem Redis, cobrindo
+ * JSON válido (array ou objeto único), JSON inválido e o filtro de
+ * configs incompletos.
  */
 import type { SourceGroupConfig } from '@omestre/shared';
 import { MIRROR_SOURCE_GROUP_CACHE_PREFIX } from '@omestre/shared';
 import { getRedis } from './redis.ts';
+
+/** Constrói a chave Redis para um sourceGroupJid. */
+export function sourceGroupCacheKey(sourceGroupJid: string): string {
+  return `${MIRROR_SOURCE_GROUP_CACHE_PREFIX}${sourceGroupJid}`;
+}
+
+/**
+ * Faz o parse + filtro do payload crus do Redis (string JSON).
+ *
+ * Regras (puras):
+ *  - `raw` nulo/vazio → [].
+ *  - JSON inválido → [] (modo degradado, falha silenciosa).
+ *  - Array JSON → normaliza; objeto único → envolve em [objeto].
+ *  - Mantém apenas configs COMPLETOS (com `instanceName` E `targetGroupJid`).
+ *
+ * NÃO acessa Redis — recebe a string já lida. A camada de I/O
+ * (get/JSON.parse tolerante) vive em `getSourceGroupConfigs`.
+ */
+export function parseSourceGroupConfigs(raw: string | null | undefined): SourceGroupConfig[] {
+  if (!raw) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+
+  const configs = Array.isArray(parsed) ? parsed : [parsed];
+
+  // Filtra apenas configs completos (com instanceName E targetGroupJid).
+  // Mantém a semântica truthy original (c.instanceName && c.targetGroupJid).
+  return configs.filter(
+    (c): c is SourceGroupConfig =>
+      !!c &&
+      typeof c === 'object' &&
+      !!(c as object & { instanceName?: unknown }).instanceName &&
+      !!(c as object & { targetGroupJid?: unknown }).targetGroupJid,
+  ) as SourceGroupConfig[];
+}
 
 /**
  * Retorna as configs de mirrors que escutam o sourceGroupJid.
@@ -25,15 +70,8 @@ export async function getSourceGroupConfigs(sourceGroupJid: string): Promise<Sou
   if (!r) return [];
 
   try {
-    const key = `${MIRROR_SOURCE_GROUP_CACHE_PREFIX}${sourceGroupJid}`;
-    const raw = await r.get(key);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    const configs = Array.isArray(parsed) ? parsed : [parsed];
-
-    // Filtra apenas configs completos (com instanceName)
-    return configs.filter((c: SourceGroupConfig) => c.instanceName && c.targetGroupJid);
+    const raw = await r.get(sourceGroupCacheKey(sourceGroupJid));
+    return parseSourceGroupConfigs(raw);
   } catch {
     return [];
   }

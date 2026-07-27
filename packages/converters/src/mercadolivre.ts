@@ -8,17 +8,49 @@
  * Cookies de sessão (quando usados) são SEMPRE atrelados ao usuário
  * (extensão Chrome → banco via MlAffiliateRepository.session_cookies),
  * nunca lidos de variável de ambiente.
+ *
+ * A lógica PURA (montagem de payloads/URLs, parsing, classificação e
+ * formatação de erros) vive em `mercadolivre-pure.ts`. Este arquivo
+ * mantém SOMENTE a camada de I/O (fetch + cookies) e os pontos de
+ * entrada públicos — nenhum header de auth ou lógica de fetch foi alterado.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { ConversionResult } from '@omestre/shared';
 import { detectMarketplace } from '@omestre/shared';
-
-const MELI_LA_REGEX = /meli\.la\/([A-Za-z0-9]+)/;
-
-const OAUTH_TOKEN_URL = 'https://api.mercadolibre.com/oauth/token';
-const LINK_BUILDER_API = 'https://www.mercadolivre.com.br/afiliados/api/link-builder';
-const LINK_BUILDER_PAGE = 'https://www.mercadolivre.com.br/afiliados/link-builder';
+import {
+  buildConversionResult,
+  buildCookiesRequestHeaders,
+  buildErrorResult,
+  buildLinkBuilderApiBody,
+  buildLinkBuilderApiHeaders,
+  buildNotMercadoLivreResult,
+  buildOAuthHeaders,
+  buildOAuthPayload,
+  buildRefreshCookiesHeaders,
+  canUseStrategy,
+  extractMercadoLivreCredentials,
+  extractMeliLaLink,
+  extractShortenUrl,
+  formatApiError,
+  formatMetadataSessionId,
+  formatMissingShortenUrlError,
+  formatOAuthError,
+  generateViaUrlParams as pureGenerateViaUrlParams,
+  isLoginRedirect,
+  isLoginRedirectStatus,
+  isMeliLaShortUrl,
+  isMercadoLivreUrl,
+  mergeCookies as pureMergeCookies,
+  OAUTH_NO_CREDENTIALS_MESSAGE,
+  OAUTH_TOKEN_URL,
+  LINK_BUILDER_API,
+  LINK_BUILDER_PAGE,
+  parseOAuthErrorBody,
+  type MlConversionOptions,
+  type MlStrategy,
+  type MercadoLivreCredentials,
+} from './mercadolivre-pure.ts';
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
 
@@ -35,27 +67,10 @@ interface LinkConversionResponse {
   status: string;
 }
 
-export interface MercadoLivreCredentials {
-  clientId?: string;
-  clientSecret?: string;
-  refreshToken?: string;
-  meliid?: string;
-  melitat?: string;
-  simpleTag?: string;
-  cookies?: string;
-}
+export type { MlConversionOptions, MlStrategy, MercadoLivreCredentials };
 
 export function getCredentials(): MercadoLivreCredentials {
-  return {
-    clientId: process.env.ML_CLIENT_ID,
-    clientSecret: process.env.ML_CLIENT_SECRET,
-    refreshToken: process.env.ML_REFRESH_TOKEN,
-    meliid: process.env.ML_MELIID,
-    melitat: process.env.ML_MELITAT,
-    simpleTag: process.env.ML_AFFILIATE_TAG,
-    // cookies: SEMPRE vem do banco (user-tied via extensão Chrome)
-    // Nunca ler de variável de ambiente
-  };
+  return extractMercadoLivreCredentials(process.env);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -72,38 +87,23 @@ export async function getAccessToken(
   redirectUri?: string,
   refreshToken?: string,
 ): Promise<AuthResponse> {
-  let payload: Record<string, string>;
+  const payload = buildOAuthPayload({ clientId, clientSecret, code, redirectUri, refreshToken });
 
-  if (refreshToken) {
-    payload = {
-      grant_type: 'refresh_token',
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-    };
-  } else if (code && redirectUri) {
-    payload = {
-      grant_type: 'authorization_code',
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: redirectUri,
-    };
-  } else {
-    throw new Error(
-      'Forneça ML_REFRESH_TOKEN para refresh, ou ML_AUTH_CODE + ML_REDIRECT_URI para authorization_code',
-    );
+  if (!payload) {
+    throw new Error(OAUTH_NO_CREDENTIALS_MESSAGE);
   }
 
   const res = await fetch(OAUTH_TOKEN_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: buildOAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    throw new Error(`OAuth erro ${res.status}: ${(err.message as string) || res.statusText}`);
+    const err = parseOAuthErrorBody(await res.text().catch(() => '{}')) as Record<string, unknown>;
+    throw new Error(
+      formatOAuthError(res.status, err.message as string | undefined, res.statusText),
+    );
   }
 
   return res.json() as Promise<AuthResponse>;
@@ -119,25 +119,23 @@ export async function getAccessToken(
 export async function generateViaApi(productUrl: string, accessToken: string): Promise<string> {
   const res = await fetch(LINK_BUILDER_API, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ url: productUrl }),
+    headers: buildLinkBuilderApiHeaders(accessToken),
+    body: buildLinkBuilderApiBody(productUrl),
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`ML API erro ${res.status}: ${text || res.statusText}`);
+    throw new Error(formatApiError(res.status, text, res.statusText));
   }
 
   const data = (await res.json()) as LinkConversionResponse;
 
-  if (!data.shorten_url) {
-    throw new Error(`ML API não retornou shorten_url: ${JSON.stringify(data)}`);
+  const shortenUrl = extractShortenUrl(data);
+  if (!shortenUrl) {
+    throw new Error(formatMissingShortenUrlError(data));
   }
 
-  return data.shorten_url;
+  return shortenUrl;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -147,7 +145,7 @@ export async function generateViaApi(productUrl: string, accessToken: string): P
 function generateMetadataSessionId(): string {
   const random = randomBytes(16).toString('hex');
   const timestamp = Date.now().toString(36);
-  return `${timestamp}-${random}`;
+  return formatMetadataSessionId(timestamp, random);
 }
 
 /**
@@ -171,19 +169,14 @@ export async function generateViaCookies(
 
   const res = await fetch(LINK_BUILDER_PAGE, {
     method: 'POST',
-    headers: {
-      Cookie: cookies,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'X-Metadata-Session-Id': metadataSessionId,
-    },
+    headers: buildCookiesRequestHeaders(cookies, metadataSessionId),
     body: new URLSearchParams({ url: productUrl }),
     redirect: 'manual',
   });
 
-  if (res.status === 302 || res.status === 301) {
+  if (isLoginRedirectStatus(res.status)) {
     const location = res.headers.get('location') || '';
-    if (location.includes('login') || location.includes('lgz')) {
+    if (isLoginRedirect(location)) {
       return null; // Cookies expirados
     }
   }
@@ -192,13 +185,7 @@ export async function generateViaCookies(
 
   const text = await res.text();
 
-  const linkMatch = text.match(/meli\.la\/[A-Za-z0-9]+/);
-  if (linkMatch) return `https://${linkMatch[0]}`;
-
-  const redirectMatch = text.match(/href="(https:\/\/meli\.la\/[^"]+)"/);
-  if (redirectMatch?.[1]) return redirectMatch[1];
-
-  return null;
+  return extractMeliLaLink(text);
 }
 
 /**
@@ -208,48 +195,24 @@ export async function refreshSessionCookies(currentCookies: string | undefined):
   if (!currentCookies) return '';
 
   const res = await fetch(LINK_BUILDER_PAGE, {
-    headers: {
-      Cookie: currentCookies,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    },
+    headers: buildRefreshCookiesHeaders(currentCookies),
     redirect: 'manual',
   });
 
   const newCookies = res.headers.get('set-cookie');
   if (newCookies) {
-    return mergeCookies(currentCookies, newCookies);
+    return pureMergeCookies(currentCookies, newCookies);
   }
 
   return currentCookies;
 }
 
-function mergeCookiesInternal(existing: string, setCookie: string): string {
-  const cookieMap = new Map<string, string>();
-
-  existing.split(';').forEach((c) => {
-    const [key, ...rest] = c.trim().split('=');
-    if (key) cookieMap.set(key.trim(), rest.join('='));
-  });
-
-  setCookie.split(',').forEach((part) => {
-    const [key, ...rest] = part.trim().split('=');
-    if (key && !key.includes(' ')) {
-      const value = (rest.join('=').split(';')[0] as string | undefined) ?? '';
-      cookieMap.set(key.trim(), value);
-    }
-  });
-
-  return Array.from(cookieMap.entries())
-    .map(([k, v]) => `${k}=${v}`)
-    .join('; ');
-}
-
 /**
  * Mescla cookies existentes com novos Set-Cookie headers.
- * Exportado apenas para teste unitário.
+ * Exportado para compatibilidade com testes existentes (delega em pure).
  */
 export function mergeCookies(existing: string, setCookie: string): string {
-  return mergeCookiesInternal(existing, setCookie);
+  return pureMergeCookies(existing, setCookie);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -257,30 +220,7 @@ export function mergeCookies(existing: string, setCookie: string): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function generateViaUrlParams(productUrl: string, creds: MercadoLivreCredentials): string {
-  const { meliid, melitat, simpleTag } = creds;
-
-  if (!meliid && !melitat && !simpleTag) {
-    throw new Error('Nenhuma credencial de fallback (ML_MELIID, ML_MELITAT ou ML_AFFILIATE_TAG)');
-  }
-
-  const url = new URL(productUrl);
-
-  if (meliid && melitat) {
-    // Formato antigo (Clube de Afiliados): meliid + melitat
-    url.searchParams.set('meliid', meliid);
-    url.searchParams.set('melitat', melitat);
-  } else if (simpleTag) {
-    url.searchParams.set('tag', simpleTag);
-  } else if (!meliid && melitat) {
-    // Novo formato (Programa Afiliados e Criadores): matt_word + matt_tool
-    url.searchParams.set('matt_word', melitat);
-    url.searchParams.set('matt_tool', '71835809');
-  } else {
-    if (meliid) url.searchParams.set('meliid', meliid);
-    if (melitat) url.searchParams.set('melitat', melitat);
-  }
-
-  return url.toString();
+  return pureGenerateViaUrlParams(productUrl, creds);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -304,19 +244,11 @@ async function resolveShortUrl(shortUrl: string): Promise<string | null> {
   }
 }
 
-export function isMercadoLivreUrl(url: string): boolean {
-  return /mercadolivre\.com\.br/i.test(url) || /meli\.la/i.test(url);
-}
+export { isMercadoLivreUrl };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN CONVERSION
 // ═══════════════════════════════════════════════════════════════════════════════
-
-export type MlStrategy = 'api' | 'cookies' | 'fallback' | 'none';
-
-export interface MlConversionOptions {
-  prefer?: MlStrategy[];
-}
 
 /**
  * Converte uma URL do Mercado Livre em link de afiliado,
@@ -330,21 +262,14 @@ export async function convertMercadoLivreUrl(
     const marketplace = detectMarketplace(url);
 
     if (marketplace !== 'mercadolivre') {
-      return {
-        success: false,
-        originalUrl: url,
-        affiliateUrl: null,
-        marketplace,
-        method: 'unknown',
-        error: 'URL não é do Mercado Livre',
-      };
+      return buildNotMercadoLivreResult(url, marketplace);
     }
 
     const creds = getCredentials();
 
     // Resolver link curto meli.la
     let targetUrl = url;
-    if (MELI_LA_REGEX.test(url)) {
+    if (isMeliLaShortUrl(url)) {
       const resolved = await resolveShortUrl(url);
       if (resolved && resolved !== url) {
         targetUrl = resolved;
@@ -357,11 +282,11 @@ export async function convertMercadoLivreUrl(
     const strategies = options?.prefer ?? ['api', 'cookies'];
 
     for (const strat of strategies) {
-      if (strat === 'api' && creds.clientId && creds.clientSecret) {
+      if (strat === 'api' && canUseStrategy('api', creds)) {
         try {
           const auth = await getAccessToken(
-            creds.clientId,
-            creds.clientSecret,
+            creds.clientId!,
+            creds.clientSecret!,
             undefined,
             undefined,
             creds.refreshToken,
@@ -374,7 +299,7 @@ export async function convertMercadoLivreUrl(
         }
       }
 
-      if (strat === 'cookies' && creds.cookies) {
+      if (strat === 'cookies' && canUseStrategy('cookies', creds)) {
         affiliateLink = await generateViaCookies(targetUrl, creds.cookies);
         if (!affiliateLink) {
           const newCookies = await refreshSessionCookies(creds.cookies);
@@ -386,30 +311,16 @@ export async function convertMercadoLivreUrl(
         }
       }
 
-      if (strat === 'fallback' && (creds.meliid || creds.melitat || creds.simpleTag)) {
-        affiliateLink = generateViaUrlParams(targetUrl, creds);
+      if (strat === 'fallback' && canUseStrategy('fallback', creds)) {
+        affiliateLink = pureGenerateViaUrlParams(targetUrl, creds);
         method = 'fallback';
         break;
       }
     }
 
-    return {
-      success: !!affiliateLink,
-      originalUrl: url,
-      affiliateUrl: affiliateLink,
-      marketplace: 'mercadolivre',
-      method: method === 'none' ? 'unknown' : method,
-      error: affiliateLink ? undefined : 'Nenhuma estratégia conseguiu gerar o link',
-    };
+    return buildConversionResult(url, affiliateLink, method);
   } catch (error) {
-    return {
-      success: false,
-      originalUrl: url,
-      affiliateUrl: null,
-      marketplace: 'mercadolivre',
-      method: 'unknown',
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return buildErrorResult(url, error);
   }
 }
 
@@ -425,19 +336,12 @@ export async function convertMercadoLivreUrlWithToken(
   try {
     const marketplace = detectMarketplace(url);
     if (marketplace !== 'mercadolivre') {
-      return {
-        success: false,
-        originalUrl: url,
-        affiliateUrl: null,
-        marketplace,
-        method: 'unknown',
-        error: 'URL não é do Mercado Livre',
-      };
+      return buildNotMercadoLivreResult(url, marketplace);
     }
 
     // Resolver link curto meli.la
     let targetUrl = url;
-    if (MELI_LA_REGEX.test(url)) {
+    if (isMeliLaShortUrl(url)) {
       const resolved = await resolveShortUrl(url);
       if (resolved && resolved !== url) {
         targetUrl = resolved;
@@ -453,13 +357,6 @@ export async function convertMercadoLivreUrlWithToken(
       method: 'api',
     };
   } catch (error) {
-    return {
-      success: false,
-      originalUrl: url,
-      affiliateUrl: null,
-      marketplace: 'mercadolivre',
-      method: 'unknown',
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return buildErrorResult(url, error);
   }
 }

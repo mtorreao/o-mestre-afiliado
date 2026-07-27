@@ -13,10 +13,27 @@
  *   2. Se não achar, usa headless browser (Playwright) para clicar no botão
  *
  * O browser é singleton (lazy init) e reutilizado entre chamadas.
+ *
+ * Toda a lógica PURA de parse/normalização vive em
+ * `resolve-social-product-pure.ts` (coberta por resolve-social-product-pure.test.ts).
  */
-import { incrementCounter } from '@omestre/worker-common';
 import { makeLogger } from '@omestre/shared';
 import type { Browser, Page } from 'playwright-core';
+import type { SocialProductResolution } from './resolve-social-product-pure.ts';
+import {
+  extractOgImage,
+  extractSocialProductDataFromHtml,
+  extractMlProductHref,
+  buildResolutionFromFinalUrl,
+  normalizeBrowserImageContent,
+} from './resolve-social-product-pure.ts';
+
+// Re-exports para compatibilidade com consumidores/testes antigos.
+export type { SocialProductResolution } from './resolve-social-product-pure.ts';
+export { extractSocialProductDataFromHtml } from './resolve-social-product-pure.ts';
+
+/** Exportado apenas para teste unitário. */
+export const _testExtractOgImage = extractOgImage;
 
 const log = makeLogger('ingestor');
 
@@ -70,72 +87,6 @@ export async function closeBrowser(): Promise<void> {
 
 // ─── Estratégia 1: fetch + parse HTML ──────────────────────────────────
 
-export interface SocialProductResolution {
-  productUrl: string;
-  imageUrl: string | null;
-}
-
-function extractOgImage(html: string): string | null {
-  const patterns = [
-    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*?content=["']([^"']+)["']/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]*?(?:property|name)=["'](?:og:image|twitter:image)["']/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) return match[1].trim();
-  }
-
-  return null;
-}
-
-/** Exportado apenas para teste unitário. */
-export const _testExtractOgImage = extractOgImage;
-
-/** Extrai URL do produto e imagem do mesmo HTML /social/. */
-export function extractSocialProductDataFromHtml(html: string): SocialProductResolution | null {
-  const productUrlMatch = html.match(
-    /href="(https?:\/\/(?:www\.)?mercadolivre\.com\.br\/[^"]*\/p\/MLB\d+[^"]*)"/i,
-  );
-
-  let productUrl: string | null = null;
-  if (productUrlMatch?.[1]) {
-    try {
-      const url = new URL(productUrlMatch[1]);
-      url.search = '';
-      url.hash = '';
-      productUrl = url.toString();
-    } catch {
-      productUrl = productUrlMatch[1];
-    }
-  }
-
-  if (!productUrl) {
-    const irParaMatch = html.match(
-      /<a[^>]+href="(https?:\/\/[^\"]+)"[^>]*>[^<]*Ir\s+para[^<]*<\/a>/i,
-    );
-    if (irParaMatch?.[1]) {
-      try {
-        const url = new URL(irParaMatch[1]);
-        if (/mercadolivre\.com\.br/i.test(url.hostname)) {
-          url.search = '';
-          url.hash = '';
-          productUrl = url.toString();
-        }
-      } catch {
-        // URL inválida — segue sem resolução.
-      }
-    }
-  }
-
-  if (!productUrl) return null;
-
-  return {
-    productUrl,
-    imageUrl: extractOgImage(html),
-  };
-}
-
 /**
  * Tenta extrair a URL do produto e a imagem do HTML da página /social/.
  */
@@ -167,7 +118,7 @@ async function extractBrowserImage(page: Page): Promise<string | null> {
     .first()
     .getAttribute('content')
     .catch(() => null);
-  return content?.trim() || null;
+  return normalizeBrowserImageContent(content);
 }
 
 async function tryWithBrowser(socialUrl: string): Promise<SocialProductResolution | null> {
@@ -211,27 +162,18 @@ async function tryWithBrowser(socialUrl: string): Promise<SocialProductResolutio
           ]);
 
           const finalUrl = response?.url() ?? page.url();
-          if (finalUrl && /\/p\/MLB\d+/i.test(finalUrl)) {
-            const u = new URL(finalUrl);
-            u.search = '';
-            u.hash = '';
-            return {
-              productUrl: u.toString(),
-              imageUrl: await extractBrowserImage(page),
-            };
-          }
+          const fromNavigation = buildResolutionFromFinalUrl(
+            finalUrl,
+            await extractBrowserImage(page),
+          );
+          if (fromNavigation) return fromNavigation;
 
           // Se clicou mas não foi para /p/MLB, tenta extrair do HTML da nova página
           const html = await page.content();
-          const match = html.match(
-            /href="(https?:\/\/(?:www\.)?mercadolivre\.com\.br\/[^"]*\/p\/MLB\d+[^"]*)"/i,
-          );
-          if (match?.[1]) {
-            const u = new URL(match[1]);
-            u.search = '';
-            u.hash = '';
+          const productUrl = extractMlProductHref(html);
+          if (productUrl) {
             return {
-              productUrl: u.toString(),
+              productUrl,
               imageUrl: await extractBrowserImage(page),
             };
           }
@@ -243,15 +185,10 @@ async function tryWithBrowser(socialUrl: string): Promise<SocialProductResolutio
 
     // Fallback: extrai do HTML da página /social/ sem clicar
     const html = await page.content();
-    const match = html.match(
-      /href="(https?:\/\/(?:www\.)?mercadolivre\.com\.br\/[^"]*\/p\/MLB\d+[^"]*)"/i,
-    );
-    if (match?.[1]) {
-      const u = new URL(match[1]);
-      u.search = '';
-      u.hash = '';
+    const productUrl = extractMlProductHref(html);
+    if (productUrl) {
       return {
-        productUrl: u.toString(),
+        productUrl,
         imageUrl: await extractBrowserImage(page),
       };
     }

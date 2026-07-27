@@ -10,6 +10,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   classifyConversionError,
   getNotifiableType,
+  buildNotificationText,
   type FailureType,
   type UserFixableType,
 } from './notifier.ts';
@@ -151,5 +152,51 @@ describe('getNotifiableType', () => {
     for (const type of silent) {
       expect(getNotifiableType(type)).toBeNull();
     }
+  });
+});
+
+// ─── buildNotificationText (pura) ─────────────────────────────────────
+
+describe('buildNotificationText', () => {
+  it('usa formato de relatório agrupado quando total > 1', () => {
+    const text = buildNotificationText('cookie_expired', 47);
+    expect(text).toContain('📊 *Relatório de falhas*');
+    expect(text).toContain('47 ofertas bloqueadas por cookie expirado.');
+    expect(text).toContain(
+      '🍪 Cookies de sessão do Mercado Livre expirados.\nReimporte os cookies pela extensão Chrome.',
+    );
+  });
+
+  it('usa formato de aviso único quando total === 1', () => {
+    const text = buildNotificationText('cookie_expired', 1);
+    expect(text).toContain('⚠️');
+    expect(text).toContain(
+      '🍪 Cookies de sessão do Mercado Livre expirados.\nReimporte os cookies pela extensão Chrome.',
+    );
+    expect(text).not.toContain('Relatório de falhas');
+  });
+
+  it('usa formato de aviso único quando total === 0 (limite)', () => {
+    const text = buildNotificationText('refresh_token_expired', 0);
+    expect(text).toContain('⚠️');
+    expect(text).not.toContain('Relatório de falhas');
+  });
+
+  it('inclui o label correto por tipo de falha', () => {
+    expect(buildNotificationText('ml_account_not_linked', 5)).toContain(
+      '5 ofertas bloqueadas por conta ML não vinculada.',
+    );
+    expect(buildNotificationText('invalid_amazon_tracking_id', 3)).toContain(
+      '3 ofertas bloqueadas por tracking Amazon não configurado.',
+    );
+    expect(buildNotificationText('evolution_api_offline', 12)).toContain(
+      '12 ofertas bloqueadas por Evolution API offline.',
+    );
+  });
+
+  it('múltiplas ocorrências atingem o formato agrupado exato em 2', () => {
+    const text = buildNotificationText('cookie_expired', 2);
+    expect(text).toContain('2 ofertas bloqueadas por cookie expirado.');
+    expect(text).toContain('Relatório de falhas');
   });
 });

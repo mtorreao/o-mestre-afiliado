@@ -7,6 +7,12 @@ import type { InferSelectModel } from 'drizzle-orm';
 import { and, eq, gte, lte, ilike, or, sql, desc, count, inArray } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { reflectedOffers, mirrors } from '../schema/index.ts';
+import {
+  normalizeMirrorLogPagination,
+  matchGroupJids,
+  buildGroupNamesMap,
+  buildMirrorLogRows,
+} from './mirror-log-pure.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
@@ -16,10 +22,10 @@ export interface MirrorLogFilters {
   sourceGroupJid?: string;
   targetGroupJid?: string;
   status?: 'sent' | 'failed' | 'blocked';
-  marketplace?: 'shopee' | 'mercadolivre' | 'amazon' | 'unknown';
+  marketplace?: 'shopee' | 'mercadolivre' | 'amazon' | 'magalu' | 'unknown';
   dateFrom?: string; // ISO string
-  dateTo?: string;   // ISO string
-  search?: string;   // busca textual em originalLink, convertedLink, messagePreview
+  dateTo?: string; // ISO string
+  search?: string; // busca textual em originalLink, convertedLink, messagePreview
   page?: number;
   pageSize?: number;
 }
@@ -65,9 +71,7 @@ export class MirrorLogRepository {
    */
   async list(filters: MirrorLogFilters): Promise<MirrorLogResponse> {
     const db = getDb();
-    const page = Math.max(1, filters.page ?? 1);
-    const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 25));
-    const offset = (page - 1) * pageSize;
+    const { page, pageSize, offset } = normalizeMirrorLogPagination(filters.page, filters.pageSize);
 
     // Monta condições de filtro
     const conditions: ReturnType<typeof eq>[] = [];
@@ -104,25 +108,15 @@ export class MirrorLogRepository {
             targetGroups: mirrors.targetGroups,
           })
           .from(mirrors);
-        const lowerTerm = filters.search.toLowerCase();
-        for (const m of mirrorRows) {
-          const srcGroups = m.sourceGroups;
-          if (srcGroups) {
-            for (const g of srcGroups) {
-              if (g.name.toLowerCase().includes(lowerTerm)) {
-                matchingSourceJids.push(g.jid);
-              }
-            }
-          }
-          const tgtGroups = m.targetGroups;
-          if (tgtGroups) {
-            for (const g of tgtGroups) {
-              if (g.name.toLowerCase().includes(lowerTerm)) {
-                matchingTargetJids.push(g.jid);
-              }
-            }
-          }
-        }
+        const { matchingSourceJids: src, matchingTargetJids: tgt } = matchGroupJids(
+          mirrorRows as {
+            sourceGroups: { jid: string; name: string }[] | null;
+            targetGroups: { jid: string; name: string }[] | null;
+          }[],
+          filters.search.toLowerCase(),
+        );
+        matchingSourceJids.push(...src);
+        matchingTargetJids.push(...tgt);
       } catch {
         // Se falhar, prossegue sem busca por nome de grupo
       }
@@ -148,10 +142,7 @@ export class MirrorLogRepository {
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     // Total de registros (para paginação)
-    const [totalResult] = await db
-      .select({ total: count() })
-      .from(reflectedOffers)
-      .where(where);
+    const [totalResult] = await db.select({ total: count() }).from(reflectedOffers).where(where);
 
     const total = Number(totalResult?.total ?? 0);
 
@@ -195,31 +186,20 @@ export class MirrorLogRepository {
           })
           .from(mirrors);
 
-        for (const m of mirrorRows) {
-          const srcGroups = m.sourceGroups as { jid: string; name: string }[] | null;
-          if (srcGroups) {
-            for (const g of srcGroups) {
-              groupNames.set(g.jid, g.name);
-            }
-          }
-          const tgtGroups = m.targetGroups as { jid: string; name: string }[] | null;
-          if (tgtGroups) {
-            for (const g of tgtGroups) {
-              groupNames.set(g.jid, g.name);
-            }
-          }
-        }
+        const built = buildGroupNamesMap(
+          mirrorRows as {
+            sourceGroups: { jid: string; name: string }[] | null;
+            targetGroups: { jid: string; name: string }[] | null;
+          }[],
+        );
+        for (const [jid, name] of built) groupNames.set(jid, name);
       } catch {
         // Se falhar, prossegue sem nomes de grupos
       }
     }
 
     // Monta resultado com nomes dos grupos
-    const result: MirrorLogRow[] = rows.map((r) => ({
-      ...r,
-      sourceGroupName: groupNames.get(r.sourceGroupJid) ?? null,
-      targetGroupName: groupNames.get(r.targetGroupJid) ?? null,
-    }));
+    const result: MirrorLogRow[] = buildMirrorLogRows(rows, groupNames);
 
     return {
       rows: result,

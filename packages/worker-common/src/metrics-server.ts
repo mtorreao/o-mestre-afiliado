@@ -19,6 +19,21 @@ import {
   removeFromDLQ,
   purgeOldDLQItems,
 } from './dead-letter-queue.ts';
+import {
+  authenticateMetricsRequest,
+  buildCountersSnapshot,
+  buildInfoEndpoints,
+  buildStatusResponse,
+  formatLabels,
+  formatUptime,
+  joinPrometheusLines,
+  labelsFromKey,
+  parseDlqListQuery,
+  parseRequiredQueryParam,
+  promLabelKeyValue,
+  renderMetricLine,
+  trackError as trackErrorPure,
+} from './metrics-server-pure.ts';
 
 // ─── Tipos ──────────────────────────────────────────────────────────────
 
@@ -35,12 +50,15 @@ export interface StatusResponse {
   mode: string;
   queueSize: number | null;
   dlqCount: number;
-  stepDurations: Record<string, {
-    avg: number;
-    p50: number;
-    p99: number;
-    count: number;
-  }>;
+  stepDurations: Record<
+    string,
+    {
+      avg: number;
+      p50: number;
+      p99: number;
+      count: number;
+    }
+  >;
   errors: Array<{ time: string; message: string; count: number }>;
   counters: Record<string, number | string>;
   [key: string]: unknown;
@@ -48,7 +66,7 @@ export interface StatusResponse {
 
 // ─── Métricas Prometheus ─────────────────────────────────────────────────
 
-interface CounterMetric {
+export interface CounterMetric {
   value: number;
   help: string;
   labelNames: string[];
@@ -62,7 +80,7 @@ interface HistogramObservation {
   bucketCounts: { le: number; count: number }[];
 }
 
-interface HistogramMetric {
+export interface HistogramMetric {
   help: string;
   labelNames: string[];
   buckets: number[];
@@ -70,30 +88,11 @@ interface HistogramMetric {
   type: 'histogram';
 }
 
-type Metric = CounterMetric | HistogramMetric;
+export type Metric = CounterMetric | HistogramMetric;
 
 const metrics = new Map<string, Metric>();
 
-function labelKey(labels: Record<string, string>): string {
-  return Object.values(labels).join(',');
-}
-
-function escapePromLabel(v: string): string {
-  return v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-}
-
-function formatLabels(labels: Record<string, string>): string {
-  const parts = Object.entries(labels).map(
-    ([k, v]) => `${k}="${escapePromLabel(v)}"`,
-  );
-  return parts.length ? `{${parts.join(',')}}` : '';
-}
-
-export function createCounter(
-  name: string,
-  help: string,
-  labelNames: string[] = [],
-): void {
+export function createCounter(name: string, help: string, labelNames: string[] = []): void {
   if (metrics.has(name)) return;
   metrics.set(name, {
     value: 0,
@@ -120,10 +119,7 @@ export function createHistogram(
   });
 }
 
-export function incrementCounter(
-  name: string,
-  labels: Record<string, string> = {},
-): void {
+export function incrementCounter(name: string, labels: Record<string, string> = {}): void {
   const metric = metrics.get(name);
   if (!metric || metric.type !== 'counter') {
     console.warn(`[metrics] Counter "${name}" not found`);
@@ -131,7 +127,7 @@ export function incrementCounter(
   }
   const counter = metric as CounterMetric;
   if (Object.keys(labels).length > 0) {
-    const key = labelKey(labels);
+    const key = promLabelKeyValue(labels);
     counter.counts.set(key, (counter.counts.get(key) || 0) + 1);
   } else {
     counter.value++;
@@ -149,7 +145,7 @@ export function observeHistogram(
     return;
   }
   const hist = metric as HistogramMetric;
-  const key = labelKey(labels);
+  const key = promLabelKeyValue(labels);
 
   let obs = hist.observations.get(key);
   if (!obs) {
@@ -173,46 +169,10 @@ export function getMetrics(): string {
   const lines: string[] = [];
 
   for (const [name, metric] of metrics) {
-    if (metric.type === 'counter') {
-      const counter = metric as CounterMetric;
-      lines.push(`# HELP ${name} ${counter.help}`);
-      lines.push(`# TYPE ${name} counter`);
-
-      if (counter.labelNames.length > 0) {
-        for (const [key, value] of counter.counts) {
-          const labelValues = key.split(',');
-          const labels: Record<string, string> = {};
-          counter.labelNames.forEach((ln, i) => {
-            labels[ln] = labelValues[i] || '';
-          });
-          lines.push(`${name}${formatLabels(labels)} ${value}`);
-        }
-      } else {
-        lines.push(`${name} ${counter.value}`);
-      }
-    } else if (metric.type === 'histogram') {
-      const hist = metric as HistogramMetric;
-      lines.push(`# HELP ${name} ${hist.help}`);
-      lines.push(`# TYPE ${name} histogram`);
-
-      for (const [key, obs] of hist.observations) {
-        const labels: Record<string, string> = {};
-        hist.labelNames.forEach((ln, i) => {
-          labels[ln] = key.split(',')[i] || '';
-        });
-        const labelStr = formatLabels(labels);
-
-        for (const bc of obs.bucketCounts) {
-          lines.push(`${name}_bucket${labelStr}{le="${bc.le}"} ${bc.count}`);
-        }
-        lines.push(`${name}_bucket${labelStr}{le="+Inf"} ${obs.count}`);
-        lines.push(`${name}_count${labelStr} ${obs.count}`);
-        lines.push(`${name}_sum${labelStr} ${obs.sum}`);
-      }
-    }
+    lines.push(...renderMetricLine(name, metric));
   }
 
-  return lines.join('\n') + '\n';
+  return joinPrometheusLines(lines);
 }
 
 // ─── Status ──────────────────────────────────────────────────────────────
@@ -239,58 +199,29 @@ export function setQueueSizeProvider(provider: () => Promise<number | null>): vo
   queueSizeProvider = provider;
 }
 
-interface TrackedError {
+export interface TrackedError {
   time: string;
   message: string;
   count: number;
 }
 
-const recentErrors = new Map<string, TrackedError>();
+let recentErrors = new Map<string, TrackedError>();
 const MAX_TRACKED_ERRORS = 20;
 
 export function trackError(message: string): void {
-  const existing = recentErrors.get(message);
-  if (existing) {
-    existing.count++;
-    existing.time = new Date().toISOString();
-  } else {
-    recentErrors.set(message, {
-      time: new Date().toISOString(),
-      message,
-      count: 1,
-    });
-    if (recentErrors.size > MAX_TRACKED_ERRORS) {
-      let oldestKey: string | null = null;
-      let oldestTime = Infinity;
-      for (const [k, v] of recentErrors) {
-        const t = new Date(v.time).getTime();
-        if (t < oldestTime) {
-          oldestTime = t;
-          oldestKey = k;
-        }
-      }
-      if (oldestKey) recentErrors.delete(oldestKey);
-    }
-  }
+  // Delega a lógica pura (não-mutante) e atualiza o mapa module-level.
+  recentErrors = trackErrorPure(
+    recentErrors,
+    message,
+    MAX_TRACKED_ERRORS,
+    new Date().toISOString(),
+  );
 }
 
 export async function getStatusResponse(
   serviceName: string,
   targetStream: string,
 ): Promise<StatusResponse> {
-  const uptimeMs = Date.now() - startTime;
-  const uptimeSeconds = Math.floor(uptimeMs / 1000);
-  const days = Math.floor(uptimeSeconds / 86400);
-  const hours = Math.floor((uptimeSeconds % 86400) / 3600);
-  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-  const seconds = uptimeSeconds % 60;
-  const uptimeFormatted =
-    days > 0
-      ? `${days}d ${hours}h ${minutes}m ${seconds}s`
-      : hours > 0
-        ? `${hours}h ${minutes}m ${seconds}s`
-        : `${minutes}m ${seconds}s`;
-
   let dlqCount = 0;
   try {
     dlqCount = await countDLQ();
@@ -307,45 +238,19 @@ export async function getStatusResponse(
     }
   }
 
-  const stepDurations: Record<string, { avg: number; p50: number; p99: number; count: number }> = {};
-  for (const [name, tracker] of Object.entries(stepTrackers)) {
-    stepDurations[name] = tracker.snapshot();
-  }
+  const countersSnapshot = buildCountersSnapshot(metrics);
 
-  const countersSnapshot: Record<string, number | string> = {};
-  for (const [name, metric] of metrics) {
-    if (metric.type === 'counter') {
-      const counter = metric as CounterMetric;
-      if (counter.labelNames.length > 0) {
-        for (const [key, value] of counter.counts) {
-          const labelValues = key.split(',');
-          const labelStr = counter.labelNames
-            .map((ln, i) => `${ln}=${labelValues[i] || ''}`)
-            .join(',');
-          countersSnapshot[`${name}{${labelStr}}`] = value;
-        }
-      } else {
-        countersSnapshot[name] = counter.value;
-      }
-    }
-  }
-
-  return {
-    ...statusOverrides,
-    service: serviceName,
-    status: 'healthy',
-    uptime: uptimeFormatted,
-    uptimeSeconds,
-    startTime: new Date(startTime).toISOString(),
-    mode: (statusOverrides.mode as string) || 'unknown',
-    queueSize,
+  return buildStatusResponse({
+    serviceName,
+    startTimeMs: startTime,
+    stepTrackers,
+    nowMs: Date.now(),
     dlqCount,
-    stepDurations,
-    errors: Array.from(recentErrors.values()).sort(
-      (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime(),
-    ),
-    counters: countersSnapshot,
-  };
+    queueSize,
+    statusOverrides,
+    recentErrors: Array.from(recentErrors.values()),
+    countersSnapshot,
+  });
 }
 
 // ─── HTTP Server ─────────────────────────────────────────────────────────
@@ -363,18 +268,9 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function authenticateRequest(req: Request): boolean {
-  if (!METRICS_API_KEY) return true;
-
   const authHeader = req.headers.get('authorization') || '';
   const apiKeyHeader = req.headers.get('x-api-key') || '';
-
-  if (authHeader.startsWith('Bearer ') && authHeader.slice(7) === METRICS_API_KEY) {
-    return true;
-  }
-  if (apiKeyHeader === METRICS_API_KEY) {
-    return true;
-  }
-  return false;
+  return authenticateMetricsRequest(METRICS_API_KEY, authHeader, apiKeyHeader);
 }
 
 export function startMetricsServer(
@@ -421,14 +317,13 @@ export function startMetricsServer(
       }
 
       if (url.pathname === '/dlq') {
-        const offset = parseInt(url.searchParams.get('offset') || '0', 10);
-        const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+        const { offset, limit } = parseDlqListQuery(url.searchParams);
         const result = await listDLQ({ offset, limit });
         return jsonResponse(result);
       }
 
       if (url.pathname === '/dlq/requeue' && req.method === 'POST') {
-        const id = url.searchParams.get('id');
+        const id = parseRequiredQueryParam(url.searchParams, 'id');
         if (!id) {
           return jsonResponse({ error: 'Parâmetro "id" é obrigatório' }, 400);
         }
@@ -437,7 +332,7 @@ export function startMetricsServer(
       }
 
       if (url.pathname === '/dlq/remove' && req.method === 'POST') {
-        const id = url.searchParams.get('id');
+        const id = parseRequiredQueryParam(url.searchParams, 'id');
         if (!id) {
           return jsonResponse({ error: 'Parâmetro "id" é obrigatório' }, 400);
         }
@@ -453,16 +348,7 @@ export function startMetricsServer(
       if (url.pathname === '/') {
         return jsonResponse({
           service: serviceName,
-          endpoints: [
-            '/metrics',
-            '/health',
-            '/status',
-            '/dlq',
-            '/dlq/count',
-            '/dlq/requeue?id=...',
-            '/dlq/remove?id=...',
-            '/dlq/purge',
-          ],
+          endpoints: buildInfoEndpoints(serviceName),
         });
       }
 
@@ -470,13 +356,15 @@ export function startMetricsServer(
     },
   });
 
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    service: serviceName,
-    message: 'Servidor de métricas iniciado',
-    port: effectivePort,
-  }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: serviceName,
+      message: 'Servidor de métricas iniciado',
+      port: effectivePort,
+    }),
+  );
 }
 
 export function stopMetricsServer(): void {

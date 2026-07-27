@@ -44,7 +44,15 @@ interface ProfileData {
       };
   mercadoLivre:
     | { connected: false }
-    | { connected: true; nickname: string; mlUserId: string; expired: boolean; hasSessionCookies: boolean; meliid: string | null; melitat: string | null };
+    | {
+        connected: true;
+        nickname: string;
+        mlUserId: string;
+        expired: boolean;
+        hasSessionCookies: boolean;
+        meliid: string | null;
+        melitat: string | null;
+      };
   sourceGroups?: { jid: string; name: string }[];
 }
 
@@ -112,15 +120,36 @@ function MetricCard({ icon, label, value, badge, warning }: MetricCardProps) {
         {badge && <Badge variant={badge.variant}>{badge.label}</Badge>}
       </div>
       <div>
-        <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1.2 }}>
+        <div
+          style={{
+            fontSize: 'var(--text-2xl)',
+            fontWeight: 700,
+            color: 'var(--color-text-primary)',
+            lineHeight: 1.2,
+          }}
+        >
           {value}
         </div>
-        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: '0.15rem' }}>
+        <div
+          style={{
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-text-muted)',
+            marginTop: '0.15rem',
+          }}
+        >
           {label}
         </div>
       </div>
       {warning && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: 'var(--text-xs)', color: 'var(--color-warning)' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-warning)',
+          }}
+        >
           <AlertCircle size={12} />
           <span>{warning}</span>
         </div>
@@ -180,8 +209,24 @@ function QuickActionCard({ icon, label, description, onClick }: QuickActionProps
         {icon}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>{label}</div>
-        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>{description}</div>
+        <div
+          style={{
+            fontSize: 'var(--text-sm)',
+            fontWeight: 600,
+            color: 'var(--color-text-primary)',
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-text-muted)',
+            marginTop: '0.1rem',
+          }}
+        >
+          {description}
+        </div>
       </div>
       <ChevronRight size={16} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
     </button>
@@ -198,19 +243,29 @@ function formatDate(iso: string): string {
 
 function statusBadgeVariant(status: string): 'success' | 'error' | 'warning' | 'neutral' {
   switch (status) {
-    case 'sent': return 'success';
-    case 'failed': return 'error';
-    case 'blocked': return 'warning';
-    default: return 'neutral';
+    case 'sent':
+      return 'success';
+    case 'failed':
+      return 'error';
+    case 'blocked':
+      return 'warning';
+    default:
+      return 'neutral';
   }
 }
 
 function marketplaceIcon(mp: string): string {
   switch (mp) {
-    case 'shopee': return '🛒';
-    case 'mercadolivre': return '📦';
-    case 'amazon': return '📦';
-    default: return '❓';
+    case 'shopee':
+      return '🛒';
+    case 'mercadolivre':
+      return '📦';
+    case 'amazon':
+      return '📦';
+    case 'magalu':
+      return '🛍️';
+    default:
+      return '❓';
   }
 }
 
@@ -348,10 +403,10 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
             profileLoading
               ? '…'
               : !profile
-              ? '—'
-              : [shopeeConfigured && 'Shopee', mlConnected && 'ML', amazonConnected && 'Amazon']
-                  .filter(Boolean)
-                  .join(' + ') || 'Nenhum'
+                ? '—'
+                : [shopeeConfigured && 'Shopee', mlConnected && 'ML', amazonConnected && 'Amazon']
+                    .filter(Boolean)
+                    .join(' + ') || 'Nenhum'
           }
           badge={
             !profileLoading && profile
@@ -402,7 +457,14 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
         {recentLogsLoading ? (
           <Loading text="Carregando atividade..." size="sm" />
         ) : recentLogs.length === 0 ? (
-          <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+          <div
+            style={{
+              padding: '1rem',
+              textAlign: 'center',
+              color: 'var(--color-text-muted)',
+              fontSize: 'var(--text-sm)',
+            }}
+          >
             Nenhuma oferta espelhada recentemente.
           </div>
         ) : (
@@ -425,12 +487,28 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
                 <span style={{ color: 'var(--color-text-secondary)', flexShrink: 0 }}>
                   {marketplaceIcon(log.marketplace)}
                 </span>
-                <span style={{ color: 'var(--color-text-primary)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span
+                  style={{
+                    color: 'var(--color-text-primary)',
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {log.sourceGroupName || '—'}
                   <span style={{ color: 'var(--color-text-muted)', margin: '0 0.25rem' }}>→</span>
                   {log.targetGroupName || '—'}
                 </span>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                <span
+                  style={{
+                    color: 'var(--color-text-muted)',
+                    fontSize: 'var(--text-xs)',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                >
                   {formatDate(log.reflectedAt)}
                 </span>
               </div>

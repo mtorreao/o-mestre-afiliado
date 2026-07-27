@@ -8,6 +8,7 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { and, eq, desc, count, sql, like } from 'drizzle-orm';
 import { getDb } from '../db.ts';
 import { mirrors } from '../schema/mirrors.ts';
+import { normalizePagination, computeTotalPages } from './mirror-pagination.ts';
 
 // ─── Tipos públicos ──────────────────────────────────────────────────
 
@@ -55,9 +56,7 @@ export class MirrorRepository {
    */
   async list(filters: MirrorListFilters = {}): Promise<MirrorListResponse> {
     const db = getDb();
-    const page = Math.max(1, filters.page ?? 1);
-    const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 25));
-    const offset = (page - 1) * pageSize;
+    const { page, pageSize, offset } = normalizePagination(filters.page, filters.pageSize);
 
     const conditions: ReturnType<typeof eq>[] = [];
 
@@ -74,10 +73,7 @@ export class MirrorRepository {
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     // Total de registros (para paginação)
-    const [totalResult] = await db
-      .select({ total: count() })
-      .from(mirrors)
-      .where(where);
+    const [totalResult] = await db.select({ total: count() }).from(mirrors).where(where);
 
     const total = Number(totalResult?.total ?? 0);
 
@@ -95,7 +91,7 @@ export class MirrorRepository {
       total,
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
+      totalPages: computeTotalPages(total, pageSize),
     };
   }
 
@@ -104,11 +100,7 @@ export class MirrorRepository {
    */
   async findById(id: number): Promise<Mirror | null> {
     const db = getDb();
-    const rows = await db
-      .select()
-      .from(mirrors)
-      .where(eq(mirrors.id, id))
-      .limit(1);
+    const rows = await db.select().from(mirrors).where(eq(mirrors.id, id)).limit(1);
     return rows[0] ?? null;
   }
 
@@ -117,10 +109,7 @@ export class MirrorRepository {
    */
   async create(data: NewMirror): Promise<Mirror> {
     const db = getDb();
-    const [row] = await db
-      .insert(mirrors)
-      .values(data)
-      .returning();
+    const [row] = await db.insert(mirrors).values(data).returning();
     return row!;
   }
 
@@ -133,11 +122,7 @@ export class MirrorRepository {
     const existing = await this.findById(id);
     if (!existing) return null;
 
-    const [row] = await db
-      .update(mirrors)
-      .set(data)
-      .where(eq(mirrors.id, id))
-      .returning();
+    const [row] = await db.update(mirrors).set(data).where(eq(mirrors.id, id)).returning();
     return row ?? null;
   }
 
@@ -150,11 +135,7 @@ export class MirrorRepository {
     const existing = await this.findById(id);
     if (!existing) return null;
 
-    const [row] = await db
-      .update(mirrors)
-      .set({ status })
-      .where(eq(mirrors.id, id))
-      .returning();
+    const [row] = await db.update(mirrors).set({ status }).where(eq(mirrors.id, id)).returning();
     return row ?? null;
   }
 
@@ -164,10 +145,7 @@ export class MirrorRepository {
    */
   async delete(id: number): Promise<boolean> {
     const db = getDb();
-    const result = await db
-      .delete(mirrors)
-      .where(eq(mirrors.id, id))
-      .returning({ id: mirrors.id });
+    const result = await db.delete(mirrors).where(eq(mirrors.id, id)).returning({ id: mirrors.id });
     return result.length > 0;
   }
 }

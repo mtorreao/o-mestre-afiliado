@@ -57,33 +57,18 @@ export type SilentType = 'network_timeout' | 'dedup' | 'blacklist';
 
 export type FailureType = UserFixableType | SilentType;
 
-const NOTIFICATION_MESSAGES: Record<UserFixableType, string> = {
-  cookie_expired:
-    '🍪 Cookies de sessão do Mercado Livre expirados.\n' +
-    'Reimporte os cookies pela extensão Chrome.',
-  refresh_token_expired:
-    '🔑 Token de refresh do Mercado Livre expirado.\n' + 'Reconecte sua conta ML.',
-  invalid_shopee_creds:
-    '⚠️ Credenciais da Shopee (App ID/Secret) inválidas.\n' +
-    'Verifique suas credenciais no painel.',
-  invalid_amazon_tracking_id:
-    '🛒 Tracking ID da Amazon não configurado.\n' +
-    'Cadastre seu tracking ID no painel para receber comissões de ofertas Amazon.',
-  ml_account_not_linked:
-    '🔗 Nenhuma conta do Mercado Livre vinculada.\n' + 'Conecte-se primeiro no painel.',
-  evolution_api_offline:
-    '📡 Evolution API está offline.\n' + 'Verifique se o container da Evolution API está rodando.',
-};
-
-const NOTIFICATION_LABELS: Record<UserFixableType, string> = {
-  cookie_expired: 'cookie expirado',
-  refresh_token_expired: 'token expirado',
-  invalid_shopee_creds: 'credenciais Shopee inválidas',
-  invalid_amazon_tracking_id: 'tracking Amazon não configurado',
-  ml_account_not_linked: 'conta ML não vinculada',
-  evolution_api_offline: 'Evolution API offline',
-};
-
+// Funções puras extraídas para notifier-pure.ts.
+import {
+  buildNotificationText,
+  resolveNotificationConfig,
+  shouldSendViaChannel,
+  resolveNotificationMessage,
+  buildEvolutionApiUrl,
+  buildEvolutionHeaders,
+  buildWhatsAppPayload,
+  buildTelegramApiUrl,
+  buildTelegramPayload,
+} from './notifier-pure.ts';
 // ─── Redis (lazy singleton) ──────────────────────────────────────────────
 
 let redis: Redis | null = null;
@@ -120,10 +105,7 @@ function getNotifierRedis(): Redis | null {
 // ─── Headers da Evolution API ────────────────────────────────────────────
 
 function evolutionHeaders(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    apikey: config.EVOLUTION_API_KEY,
-  };
+  return buildEvolutionHeaders();
 }
 
 // ─── Telegram Bot API ────────────────────────────────────────────────────
@@ -137,16 +119,11 @@ async function sendTelegramNotification(chatId: string, text: string): Promise<b
   }
 
   try {
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const url = buildTelegramApiUrl(TELEGRAM_BOT_TOKEN);
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify(buildTelegramPayload(chatId, text)),
     });
 
     if (res.ok) {
@@ -261,6 +238,19 @@ export function getNotifiableType(type: FailureType): UserFixableType | null {
   return notifiable.has(type) ? (type as UserFixableType) : null;
 }
 
+/**
+ * Monta o texto da notificação a partir do tipo de falha e do total de
+ * ocorrências acumuladas.
+ *
+ * Função PURA — re-exporta a implementação canônica de `notifier-pure.ts`
+ * (`buildNotificationText`) para manter compatibilidade de importação e
+ * centralizar a lógica de formatação (aviso único vs. relatório agrupado).
+ *
+ * Regra de agrupamento: total > 1 → relatório "N ofertas bloqueadas...".
+ * Caso contrário → aviso único "⚠️ {mensagem}".
+ */
+export { buildNotificationText } from './notifier-pure.ts';
+
 // ─── Cooldown ────────────────────────────────────────────────────────────
 
 export async function isInCooldown(type: UserFixableType, instanceName: string): Promise<boolean> {
@@ -363,15 +353,10 @@ async function sendWhatsAppNotification(
   }
 
   try {
-    const res = await fetch(`${config.EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+    const res = await fetch(buildEvolutionApiUrl(instanceName), {
       method: 'POST',
       headers: evolutionHeaders(),
-      body: JSON.stringify({
-        number: targetJid,
-        text,
-        delay: 1000,
-        linkPreview: false,
-      }),
+      body: buildWhatsAppPayload(targetJid, text),
     });
 
     if (res.ok) {
@@ -428,11 +413,10 @@ export async function processFailure(
     return;
   }
 
-  const notificationConfig = await getAffiliateNotificationConfig(instanceName);
-  const channel = notificationConfig?.channel ?? 'disabled';
-  const targetJid = notificationConfig?.jid ?? null;
+  const notificationConfigRaw = await getAffiliateNotificationConfig(instanceName);
+  const { channel, jid: targetJid } = resolveNotificationConfig(notificationConfigRaw);
 
-  if (channel === 'disabled' || !targetJid) {
+  if (!shouldSendViaChannel(channel, targetJid)) {
     log(
       'info',
       `Notificação disponível para ${notifiableType} (${total} ocorrências) — sem canal configurado.`,
@@ -443,22 +427,13 @@ export async function processFailure(
     return;
   }
 
-  const label = NOTIFICATION_LABELS[notifiableType];
-  const msg = NOTIFICATION_MESSAGES[notifiableType];
-
-  let notificationText: string;
-  if (total >= MIN_OCCURRENCES_FOR_NOTIFICATION && total > 1) {
-    notificationText =
-      `📊 *Relatório de falhas*\n\n` + `${total} ofertas bloqueadas por ${label}.\n\n` + `${msg}`;
-  } else {
-    notificationText = `⚠️ ${msg}`;
-  }
+  const notificationText = buildNotificationText(notifiableType, total);
 
   let sent = false;
   if (channel === 'whatsapp') {
-    sent = await sendWhatsAppNotification(instanceName, notificationText, targetJid);
+    sent = await sendWhatsAppNotification(instanceName, notificationText, targetJid!);
   } else if (channel === 'telegram') {
-    sent = await sendTelegramNotification(targetJid, notificationText);
+    sent = await sendTelegramNotification(targetJid!, notificationText);
   }
 
   if (sent) {
@@ -481,26 +456,25 @@ export async function notifyDirect(
     return false;
   }
 
-  const notificationConfig = await getAffiliateNotificationConfig(instanceName);
-  const channel = notificationConfig?.channel ?? 'disabled';
-  const targetJid = notificationConfig?.jid ?? null;
+  const notificationConfigRaw = await getAffiliateNotificationConfig(instanceName);
+  const { channel, jid: targetJid } = resolveNotificationConfig(notificationConfigRaw);
 
-  if (channel === 'disabled' || !targetJid) {
+  if (!shouldSendViaChannel(channel, targetJid)) {
     log(
       'info',
-      `[NOTIFICAÇÃO] Notificação direta sem canal configurado: ${message ?? NOTIFICATION_MESSAGES[type]}`,
+      `[NOTIFICAÇÃO] Notificação direta sem canal configurado: ${resolveNotificationMessage(type, message)}`,
       { instanceName, type },
     );
     return false;
   }
 
-  const text = message ?? NOTIFICATION_MESSAGES[type];
+  const text = resolveNotificationMessage(type, message);
   let sent = false;
 
   if (channel === 'whatsapp') {
-    sent = await sendWhatsAppNotification(instanceName, text, targetJid);
+    sent = await sendWhatsAppNotification(instanceName, text, targetJid!);
   } else if (channel === 'telegram') {
-    sent = await sendTelegramNotification(targetJid, text);
+    sent = await sendTelegramNotification(targetJid!, text);
   }
 
   if (sent) {
