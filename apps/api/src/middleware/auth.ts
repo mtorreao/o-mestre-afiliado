@@ -17,6 +17,7 @@ import { config } from '../config.ts';
 export interface AuthUser {
   userId: number;
   userEmail: string;
+  isAdmin: boolean;
 }
 
 /**
@@ -58,5 +59,6 @@ export async function getAuthUser(
   return {
     userId: payload.userId,
     userEmail: String(payload.userEmail ?? ''),
+    isAdmin: payload.isAdmin === true,
   };
 }

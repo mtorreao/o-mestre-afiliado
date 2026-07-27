@@ -71,3 +71,22 @@ export async function convertUrl(url: string): Promise<ConversionResult> {
       };
   }
 }
+
+/**
+ * Seleciona a função de conversão adequada para o marketplace.
+ * Retorna a função sem executá-la (útil para testes e lazy evaluation).
+ */
+export function selectConverter(
+  marketplace: string,
+): ((url: string) => Promise<ConversionResult>) | null {
+  switch (marketplace) {
+    case 'shopee':
+      return convertShopeeUrl;
+    case 'mercadolivre':
+      return convertMercadoLivreUrl;
+    case 'amazon':
+      return convertAmazonUrl;
+    default:
+      return null;
+  }
+}
