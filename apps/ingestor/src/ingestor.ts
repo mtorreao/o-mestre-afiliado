@@ -3,95 +3,73 @@
  *
  * Fluxo:
  *   0. Sanitização: remove links não-oferta (t.me/*) do texto
- *   1. Extrai URLs de marketplace do texto sanitizado
- *   2. Resolve TODOS os links (multi-link) e classifica:
- *      - product:     URL final é página de produto → vai pro Link Builder
- *      - informative: URL final é campanha/listagem → mantida no texto
- *      - discard:     não resolveu → removida do texto
+ *   1. Extrai URLs de marketplace do texto sanitizado (url-extraction.ts)
+ *   2. Resolve TODOS os links (multi-link) e classifica
  *   3. Seleciona a URL de produto (bloqueia se 0 ou ≥2)
  *   4. Reconstrói o texto com URLs resolvidas
- *   5. Blacklist global
- *   6. Whitelist global
- *   7. Busca configs do sourceGroup (cache 1:N)
- *   8. Fan-out por afiliado (paralelo):
- *      a. Converte link com credenciais do afiliado (só produto)
- *      b. Verifica link (safety check)
- *      c. Monta template (texto sanitizado + URLs resolvidas)
+ *   5. Blacklist + Whitelist global (terms-lists.ts)
+ *   6. Busca configs do sourceGroup (source-group-cache.ts)
+ *   7. Fan-out por afiliado (paralelo):
+ *      a. Converte link com credenciais do afiliado (link-converters.ts)
+ *      b. Verifica link (safety check) (link-verifier.ts)
+ *      c. Monta template (template-builder.ts)
  *      d. Publica SendEvent na Queue B
- *   9. Fetch product image (opcional, fallback texto)
- *   10. Publica na Queue B
- *   11. ACK na Queue A
+ *   8. Fetch product image (opcional, fallback texto)
+ *   9. Publica na Queue B
+ *  10. ACK na Queue A
+ *
+ * Módulos auxiliares (cada um com responsabilidade única):
+ *   - url-extraction.ts:    classifyLinkKind, extractAllMarketplaceLinks,
+ *                           extractMarketplaceUrl, sanitizeNonOfferLinks
+ *   - terms-lists.ts:       loadBlacklist, loadWhitelist (cache em globalThis)
+ *   - dedup.ts:             isDuplicate (24h via reflected_offers)
+ *   - source-group-cache.ts: getSourceGroupConfigs (1:N Redis)
+ *   - link-converters.ts:   convertOfferUrl + sub-converters por marketplace
+ *   - link-verifier.ts:     verifyAffiliateLink (safety check)
+ *   - template-builder.ts:  buildTemplateMessage
+ *   - offer-logger.ts:      logReflectedOffer (INSERT em reflected_offers)
+ *   - metrics.ts:           steps (StepTrackers) + initMetrics()
+ *   - redis.ts:             getRedis() lazy singleton
  */
 
-import type {
-  RawMessageEvent,
-  SendEvent,
-  SourceGroupConfig,
-  TemplateContext,
-} from '@omestre/shared';
+import { randomUUID } from 'node:crypto';
+import type { RawMessageEvent, SendEvent, TemplateContext } from '@omestre/shared';
 import {
   detectMarketplace,
-  resolvePlaceholders,
-  processConditionalsHuman,
-  buildEvalContext,
   MIRROR_SEND_STREAM,
   MIRROR_SEND_DEDUP_PREFIX,
   MIRROR_SEND_DEDUP_TTL,
-  MIRROR_SOURCE_GROUP_CACHE_PREFIX,
 } from '@omestre/shared';
 import {
-  convertShopeeUrlWithCredentials,
-  generateShortAffiliateLink,
-  convertAmazonUrlWithAffiliate,
-} from '@omestre/converters';
-import {
-  getDb,
-  affiliates,
-  mirrors,
-  reflectedOffers,
-  UserCredentialsRepository,
-  MlAffiliateRepository,
-  AmazonAffiliateRepository,
-  MirrorRepository,
-} from '@omestre/db';
-import { eq, and, gte } from 'drizzle-orm';
-import Redis from 'ioredis';
-import { randomUUID } from 'node:crypto';
-import { readFileSync, existsSync } from 'fs';
-import { resolveRedirectUrl, resolveMeliRedirect, isMeliProductUrl } from './resolve-redirect.ts';
-import { getCachedConversion, setCachedConversion } from './conversion-cache.ts';
-import { fetchProductImage } from './product-image.ts';
-import {
-  StepTracker,
+  classifyConversionError,
   measureStep,
   measureStepSync,
   processFailure,
-  classifyConversionError,
-  pushToDLQ,
-  createCounter,
   incrementCounter,
-  observeHistogram,
-  registerStepTrackers,
-  setStatusMeta,
 } from '@omestre/worker-common';
+import { MlAffiliateRepository } from '@omestre/db';
+import { resolveRedirectUrl, isMeliProductUrl } from './resolve-redirect.ts';
+import { fetchProductImage } from './product-image.ts';
+import { getRedis } from './redis.ts';
+import { steps } from './metrics.ts';
 
-// ─── Config ──────────────────────────────────────────────────────────
+// Re-exporta funções puras de url-extraction.ts para compatibilidade
+// com testes existentes e callers externos.
+export {
+  classifyLinkKind,
+  extractAllMarketplaceLinks,
+  extractMarketplaceUrl,
+  sanitizeNonOfferLinks,
+} from './url-extraction.ts';
+export type { LinkKind, ExtractedLink } from './url-extraction.ts';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:5455';
-
-// ─── Step Trackers ───────────────────────────────────────────────────
-
-const steps = {
-  dedup: new StepTracker(),
-  extract: new StepTracker(),
-  blacklist: new StepTracker(),
-  whitelist: new StepTracker(),
-  imageFetch: new StepTracker(),
-  fanOut: new StepTracker(),
-  total: new StepTracker(),
-};
-
-// ─── Logging ─────────────────────────────────────────────────────────
+import { sanitizeNonOfferLinks, extractAllMarketplaceLinks } from './url-extraction.ts';
+import { loadBlacklist, loadWhitelist } from './terms-lists.ts';
+import { getSourceGroupConfigs } from './source-group-cache.ts';
+import { convertOfferUrl } from './link-converters.ts';
+import { setCachedConversion } from './conversion-cache.ts';
+import { verifyAffiliateLink } from './link-verifier.ts';
+import { buildTemplateMessage } from './template-builder.ts';
 
 function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) {
   const entry = {
@@ -99,7 +77,7 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) 
     level,
     service: 'ingestor',
     message,
-    ...(data ? { data } : {}),
+    ...(data && typeof data === 'object' ? data : {}),
   };
   if (level === 'error') {
     console.error(JSON.stringify(entry));
@@ -107,756 +85,6 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) 
     console.log(JSON.stringify(entry));
   }
 }
-
-// ─── Blacklist / Whitelist ───────────────────────────────────────────
-
-interface TermsFile {
-  terms: string[];
-}
-
-function loadTermsList(envPath: string, defaultPath: string, label: string): string[] {
-  const cacheKey = `_cache_${label}` as keyof typeof globalThis;
-  if ((globalThis as Record<string, unknown>)[cacheKey] !== undefined) {
-    return (globalThis as Record<string, unknown>)[cacheKey] as string[];
-  }
-
-  const filePath = process.env[envPath] || defaultPath;
-  try {
-    if (existsSync(filePath)) {
-      const raw = readFileSync(filePath, 'utf-8');
-      const config = JSON.parse(raw) as TermsFile;
-      const terms = config.terms ?? [];
-      (globalThis as Record<string, unknown>)[cacheKey] = terms;
-      log('info', `${label} carregada: ${terms.length} termo(s) de ${filePath}`);
-      return terms;
-    }
-    log('info', `Arquivo ${filePath} não encontrado, ${label.toLowerCase()} vazia`);
-  } catch (err) {
-    log('warn', `Erro ao carregar ${label.toLowerCase()}`, { path: filePath, error: String(err) });
-  }
-
-  (globalThis as Record<string, unknown>)[cacheKey] = [];
-  return [];
-}
-
-function loadBlacklist(): string[] {
-  return loadTermsList('BLACKLIST_PATH', '../../blacklist.json', 'Blacklist');
-}
-
-function loadWhitelist(): string[] {
-  return loadTermsList('WHITELIST_PATH', '../../whitelist.json', 'Whitelist');
-}
-
-// ─── URL Extraction ──────────────────────────────────────────────────
-
-/**
- * Tipo de link de marketplace extraído de uma mensagem.
- * - 'product': URL de página de PRODUTO (tem padrão de item claro)
- * - 'coupon':  link de CUPOM / voucher / redirector de afiliado
- * - 'other':   marketplace detectado mas sem padrão de produto claro
- *              (ex.: shortlink s.shopee.com.br não resolvido)
- */
-export type LinkKind = 'product' | 'coupon' | 'other';
-
-export interface ExtractedLink {
-  url: string;
-  kind: LinkKind;
-}
-
-/**
- * Classifica um link de marketplace em produto / cupom / outro.
- * Usa padrões de URL — NÃO resolve redirects (economia de rede).
- */
-export function classifyLinkKind(url: string): LinkKind {
-  // Redirector de cupom conhecido (go.promozone.ai/*) sempre é cupom
-  if (/go\.promozone\.ai/i.test(url)) return 'coupon';
-  // Shortlinks Shopee (s.shopee.com.br/XXX) — affiliate/cupom/voucher:
-  // não temos como saber se é produto sem resolver o redirect (que é
-  // feito em outro passo). Marcamos como 'coupon' para que o pipeline
-  // não tente extrair imagem do shortlink e não use o shortlink como
-  // originalLink no dedup. O `resolveRedirectUrl` depois, se conseguir
-  // extrair um itemId real, promove a URL para o caminho de produto.
-  if (/s\.shopee\.com\.br/i.test(url)) return 'coupon';
-  // URLs de cupom/voucher óbvias
-  if (/voucher-wallet|cupom|\/claim\b|\/coupons?\b|\/voucher\b/i.test(url)) return 'coupon';
-  // Shopee produto: -i.SHOPID.ITEMID (o "i." pode vir após slug com hífen;
-  // ITEMID e SHOPID são separados por ponto na URL real)
-  if (/(^|[\/-])i\.\d+[./]\d+/i.test(url)) return 'product';
-  // MercadoLivre produto: MLBxxxx, /p/MLB, meli.la (oferta ML)
-  if (
-    /(^|\/|\.)(MLB|MLM|MLA|MCO|MLC)\d{8,}/i.test(url) ||
-    /\/p\/MLB/i.test(url) ||
-    /meli\.la\//i.test(url)
-  )
-    return 'product';
-  // Amazon produto: /dp/ASIN ou /gp/product/ASIN
-  if (/\/dp\/[A-Z0-9]{10}/i.test(url) || /\/gp\/product\/[A-Z0-9]{10}/i.test(url)) return 'product';
-  // Demais (s.shopee.com.br shortlink não resolvido, magalu, etc.)
-  return 'other';
-}
-
-/**
- * Extrai TODOS os links de marketplace de um texto, classificando cada um.
- * Substitui extractMarketplaceUrl (que pegava só o primeiro).
- */
-export function extractAllMarketplaceLinks(text: string): ExtractedLink[] {
-  const urlRegex = /https?:\/\/[^\s<>"']+/gi;
-  const urls = text.match(urlRegex);
-  if (!urls) return [];
-
-  const result: ExtractedLink[] = [];
-  for (const url of urls) {
-    const marketplace = detectMarketplace(url);
-    if (marketplace === 'unknown') continue;
-    result.push({ url, kind: classifyLinkKind(url) });
-  }
-  return result;
-}
-
-/**
- * Extrai a URL de marketplace da mensagem (compatibilidade).
- * Pega o primeiro link não-cupom — mantém o comportamento antigo para
- * chamadores que não tratam múltiplos links.
- *
- * Exportado apenas para teste unitário.
- */
-export function extractMarketplaceUrl(text: string): string | null {
-  const links = extractAllMarketplaceLinks(text);
-  if (links.length === 0) return null;
-  const nonCoupon = links.find((l) => l.kind !== 'coupon');
-  return (nonCoupon ?? links[0]!).url;
-}
-
-/**
- * Remove links que não fazem parte da oferta do texto.
- * Atualmente remove links de Telegram (t.me/*) — canais/grupos que são
- * divulgação do bot original, não parte da oferta em si.
- *
- * Exemplo: "#MercadoLivre #Parceria | t.me/cuponsm"
- *       →  "#MercadoLivre #Parceria"
- *
- * Exportado apenas para teste unitário.
- */
-export function sanitizeNonOfferLinks(text: string): string {
-  // Remove URLs de Telegram (t.me/*)
-  let sanitized = text.replace(/https?:\/\/t\.me\/[^\s<>"']+/gi, '');
-  // Remove separadores órfãos no final de linha (ex.: "| " sem link)
-  sanitized = sanitized.replace(/\s*\|\s*$/gm, '');
-  // Limpa espaços extras
-  sanitized = sanitized.replace(/[ \t]{2,}/g, ' ');
-  // Remove linhas vazias extras
-  sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
-  return sanitized.trim();
-}
-
-// ─── Dedup 24h (DB) ──────────────────────────────────────────────────
-
-async function isDuplicate(
-  affiliateId: number,
-  originalUrl: string,
-  dedupHours: number = 24,
-): Promise<boolean> {
-  try {
-    const db = getDb();
-    const cutoff = new Date(Date.now() - dedupHours * 60 * 60 * 1000);
-
-    const existing = await db
-      .select({ id: reflectedOffers.id })
-      .from(reflectedOffers)
-      .where(
-        and(
-          eq(reflectedOffers.affiliateId, affiliateId),
-          eq(reflectedOffers.originalLink, originalUrl),
-          gte(reflectedOffers.reflectedAt, cutoff),
-        ),
-      )
-      .limit(1);
-
-    return existing.length > 0;
-  } catch (err) {
-    log('warn', 'Erro ao verificar dedup', {
-      affiliateId,
-      originalUrl,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return false;
-  }
-}
-
-// ─── Source Group Config (1:N cache) ─────────────────────────────────
-
-let redisClient: Redis | null = null;
-
-function getRedis(): Redis | null {
-  if (redisClient) return redisClient;
-
-  try {
-    redisClient = new Redis(REDIS_URL, {
-      maxRetriesPerRequest: 3,
-      retryStrategy(times) {
-        return Math.min(times * 200, 1000);
-      },
-      lazyConnect: true,
-    });
-  } catch {
-    return null;
-  }
-
-  return redisClient;
-}
-
-async function getSourceGroupConfigs(sourceGroupJid: string): Promise<SourceGroupConfig[]> {
-  const r = getRedis();
-  if (!r) return [];
-
-  try {
-    const key = `${MIRROR_SOURCE_GROUP_CACHE_PREFIX}${sourceGroupJid}`;
-    const raw = await r.get(key);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    const configs = Array.isArray(parsed) ? parsed : [parsed];
-
-    // Filtra apenas configs completos (com instanceName)
-    return configs.filter((c: SourceGroupConfig) => c.instanceName && c.targetGroupJid);
-  } catch {
-    return [];
-  }
-}
-
-// ─── Conversion ──────────────────────────────────────────────────────
-
-async function convertOfferUrl(
-  originalUrl: string,
-  affiliateId: number,
-  instanceName: string,
-): Promise<{
-  convertedUrl: string | null;
-  marketplace: string;
-  success: boolean;
-  error?: string;
-}> {
-  const marketplace = detectMarketplace(originalUrl);
-  if (marketplace === 'unknown') {
-    return { convertedUrl: null, marketplace, success: false };
-  }
-
-  let resolvedUrl = await resolveRedirectUrl(originalUrl);
-  let effectiveMarketplace = marketplace;
-  if (resolvedUrl !== originalUrl) {
-    log('info', 'URL de redirector resolvida', {
-      original: originalUrl,
-      resolved: resolvedUrl,
-      marketplace,
-    });
-    const resolvedMp = detectMarketplace(resolvedUrl);
-    if (resolvedMp !== 'unknown') {
-      effectiveMarketplace = resolvedMp;
-    }
-  }
-
-  const cached = await getCachedConversion(resolvedUrl);
-  if (cached) {
-    log('info', 'Cache hit — URL já convertida recentemente', {
-      url: resolvedUrl,
-      marketplace: cached.marketplace,
-      cachedAt: cached.timestamp,
-    });
-    return {
-      convertedUrl: cached.convertedUrl,
-      marketplace: cached.marketplace,
-      success: cached.convertedUrl !== null,
-    };
-  }
-
-  try {
-    const userIdMatch = instanceName.match(/^user-(\d+)$/);
-    if (!userIdMatch) {
-      const { convertUrl } = await import('@omestre/converters');
-      const result = await convertUrl(resolvedUrl);
-      return {
-        convertedUrl: result.affiliateUrl,
-        marketplace: effectiveMarketplace,
-        success: result.success,
-        error: result.error,
-      };
-    }
-
-    const userId = parseInt(userIdMatch[1]!, 10);
-
-    if (effectiveMarketplace === 'shopee') {
-      return await convertShopeeForAffiliate(resolvedUrl, userId);
-    }
-    if (effectiveMarketplace === 'mercadolivre') {
-      return await convertMlForAffiliate(resolvedUrl, userId);
-    }
-    if (effectiveMarketplace === 'amazon') {
-      return await convertAmazonForAffiliate(resolvedUrl, userId);
-    }
-
-    const { convertUrl } = await import('@omestre/converters');
-    const result = await convertUrl(resolvedUrl);
-    return {
-      convertedUrl: result.affiliateUrl,
-      marketplace: effectiveMarketplace,
-      success: result.success,
-      error: result.error,
-    };
-  } catch (err) {
-    log('warn', 'Falha ao converter URL', {
-      url: resolvedUrl,
-      marketplace: effectiveMarketplace,
-      affiliateId,
-      error: String(err),
-    });
-    return {
-      convertedUrl: null,
-      marketplace: effectiveMarketplace,
-      success: false,
-      error: String(err),
-    };
-  }
-}
-
-async function convertShopeeForAffiliate(
-  url: string,
-  userId: number,
-): Promise<{
-  convertedUrl: string | null;
-  marketplace: string;
-  success: boolean;
-  error?: string;
-}> {
-  const credsRepo = new UserCredentialsRepository();
-  const creds = await credsRepo.findByUserId(userId);
-
-  if (creds?.shopeeAppId && creds?.shopeeAppSecret) {
-    const result = await convertShopeeUrlWithCredentials(url, {
-      appId: creds.shopeeAppId,
-      secret: creds.shopeeAppSecret,
-    });
-    return {
-      convertedUrl: result.affiliateUrl,
-      marketplace: 'shopee',
-      success: result.success,
-      error: result.error,
-    };
-  }
-
-  log('info', 'Sem credenciais Shopee específicas — usando fallback global', { userId });
-  const instanceName = `user-${userId}`;
-  processFailure(instanceName, 'invalid_shopee_creds', { marketplace: 'shopee' }).catch(() => {});
-
-  const { convertUrl } = await import('@omestre/converters');
-  const result = await convertUrl(url);
-  return {
-    convertedUrl: result.affiliateUrl,
-    marketplace: 'shopee',
-    success: result.success,
-    error: result.error,
-  };
-}
-
-/**
- * Resolve um link curto meli.la/XXX para a URL de produto real do ML.
- *
- * IMPORTANTE: muitos meli.la escondem PERFIS SOCIAIS ou LISTAS de outros
- * afiliados (ex: /social/om895584/lists) — esses NÃO são produtos elegíveis.
- * Porém /social/<id> (sem sub-path) É uma página de produto (social commerce).
- * Use `resolveMeliRedirect` (em ./resolve-redirect.ts) que já trata isso:
- * segue o redirect, faz strip de params de tracking (matt_word/matt_tool/ref)
- * e retorna isProduct.
- */
-
-async function convertMlForAffiliate(
-  url: string,
-  userId: number,
-): Promise<{
-  convertedUrl: string | null;
-  marketplace: string;
-  success: boolean;
-  error?: string;
-}> {
-  const mlRepo = new MlAffiliateRepository();
-  const mlAffiliate = await mlRepo.findByPlatformUserId(userId);
-
-  if (mlAffiliate?.melitat) {
-    // Resolve meli.la ANTES de tudo — o Link Builder só aceita URL real de
-    // produto. meli.la/XXX é o próprio link curto de afiliado do ML, então
-    // o redirect tipicamente leva para /social/<outro-afiliado>/lists — não
-    // para um produto único. Mesmo assim tentamos o createLink porque
-    // existem casos onde o redirect leva para uma página de produto real.
-    //
-    // `resolveMeliRedirect` já:
-    //  - segue o redirect
-    //  - strip de params de tracking do afiliado original (matt_word/matt_tool/ref)
-    //  - detecta se URL final é /p/MLB<id> (produto) ou /social/... (perfil/lista)
-    const resolved = await resolveMeliRedirect(url);
-    const isProductFromRedirect = /meli\.la/i.test(url);
-    const isProduct = isProductFromRedirect ? resolved.isProduct : isMeliProductUrl(resolved.url);
-    const targetUrl = resolved.url;
-
-    // Bloqueia oferta se a URL (meli.la OU direta ML) não leva a uma página
-    // de PRODUTO. Perfis sociais, listas, cupons, etc. não são elegíveis e o
-    // Link Builder rejeitaria (erro 111). Logamos o motivo para debug futuro.
-    if (!isProduct) {
-      log('info', 'meli.la não leva a produto — bloqueando oferta', {
-        userId,
-        originalUrl: url,
-        resolvedUrl: targetUrl,
-        reason: resolved.reason ?? 'not_product_url',
-        droppedParams: resolved.droppedParams ?? [],
-      });
-      return {
-        convertedUrl: null,
-        marketplace: 'mercadolivre',
-        success: false,
-        error: `meli.la não redireciona para produto: ${resolved.reason ?? 'not_product_url'}`,
-      };
-    }
-
-    // Log info quando houve strip de params de tracking (indicador de que
-    // estava vindo com tracking do afiliado original)
-    if (resolved.droppedParams && resolved.droppedParams.length > 0) {
-      log('info', 'meli.la: removidos params de tracking de outro afiliado', {
-        userId,
-        originalUrl: url,
-        canonicalUrl: targetUrl,
-        droppedParams: resolved.droppedParams,
-      });
-    }
-
-    // Sem cookies OU cookies expirados (HTTP 40*) — não tenta fallback de
-    // URL params: anexar matt_word em cima de uma URL /social/<outro> deixa
-    // dois matt_word conflitantes (o do link original ganha, comissão vai
-    // para o afiliado errado). Bloqueia a oferta e notifica.
-    if (!mlAffiliate.sessionCookies) {
-      log('info', 'Afiliado ML sem cookies de sessão — bloqueando oferta', {
-        userId,
-        url: targetUrl,
-      });
-      return {
-        convertedUrl: null,
-        marketplace: 'mercadolivre',
-        success: false,
-        error: 'Sem cookies de sessão ML para usar o Link Builder',
-      };
-    }
-
-    const shortResult = await generateShortAffiliateLink(
-      targetUrl,
-      mlAffiliate.melitat,
-      mlAffiliate.sessionCookies,
-    );
-
-    if (shortResult.success && shortResult.shortUrl) {
-      return {
-        convertedUrl: shortResult.shortUrl,
-        marketplace: 'mercadolivre',
-        success: true,
-      };
-    }
-
-    // Link builder falhou — classifica o motivo.
-    const errorMsg = shortResult.error ?? 'erro desconhecido';
-    const isCookieError =
-      errorMsg.includes('HTTP 40') ||
-      errorMsg.includes('Cookies podem estar expirados') ||
-      errorMsg.toLowerCase().includes('unauthorized');
-
-    if (isCookieError) {
-      const instanceName = `user-${userId}`;
-      processFailure(instanceName, 'cookie_expired', { marketplace: 'mercadolivre' }).catch(
-        () => {},
-      );
-    } else {
-      log('info', 'Link builder ML rejeitou a oferta — bloqueando', {
-        userId,
-        url: targetUrl,
-        error: errorMsg,
-      });
-    }
-
-    // Em QUALQUER falha do Link Builder, bloqueia a oferta para este
-    // targetGroup. Sem fallback de URL params — gera comissão para o
-    // afiliado errado e polui o espelho com links não-confiáveis.
-    return {
-      convertedUrl: null,
-      marketplace: 'mercadolivre',
-      success: false,
-      error: errorMsg,
-    };
-  }
-
-  log('info', 'Afiliado ML sem tag (melitat) — bloqueando oferta', { userId });
-  const instanceName = `user-${userId}`;
-  processFailure(instanceName, 'ml_account_not_linked', { marketplace: 'mercadolivre' }).catch(
-    () => {},
-  );
-
-  return {
-    convertedUrl: null,
-    marketplace: 'mercadolivre',
-    success: false,
-    error: 'Afiliado ML sem tag (melitat) configurada. Reimporte os cookies pela extensão Chrome.',
-  };
-}
-
-async function convertAmazonForAffiliate(
-  url: string,
-  userId: number,
-): Promise<{
-  convertedUrl: string | null;
-  marketplace: string;
-  success: boolean;
-  error?: string;
-}> {
-  const amazonRepo = new AmazonAffiliateRepository();
-  const amazonAffiliate = await amazonRepo.findByUserId(userId);
-
-  if (amazonAffiliate && (amazonAffiliate.trackingIds ?? []).length > 0) {
-    const result = await convertAmazonUrlWithAffiliate(url, amazonAffiliate.trackingIds ?? []);
-    return {
-      convertedUrl: result.affiliateUrl,
-      marketplace: 'amazon',
-      success: result.success,
-      error: result.error,
-    };
-  }
-
-  log('info', 'Afiliado Amazon sem tracking IDs — usando fallback global', { userId });
-  const { convertUrl } = await import('@omestre/converters');
-  const result = await convertUrl(url);
-  return {
-    convertedUrl: result.affiliateUrl,
-    marketplace: 'amazon',
-    success: result.success,
-    error: result.error,
-  };
-}
-
-// ─── Template ────────────────────────────────────────────────────────
-
-function buildTemplateMessage(ctx: TemplateContext, template: string | null): string {
-  if (template) {
-    const evalCtx = buildEvalContext(ctx.marketplace, ctx.sourceGroupName, ctx.targetGroupName);
-    let result = processConditionalsHuman(template, evalCtx);
-    result = resolvePlaceholders(result, ctx);
-
-    const maxLen = 4000;
-    if (result.length > maxLen) {
-      result = result.slice(0, maxLen - 50) + '...';
-    }
-    return result;
-  }
-
-  let text = ctx.originalText;
-  if (ctx.convertedUrl) {
-    text = text.replace(ctx.originalUrl, ctx.convertedUrl);
-  }
-
-  const maxLen = 4000;
-  if (text.length > maxLen) {
-    text = text.slice(0, maxLen - 50) + '...';
-  }
-  return text;
-}
-
-// ─── Affiliate Link Verification ─────────────────────────────────────
-
-async function verifyAffiliateLink(
-  convertedUrl: string | null,
-  affiliateId: number,
-  marketplace: string,
-): Promise<{ valid: boolean; reason?: string }> {
-  if (!convertedUrl) return { valid: true };
-
-  try {
-    if (marketplace === 'mercadolivre') {
-      return await verifyMercadoLivreLink(convertedUrl, affiliateId);
-    }
-    if (marketplace === 'amazon') {
-      return await verifyAmazonLink(convertedUrl, affiliateId);
-    }
-    return { valid: true };
-  } catch (err) {
-    log('warn', 'Erro ao verificar link de afiliado — permitindo por segurança', {
-      affiliateId,
-      marketplace,
-      error: String(err),
-    });
-    return { valid: true };
-  }
-}
-
-async function verifyMercadoLivreLink(
-  convertedUrl: string,
-  affiliateId: number,
-): Promise<{ valid: boolean; reason?: string }> {
-  let url: URL;
-  try {
-    url = new URL(convertedUrl);
-  } catch {
-    return { valid: false, reason: 'URL convertida inválida para verificação ML' };
-  }
-
-  const params = url.searchParams;
-  const urlMeliid = params.get('meliid');
-  const urlMelitat = params.get('melitat');
-  const urlMattWord = params.get('matt_word');
-
-  if (!urlMeliid && !urlMelitat && !urlMattWord) {
-    return { valid: true };
-  }
-
-  const db = getDb();
-  const affRows = await db
-    .select({ evolutionInstanceId: affiliates.evolutionInstanceId })
-    .from(affiliates)
-    .where(eq(affiliates.id, affiliateId))
-    .limit(1);
-
-  if (!affRows[0]?.evolutionInstanceId) {
-    return { valid: false, reason: 'Afiliado sem evolutionInstanceId' };
-  }
-
-  const userIdMatch = affRows[0].evolutionInstanceId.match(/^user-(\d+)$/);
-  if (!userIdMatch) {
-    return { valid: false, reason: 'evolutionInstanceId sem formato user-{userId}' };
-  }
-
-  const userId = parseInt(userIdMatch[1]!, 10);
-  const mlRepo = new MlAffiliateRepository();
-  const mlAffiliate = await mlRepo.findByPlatformUserId(userId);
-
-  if (!mlAffiliate) {
-    return { valid: false, reason: 'URL com parâmetros ML mas afiliado não vinculado' };
-  }
-
-  if (urlMelitat && mlAffiliate.melitat) {
-    if (urlMelitat !== mlAffiliate.melitat) {
-      return {
-        valid: false,
-        reason: `melitat não corresponde ao afiliado: esperado ${mlAffiliate.melitat}, recebido ${urlMelitat}`,
-      };
-    }
-  } else if (urlMelitat && !mlAffiliate.melitat) {
-    return {
-      valid: false,
-      reason: 'melitat presente na URL mas afiliado não possui melitat configurado',
-    };
-  }
-
-  if (urlMattWord && mlAffiliate.melitat) {
-    if (urlMattWord !== mlAffiliate.melitat) {
-      return {
-        valid: false,
-        reason: `matt_word não corresponde ao afiliado: esperado ${mlAffiliate.melitat}, recebido ${urlMattWord}`,
-      };
-    }
-  } else if (urlMattWord && !mlAffiliate.melitat) {
-    return {
-      valid: false,
-      reason: 'matt_word presente na URL mas afiliado não possui melitat configurado',
-    };
-  }
-
-  if (urlMeliid && mlAffiliate.meliid) {
-    if (urlMeliid !== mlAffiliate.meliid) {
-      return {
-        valid: false,
-        reason: `meliid não corresponde ao afiliado: esperado ${mlAffiliate.meliid}, recebido ${urlMeliid}`,
-      };
-    }
-  }
-
-  return { valid: true };
-}
-
-async function verifyAmazonLink(
-  convertedUrl: string,
-  affiliateId: number,
-): Promise<{ valid: boolean; reason?: string }> {
-  let url: URL;
-  try {
-    url = new URL(convertedUrl);
-  } catch {
-    return { valid: false, reason: 'URL convertida inválida para verificação Amazon' };
-  }
-
-  const urlTag = url.searchParams.get('tag');
-  if (!urlTag) return { valid: true };
-
-  const db = getDb();
-  const affRows = await db
-    .select({ evolutionInstanceId: affiliates.evolutionInstanceId })
-    .from(affiliates)
-    .where(eq(affiliates.id, affiliateId))
-    .limit(1);
-
-  if (!affRows[0]?.evolutionInstanceId) {
-    return { valid: false, reason: 'Afiliado sem evolutionInstanceId' };
-  }
-
-  const userIdMatch = affRows[0].evolutionInstanceId.match(/^user-(\d+)$/);
-  if (!userIdMatch) {
-    return { valid: false, reason: 'evolutionInstanceId sem formato user-{userId}' };
-  }
-
-  const userId = parseInt(userIdMatch[1]!, 10);
-  const amazonRepo = new AmazonAffiliateRepository();
-  const amazonAffiliate = await amazonRepo.findByUserId(userId);
-
-  if (amazonAffiliate && (amazonAffiliate.trackingIds ?? []).length > 0) {
-    const activeTags = (amazonAffiliate.trackingIds ?? [])
-      .filter((t) => t.active)
-      .map((t) => t.tag);
-    if (urlTag && !activeTags.includes(urlTag)) {
-      return {
-        valid: false,
-        reason: `Amazon tag não corresponde ao afiliado: esperado um de [${activeTags.join(', ')}], recebido ${urlTag}`,
-      };
-    }
-  }
-
-  return { valid: true };
-}
-
-// ─── Log ─────────────────────────────────────────────────────────────
-
-async function logReflectedOffer(params: {
-  affiliateId: number;
-  sourceGroupJid: string;
-  targetGroupJid: string;
-  originalLink: string;
-  convertedLink: string | null;
-  marketplace: string;
-  messagePreview: string;
-  status: 'sent' | 'failed' | 'blocked';
-  failureReason?: string;
-}): Promise<void> {
-  try {
-    const db = getDb();
-    await db.insert(reflectedOffers).values({
-      affiliateId: params.affiliateId,
-      sourceGroupJid: params.sourceGroupJid,
-      targetGroupJid: params.targetGroupJid,
-      originalLink: params.originalLink,
-      convertedLink: params.convertedLink ?? params.originalLink,
-      marketplace: params.marketplace as 'shopee' | 'mercadolivre' | 'amazon' | 'unknown',
-      messagePreview: params.messagePreview.slice(0, 500),
-      status: params.status,
-      failureReason: params.failureReason ?? null,
-    });
-  } catch (err) {
-    log('error', 'Erro ao registrar reflected_offer', {
-      error: String(err),
-      ...params,
-    });
-  }
-}
-
-// ─── Pipeline Principal ──────────────────────────────────────────────
 
 /**
  * Processa uma mensagem crua da Queue A.
@@ -896,7 +124,6 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   }
 
   const productLinks = extractedLinks.filter((l) => l.kind === 'product');
-  const couponLinks = extractedLinks.filter((l) => l.kind === 'coupon');
 
   if (productLinks.length >= 2) {
     log('info', 'Múltiplos links de produto na mesma mensagem — bloqueada', {
@@ -1282,24 +509,5 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
   return true;
 }
 
-// ─── Init ────────────────────────────────────────────────────────────
-
-export function initMetrics(): void {
-  registerStepTrackers(steps);
-
-  createCounter('pipeline_messages_received_total', 'Mensagens recebidas da Queue A');
-  createCounter('pipeline_messages_blocked_total', 'Mensagens bloqueadas', ['reason']);
-  createCounter('pipeline_affiliates_per_message', 'Afiliados por mensagem', ['count']);
-  createCounter('pipeline_send_events_published_total', 'SendEvents publicados na Queue B', [
-    'count',
-  ]);
-  createCounter('pipeline_image_fetch_total', 'Resultado da busca de imagem', [
-    'marketplace',
-    'result',
-  ]);
-  createCounter(
-    'pipeline_image_missing_fallback_total',
-    'Ofertas enviadas como texto (sem imagem)',
-    ['marketplace'],
-  );
-}
+// Re-export initMetrics de metrics.ts para compatibilidade com index.ts
+export { initMetrics } from './metrics.ts';
