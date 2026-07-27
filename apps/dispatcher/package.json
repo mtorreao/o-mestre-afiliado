@@ -15,8 +15,8 @@
     "@omestre/shared": "workspace:*",
     "@omestre/db": "workspace:*",
     "@omestre/worker-common": "workspace:*",
-    "drizzle-orm": "^0.38.0",
-    "ioredis": "^5.4.1"
+    "drizzle-orm": "catalog:",
+    "ioredis": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest"

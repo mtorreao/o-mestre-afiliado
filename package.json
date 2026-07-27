@@ -6,6 +6,12 @@
     "apps/*",
     "packages/*"
   ],
+  "catalog": {
+    "elysia": "^1.2.0",
+    "ioredis": "^5.4.1",
+    "drizzle-orm": "^0.38.0",
+    "drizzle-kit": "^0.30.0"
+  },
   "scripts": {
     "dev": "bun run scripts/dev.ts",
     "dev:api": "bun run --cwd apps/api dev",

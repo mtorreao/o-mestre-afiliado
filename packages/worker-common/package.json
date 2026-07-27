@@ -11,7 +11,7 @@
   "dependencies": {
     "@omestre/shared": "workspace:*",
     "@omestre/db": "workspace:*",
-    "ioredis": "^5.4.1"
+    "ioredis": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest"
