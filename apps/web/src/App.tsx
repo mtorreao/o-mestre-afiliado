@@ -48,8 +48,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
           background: 'var(--color-bg)',
         }}
       >
-        <Loader2 size={32} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--color-primary)' }} />
-        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>Carregando...</span>
+        <Loader2
+          size={32}
+          style={{ animation: 'spin 0.8s linear infinite', color: 'var(--color-primary)' }}
+        />
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+          Carregando...
+        </span>
       </div>
     );
   }
@@ -77,7 +82,10 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
           background: 'var(--color-bg)',
         }}
       >
-        <Loader2 size={32} style={{ animation: 'spin 0.8s linear infinite', color: 'var(--color-primary)' }} />
+        <Loader2
+          size={32}
+          style={{ animation: 'spin 0.8s linear infinite', color: 'var(--color-primary)' }}
+        />
       </div>
     );
   }
@@ -97,74 +105,75 @@ function App() {
 
   return (
     <ThemeProvider>
-    <Routes>
-      {/* Public routes — só visível quando deslogado */}
-      <Route
-        path="/login"
-        element={
-          <GuestRoute>
-            <ToastProvider>
-              <LoginPage
-                onLogin={async (email, password) => {
-                  await login(email, password);
-                }}
-                onSwitchToRegister={() => navigate('/register')}
-              />
-            </ToastProvider>
-          </GuestRoute>
-        }
-      />
-      <Route
-        path="/register"
-        element={
-          <GuestRoute>
-            <ToastProvider>
-              <RegisterPage
-                onRegister={async (name, email, password) => {
-                  await register(name, email, password);
-                }}
-                onSwitchToLogin={() => navigate('/login')}
-              />
-            </ToastProvider>
-          </GuestRoute>
-        }
-      />
-
-      {/* Protected routes — AppShell com sidebar */}
-      <Route
-        element={
-          <ProtectedRoute>
-            <ToastProvider>
-              <AppShellLayout
-                userName={user?.name ?? ''}
-                onLogout={() => {
-                  logout();
-                  navigate('/login');
-                }}
-              />
-            </ToastProvider>
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<DashboardPage user={user!} token={token!} />} />
-        <Route path="settings" element={<SettingsPage user={user!} token={token!} />} />
-        <Route path="groups" element={<Navigate to="/mirrors" replace />} />
-        <Route path="mirror-logs" element={<MirrorLogsPage token={token!} />} />
-        <Route path="worker-status" element={<WorkerStatusPage />} />
-        <Route path="mirrors" element={<MirrorsPage token={token!} />} />
+      <Routes>
+        {/* Public routes — só visível quando deslogado */}
         <Route
-          path="mirror-form"
-          element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
+          path="/login"
+          element={
+            <GuestRoute>
+              <ToastProvider>
+                <LoginPage
+                  onLogin={async (email, password) => {
+                    await login(email, password);
+                  }}
+                  onSwitchToRegister={() => navigate('/register')}
+                />
+              </ToastProvider>
+            </GuestRoute>
+          }
         />
         <Route
-          path="mirror-form/:id"
-          element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
+          path="/register"
+          element={
+            <GuestRoute>
+              <ToastProvider>
+                <RegisterPage
+                  onRegister={async (name, email, password) => {
+                    await register(name, email, password);
+                    navigate('/');
+                  }}
+                  onSwitchToLogin={() => navigate('/login')}
+                />
+              </ToastProvider>
+            </GuestRoute>
+          }
         />
-      </Route>
 
-      {/* Catch-all */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        {/* Protected routes — AppShell com sidebar */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <ToastProvider>
+                <AppShellLayout
+                  userName={user?.name ?? ''}
+                  onLogout={() => {
+                    logout();
+                    navigate('/login');
+                  }}
+                />
+              </ToastProvider>
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<DashboardPage user={user!} token={token!} />} />
+          <Route path="settings" element={<SettingsPage user={user!} token={token!} />} />
+          <Route path="groups" element={<Navigate to="/mirrors" replace />} />
+          <Route path="mirror-logs" element={<MirrorLogsPage token={token!} />} />
+          <Route path="worker-status" element={<WorkerStatusPage />} />
+          <Route path="mirrors" element={<MirrorsPage token={token!} />} />
+          <Route
+            path="mirror-form"
+            element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
+          />
+          <Route
+            path="mirror-form/:id"
+            element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
+          />
+        </Route>
+
+        {/* Catch-all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </ThemeProvider>
   );
 }

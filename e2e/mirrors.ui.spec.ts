@@ -33,7 +33,7 @@ async function loginDirect(page: Page): Promise<string> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, name: TEST_NAME, password }),
   });
-  const data = await res.json() as { success: boolean; token: string; user: { id: number } };
+  const data = (await res.json()) as { success: boolean; token: string; user: { id: number } };
   const { token } = data;
 
   // Set token in localStorage
@@ -191,35 +191,41 @@ test.describe('Mirrors UI — Lista e Ações', () => {
     await createMirror(token, 'Outro Mirror');
     await navigateToMirrors(page);
 
-    await page.locator('input[placeholder="Digite o nome do espelhamento..."]').fill('Encontrável');
-    await page.locator('button:has-text("Buscar")').click();
-    await page.waitForTimeout(500);
-
-    await expect(page.locator('text=Encontrável')).toBeVisible();
+    const searchInput = page.locator('input[placeholder="Digite o nome do espelhamento..."]');
+    await searchInput.fill('Encontrável');
+    // Busca desktop é auto-filter com debounce 300ms; Enter também dispara.
+    await searchInput.press('Enter');
+    // Aguarda o auto-filtro reprocessar a lista
+    await expect(page.locator('text=Encontrável')).toBeVisible({ timeout: 10_000 });
+    // O outro mirror não deve aparecer
+    await expect(page.locator('text=Outro Mirror')).toHaveCount(0);
   });
 
   test('6.1 — Busca sem resultados exibe mensagem', async ({ page }) => {
     await navigateToMirrors(page);
 
-    await page.locator('input[placeholder="Digite o nome do espelhamento..."]').fill('ZZZ_NAO_EXISTE');
-    await page.locator('button:has-text("Buscar")').click();
-    await page.waitForTimeout(500);
+    const searchInput = page.locator('input[placeholder="Digite o nome do espelhamento..."]');
+    await searchInput.fill('ZZZ_NAO_EXISTE');
+    await searchInput.press('Enter');
 
-    await expect(page.locator('text=Nenhum espelhamento encontrado para esta busca')).toBeVisible();
+    await expect(page.locator('text=Nenhum espelhamento encontrado para esta busca')).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test('6.2 — Limpar reseta busca', async ({ page }) => {
     await createMirror(token, 'Resetável');
     await navigateToMirrors(page);
 
-    await page.locator('input[placeholder="Digite o nome do espelhamento..."]').fill('ZZZ');
-    await page.locator('button:has-text("Buscar")').click();
+    const searchInput = page.locator('input[placeholder="Digite o nome do espelhamento..."]');
+    await searchInput.fill('ZZZ');
+    await searchInput.press('Enter');
     await page.waitForTimeout(500);
 
     await page.locator('button:has-text("Limpar")').click();
     await page.waitForTimeout(500);
 
-    await expect(page.locator('text=Resetável')).toBeVisible();
+    await expect(page.locator('text=Resetável')).toBeVisible({ timeout: 10_000 });
   });
 
   test('7.0 — Navegação sem erros JS fatais', async ({ page }) => {

@@ -1,12 +1,19 @@
 /**
  * Testes E2E de UI — Fluxo de conexão WhatsApp.
  *
- * Testa a renderização do componente WppConnection dentro do dashboard.
+ * Testa a renderização do componente WppConnection na página de
+ * Configurações (aba "WhatsApp", que é a aba padrão do SettingsPage).
+ * O card NÃO fica no dashboard — o dashboard só tem um MetricCard
+ * "WhatsApp" com o status resumido.
  *
  * Requer:
  *   - Web dev server rodando em http://localhost:5441
  *   - API rodando em http://localhost:5442
  *   - Evolution API rodando (E2E stack)
+ *
+ * Seletores: o card é um `Card title="💬 WhatsApp"` renderizado como <h3>,
+ * apontado via getByRole('heading', { name: /WhatsApp/ }) para evitar
+ * ambiguidade com o MetricCard "WhatsApp" do dashboard.
  */
 
 import { test, expect } from '@playwright/test';
@@ -14,174 +21,119 @@ import { uniqueEmail, TEST_PASSWORD, TEST_NAME } from './helpers.ts';
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 
+/** Card WhatsApp (WppConnection) — título renderizado como <h3>💬 WhatsApp</h3>. */
+function wppCard(page: import('@playwright/test').Page) {
+  return page.getByRole('heading', { name: /WhatsApp/ });
+}
+
+async function registerAndOpenSettings(page: import('@playwright/test').Page) {
+  const email = uniqueEmail();
+  const res = await fetch(`${API}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, name: TEST_NAME, password: TEST_PASSWORD }),
+  });
+  const data = (await res.json()) as { token: string };
+
+  await page.goto('/');
+  await page.evaluate((t: string) => localStorage.setItem('omestre_auth_token', t), data.token);
+  // O WppConnection fica em /settings (aba WhatsApp é a default)
+  await page.goto('/settings');
+  await page.reload();
+  return data.token;
+}
+
 test.describe('UI - WhatsApp Connection Card', () => {
-  test('deve exibir o card WhatsApp no dashboard com botão Conectar', async ({ page }) => {
-    // Registrar usuário via API
-    const email = uniqueEmail();
-    const res = await fetch(`${API}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name: TEST_NAME, password: TEST_PASSWORD }),
+  test('deve exibir o card WhatsApp em Configurações com botão Conectar', async ({ page }) => {
+    await registerAndOpenSettings(page);
+
+    await expect(wppCard(page)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Conectar WhatsApp' })).toBeVisible({
+      timeout: 10_000,
     });
-    const data = (await res.json()) as { token: string };
-
-    // Autenticar via localStorage
-    await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
-    await page.reload();
-
-    // Verificar que o card WhatsApp está presente
-    await expect(page.locator('text=💬 WhatsApp')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('text=Conectar WhatsApp')).toBeVisible({ timeout: 10_000 });
   });
 
   test('deve mostrar "Verificando conexão..." ao carregar', async ({ page }) => {
-    const email = uniqueEmail();
-    const res = await fetch(`${API}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name: TEST_NAME, password: TEST_PASSWORD }),
-    });
-    const data = (await res.json()) as { token: string };
+    await registerAndOpenSettings(page);
 
-    await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
-    await page.reload();
-
-    // O estado inicial é 'loading' — "Verificando conexão..."
-    // Depois muda para 'disconnected' com o botão
-    await expect(page.locator('text=💬 WhatsApp')).toBeVisible({ timeout: 10_000 });
-
-    // Aguardar até que o loading termine e o botão apareça
-    await expect(page.locator('text=Conectar WhatsApp')).toBeVisible({ timeout: 15_000 });
+    await expect(wppCard(page)).toBeVisible({ timeout: 10_000 });
+    // O estado inicial pode ser 'loading' ("Verificando conexão...") e rapidamente
+    // muda para 'disconnected' (botão "Conectar WhatsApp"). Ambos são aceitáveis.
+    const loaded = page
+      .getByText('Verificando conexão...')
+      .or(page.getByRole('button', { name: 'Conectar WhatsApp' }));
+    await expect(loaded).toBeVisible({ timeout: 15_000 });
   });
 
-  test('deve mostrar status "⚪ Desconectado" quando não conectado', async ({ page }) => {
-    const email = uniqueEmail();
-    const res = await fetch(`${API}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name: TEST_NAME, password: TEST_PASSWORD }),
+  test('deve mostrar botão Conectar quando não conectado', async ({ page }) => {
+    await registerAndOpenSettings(page);
+
+    // Estado desconectado → botão "Conectar WhatsApp" visível (só aparece quando disconnected)
+    await expect(page.getByRole('button', { name: 'Conectar WhatsApp' })).toBeVisible({
+      timeout: 15_000,
     });
-    const data = (await res.json()) as { token: string };
-
-    await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
-    await page.reload();
-
-    await expect(page.locator('text=⚪ Desconectado')).toBeVisible({ timeout: 15_000 });
   });
 
   test('deve iniciar conexão ao clicar em Conectar WhatsApp', async ({ page }) => {
-    const email = uniqueEmail();
-    const res = await fetch(`${API}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name: TEST_NAME, password: TEST_PASSWORD }),
+    await registerAndOpenSettings(page);
+
+    await expect(wppCard(page)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Conectar WhatsApp' })).toBeVisible({
+      timeout: 10_000,
     });
-    const data = (await res.json()) as { token: string };
 
-    await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
-    await page.reload();
+    await page.getByRole('button', { name: 'Conectar WhatsApp' }).click();
 
-    // Aguardar o dashboard carregar com o botão
-    await expect(page.locator('text=💬 WhatsApp')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('text=Conectar WhatsApp')).toBeVisible({ timeout: 10_000 });
+    // Estados possíveis após clicar: conectando, QR (escaneie), conectado ou erro.
+    // Seletores específicos para evitar strict-mode (badge vs body).
+    const feedback = page
+      .getByText('Conectando ao WhatsApp')
+      .or(page.getByText('Escaneie o QR Code'))
+      .or(page.getByText('WhatsApp Conectado'))
+      .or(page.getByRole('button', { name: 'Regenerar QR Code' }));
 
-    // Clicar em Conectar
-    await page.click('text=Conectar WhatsApp');
-
-    // Deve mostrar o spinner de conexão (conectando)
-    // ou diretamente o QR code
-    // Pode mostrar "Conectando ao WhatsApp..." ou QR code
-    await page.waitForTimeout(2000);
-
-    // Verificar se o status mudou para conectando ou aguardando scan
-    const connectingVisible = await page.locator('text=🔄 Conectando').isVisible().catch(() => false);
-    const awaitingScanVisible = await page.locator('text=⏳ Aguardando scan').isVisible().catch(() => false);
-    const connectedVisible = await page.locator('text=✅ Conectado').isVisible().catch(() => false);
-    const errorVisible = await page.locator('text=❌ Erro').isVisible().catch(() => false);
-
-    // Um desses estados deve estar visível (conectando → QR → conectado, ou erro se Evolution falhou)
-    const anyValidState = connectingVisible || awaitingScanVisible || connectedVisible || errorVisible;
-    expect(anyValidState).toBe(true);
+    await expect(feedback).toBeVisible({ timeout: 15_000 });
 
     // Se conectou, testar desconexão
+    const connectedVisible = await page
+      .getByText('WhatsApp Conectado')
+      .isVisible()
+      .catch(() => false);
     if (connectedVisible) {
-      await page.click('text=Desconectar WhatsApp');
-      await expect(page.locator('text=⚪ Desconectado')).toBeVisible({ timeout: 15_000 });
+      await page.getByRole('button', { name: 'Desconectar WhatsApp' }).click();
+      await expect(page.getByRole('button', { name: 'Conectar WhatsApp' })).toBeVisible({
+        timeout: 15_000,
+      });
     }
   });
 
-  test('deve exibir erro se Evolution API não responde', async ({ page }) => {
-    // Simula falha da Evolution registrando um usuário mas sem instância ativa
-    const email = uniqueEmail();
-    const res = await fetch(`${API}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name: TEST_NAME, password: TEST_PASSWORD }),
-    });
-    const data = (await res.json()) as { token: string };
+  test('deve exibir feedback ao clicar em Conectar (mesmo se Evolution falhar)', async ({
+    page,
+  }) => {
+    await registerAndOpenSettings(page);
 
-    await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
-    await page.reload();
+    await expect(wppCard(page)).toBeVisible({ timeout: 10_000 });
 
-    await expect(page.locator('text=💬 WhatsApp')).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: 'Conectar WhatsApp' }).click();
 
-    // Clicar em conectar
-    // Se a Evolution API estiver OK, o teste passa com QR code
-    // Se estiver offline, mostra erro — ambos são aceitáveis
-    await page.click('text=Conectar WhatsApp');
-    await page.waitForTimeout(3000);
+    const feedback = page
+      .getByText('Conectando ao WhatsApp')
+      .or(page.getByText('Escaneie o QR Code'))
+      .or(page.getByText('WhatsApp Conectado'))
+      .or(page.getByRole('button', { name: 'Regenerar QR Code' }));
 
-    // Qualquer estado é aceitável: conectar mostra feedback visual
-    const hasFeedback = await page.locator('text=🔄 Conectando')
-      .or(page.locator('text=⏳ Aguardando scan'))
-      .or(page.locator('text=✅ Conectado'))
-      .or(page.locator('text=❌ Erro'))
-      .isVisible()
-      .catch(() => false);
-
-    expect(hasFeedback).toBe(true);
+    await expect(feedback).toBeVisible({ timeout: 15_000 });
   });
 
-  test('deve mostrar WhatsApp card em layout consistente com outros cards', async ({ page }) => {
-    const email = uniqueEmail();
-    const res = await fetch(`${API}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name: TEST_NAME, password: TEST_PASSWORD }),
-    });
-    const data = (await res.json()) as { token: string };
+  test('deve mostrar card WhatsApp em layout consistente com as abas de configuração', async ({
+    page,
+  }) => {
+    await registerAndOpenSettings(page);
 
-    await page.goto('/');
-    await page.evaluate(
-      (t: string) => localStorage.setItem('omestre_auth_token', t),
-      data.token,
-    );
-    await page.reload();
-
-    // Verificar que todos os cards estão visíveis no layout
-    await expect(page.locator('text=🛒 Shopee')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('text=📦 Mercado Livre')).toBeVisible();
-    await expect(page.locator('text=🧪 Testar Conversão')).toBeVisible();
-    await expect(page.locator('text=💬 WhatsApp')).toBeVisible();
+    await expect(wppCard(page)).toBeVisible({ timeout: 10_000 });
+    // Abas de configuração presentes
+    await expect(page.getByRole('tab', { name: /Shopee/ })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /Mercado Livre/ })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /Amazon/ })).toBeVisible();
   });
 });

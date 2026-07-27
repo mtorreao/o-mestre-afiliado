@@ -141,11 +141,11 @@ test.describe('UI - Dashboard', () => {
     await expect(page.locator('text=Atalhos Rápidos')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('text=O Mestre Afiliado')).toBeVisible();
 
-    // Seções do dashboard
-    await expect(page.locator('text=🛒 Shopee')).toBeVisible();
-    await expect(page.locator('text=📦 Mercado Livre')).toBeVisible();
-    await expect(page.locator('text=🧪 Testar Conversão')).toBeVisible();
-    await expect(page.locator('text=Sair')).toBeVisible();
+    // Cards de métricas e ações rápidas do dashboard (pós-refatoração)
+    await expect(page.getByText('Marketplaces')).toBeVisible();
+    await expect(page.getByText('Ofertas Espelhadas', { exact: true })).toBeVisible();
+    await expect(page.getByText('Novo Espelhamento')).toBeVisible();
+    await expect(page.getByText('Sair')).toBeVisible();
   });
 
   // ⚠️ SKIPPED — ver docs/known-issues.md#e2e-auth-ui-settings-shopee
