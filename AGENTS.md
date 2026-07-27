@@ -423,3 +423,23 @@ sobre `packages/worker-common/src/dead-letter-queue.ts` (`listDLQ`).
 - **Worker:** logs em JSON (`console.log(JSON.stringify(entry))`).
 - **API:** logs nativos do Elysia (stdout).
 - **CLI:** output formatado com emojis e bordas (`╔═══╗`).
+
+### Cobertura de testes
+
+**Meta: ≥ 80% de cobertura de linhas em todo arquivo passível de teste.** Funções cobradas
+atualmente chegam a ~95% (veja `bun run test:coverage`).
+
+- **Isolar lógica pura:** antes de testar, extrair funções síncronas sem I/O para módulos
+  `*-pure.ts` (ex: `mirror-pagination.ts`, `ml-affiliate-pure.ts`). O arquivo original vira
+  apenas o esqueleto de I/O (select/insert/update no Drizzle, fetch de rede, chamadas Redis).
+- **NÃO mockar serviços externos reais:** não conectar PostgreSQL, Redis ou fazer fetch de
+  rede nos testes unitários. Para cobrir repositórios Drizzle, usar `mock.module('../db.ts')`
+  substituindo `getDb()` por um fake client (padrão em `mirrors.repository.test.ts`). Para
+  funções que dependem de `jwt`/crypto, injetar o dependency ou mockar o módulo.
+- **O que fica fora da meta:** módulos de I/O puro (fetch HTTP, cliente Redis, HTTP server,
+  registro de métricas) não têm lógica de negócio extraível e são aceitos abaixo de 80% —
+  desde que a lógica de decisão/parse ao redor esteja isolada em `*-pure.ts` e testada.
+- **Verificar antes de commitar:** rodar `bun run test:coverage` e garantir que nenhum arquivo
+  de código de negócio novo regrediu abaixo de 80% sem justificativa de I/O puro.
+- **Comandos:** `bun run test:unit` (testes rápidos, ~5s) e `bun run test:coverage`
+  (relatório agregado em `coverage/summary.md`).
