@@ -17,13 +17,15 @@ import { Elysia } from 'elysia';
 /** Instâncias criadas: instanceName → { status } */
 const instances = new Map<string, { status: string }>();
 
-/** Mensagens enviadas via sendText */
+/** Mensagens enviadas via sendText / sendMedia */
 const sentMessages: Array<{
   instanceName: string;
   number: string;
   text: string;
   timestamp: string;
   linkPreview?: boolean;
+  hasMedia?: boolean;
+  mediaUrl?: string;
 }> = [];
 
 /** Request ID counter */
@@ -31,7 +33,8 @@ let requestIdCounter = 1;
 
 // ─── Mock data ──────────────────────────────────────────────────────────
 
-const MOCK_QR_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const MOCK_QR_BASE64 =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
 const MOCK_GROUPS = [
   { jid: '120363000000000001@g.us', subject: 'Ofertas Promoções', name: 'Ofertas Promoções' },
@@ -182,7 +185,9 @@ const app = new Elysia()
       return { state: { connectionState: 'close' } };
     }
     return {
-      instance: { state: instances.get(instanceName)!.status === 'created' ? 'connecting' : 'open' },
+      instance: {
+        state: instances.get(instanceName)!.status === 'created' ? 'connecting' : 'open',
+      },
       state: { connectionState: instances.get(instanceName)!.status },
     };
   })
@@ -277,6 +282,40 @@ const app = new Elysia()
       timestamp: new Date().toISOString(),
       linkPreview,
     });
+
+    return {
+      key: {
+        id: genId(),
+        remoteJid: number ?? '',
+        fromMe: true,
+      },
+      status: 'PENDING',
+    };
+  })
+
+  .post('/message/sendMedia/:instanceName', ({ params: { instanceName }, body }) => {
+    const { number, media, caption, mediatype } = (body || {}) as {
+      number?: string;
+      media?: string;
+      caption?: string;
+      mediatype?: string;
+      delay?: number;
+    };
+
+    // O dispatcher envia sendMedia com `caption` (o texto do template) e
+    // `media` (URL da imagem). Registramos no mesmo formato de sendText —
+    // `text` recebe o caption — para que os testes verifiquem o conteúdo
+    // do mesmo jeito, com flags extras indicando que houve mídia.
+    sentMessages.push({
+      instanceName,
+      number: number ?? '',
+      text: caption ?? '',
+      timestamp: new Date().toISOString(),
+      hasMedia: true,
+      mediaUrl: media ?? '',
+    });
+
+    void mediatype;
 
     return {
       key: {

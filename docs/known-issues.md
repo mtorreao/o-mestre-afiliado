@@ -18,6 +18,15 @@ acima do teste, link para o trecho, motivo raiz e passos para reativar.
 - **Projects Playwright:** `api`, `mirror-api` (roda nos dois — `test.skip` cobre ambos)
 - **Status:** skip aplicado em `wt/e2e-skip-pending` (commit `test(e2e): pular testes pendentes com referencias`)
 
+### Cobertura equivalente (sem segredos) — criada em 2026-07-26
+
+O caminho completo da arquitetura v2 (Queue A → Ingestor → Queue B → Dispatcher →
+Simulador) **está coberto por `e2e/mirror-pipeline.api.spec.ts`** (P1–P9), que usa
+Amazon em vez de Shopee. O conversor Amazon é puro parâmetro de URL (`?tag=`),
+sem API externa nem credenciais — exercitando exatamente o mesmo fluxo de
+fan-out, dedup e descarte do teste Shopee skipado. O skip do Shopee permanece
+válido até que uma das opções de reativação abaixo seja implementada.
+
 ### Por que skip
 
 O conversor Shopee (`packages/converters/src/shopee.ts` → `convertShopeeUrl`)
