@@ -46,7 +46,7 @@ const ML_TRACKING_PARAMS_TO_STRIP = [
   'sub_path',
 ];
 
-function stripMeliTrackingParams(url: string): { url: string; dropped: string[] } {
+export function stripMeliTrackingParams(url: string): { url: string; dropped: string[] } {
   const dropped: string[] = [];
   try {
     const u = new URL(url);

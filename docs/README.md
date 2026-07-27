@@ -6,13 +6,13 @@
 
 ## 🗂️ Índice da Documentação
 
-| Pasta                                     | Conteúdo                                                                                                                                                                                            |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/README.md`](./README.md)           | Este arquivo — arquitetura geral, stack, variáveis de ambiente.                                                                                                                                     |
-| [`docs/planos/`](./planos/)               | Planos de feature e arquitetura (`arquitetura-worker`, `melhorias-ml`, `template-mensagem`, `autenticacao-cadastro-afiliado`, `historico-precos`, `multi-worktree-dev-stack`, `worker-monitoring`). |
-| [`docs/investigacoes/`](./investigacoes/) | Relatórios de investigação (`investigacao-mirror-2026-07-25`).                                                                                                                                      |
-| [`docs/marketplaces/`](./marketplaces/)   | Referências de API de terceiros (`mercadolivre`, `shopee`, `amazon`) + PDFs de cadastro ML.                                                                                                         |
-| [`docs/evolution-api/`](./evolution-api/) | Referência da Evolution API (WhatsApp).                                                                                                                                                             |
+| Pasta                                     | Conteúdo                                                                                                                                                                                                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`docs/README.md`](./README.md)           | Este arquivo — arquitetura geral, stack, variáveis de ambiente.                                                                                                                                                                                        |
+| [`docs/plans/`](./plans/)                 | Planos de feature e arquitetura (`arquitetura-worker`, `melhorias-ml`, `template-mensagem`, `autenticacao-cadastro-afiliado`, `roles-e-super-admin`, `historico-precos`, `multi-worktree-dev-stack`, `worker-monitoring`, `extensao-chrome-evolucao`). |
+| [`docs/investigacoes/`](./investigacoes/) | Relatórios de investigação (`investigacao-mirror-2026-07-25`).                                                                                                                                                                                         |
+| [`docs/marketplaces/`](./marketplaces/)   | Referências de API de terceiros (`mercadolivre`, `shopee`, `amazon`) + PDFs de cadastro ML.                                                                                                                                                            |
+| [`docs/evolution-api/`](./evolution-api/) | Referência da Evolution API (WhatsApp).                                                                                                                                                                                                                |
 
 ---
 
