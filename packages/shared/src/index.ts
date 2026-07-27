@@ -80,7 +80,12 @@ export const MARKETPLACE_DOMAINS: Record<Marketplace, RegExp[]> = {
     /magalu\.com\.br/i,
     /maga\.lu/i,
     /magazineluiza\.com\.br/i,
+    /magazinevoce\.com\.br/i,
     /go\.promozone\.ai\/magalu/i,
+    // OneLink AppsFlyer da Magalu — é tracking de app install, NÃO afiliado,
+    // mas precisa ser reconhecido como "domínio Magalu" para o link-converters
+    // poder bloqueá-lo com mensagem clara em vez de descartar silenciosamente.
+    /magazineluiza\.onelink\.me/i,
   ],
   unknown: [],
 } as const;
