@@ -2,12 +2,12 @@
  * Helpers de autenticação JWT.
  *
  * Uso em rotas protegidas:
- *   import { getAuthUser, requireAuth } from '../../middleware/auth.ts';
+ *   import { getAuthUser, getAdminUser } from '../../middleware/auth.ts';
  *
  *   // Em uma rota:
  *   const auth = await getAuthUser(jwtInstance, request.headers);
  *   if (!auth) return { success: false, error: 'Não autenticado' };
- *   // auth = { userId: number, userEmail: string }
+ *   // auth = { userId: number, userEmail: string, isAdmin: boolean }
  */
 
 import { t } from 'elysia';
@@ -17,12 +17,11 @@ import { config } from '../config.ts';
 export interface AuthUser {
   userId: number;
   userEmail: string;
+  isAdmin: boolean;
 }
 
 /**
  * Cria o plugin JWT para uso nas rotas.
- * Cada módulo que precisa de auth deve chamar esta função
- * e incluir o retorno no Elysia.
  */
 export function createJwtPlugin() {
   return jwt({
@@ -31,22 +30,20 @@ export function createJwtPlugin() {
     schema: t.Object({
       userId: t.Number(),
       userEmail: t.String(),
+      isAdmin: t.Optional(t.Boolean()),
     }),
   });
 }
 
 /**
- * Extrai o usuário autenticado de um request.
- * Retorna null se o token for inválido ou ausente.
- *
- * Aceita o jwtInstance do plugin @elysiajs/jwt (qualquer versão).
+ * Extrai o usuário autenticado do header Authorization.
+ * Retorna null se não autenticado.
  */
 export async function getAuthUser(
-  jwtInstance: { verify: (token?: string) => Promise<Record<string, unknown> | null | false> },
+  jwtInstance: { verify: (token: string) => Promise<Record<string, unknown> | null | false> },
   headers: Headers,
 ): Promise<AuthUser | null> {
   const authHeader = headers.get('authorization');
-
   if (!authHeader?.startsWith('Bearer ')) return null;
 
   const token = authHeader.slice(7);
@@ -58,5 +55,19 @@ export async function getAuthUser(
   return {
     userId: payload.userId,
     userEmail: String(payload.userEmail ?? ''),
+    isAdmin: payload.isAdmin === true,
   };
+}
+
+/**
+ * Obtém o usuário autenticado e verifica se é admin.
+ * Retorna o AuthUser se for admin, ou null se não autenticado/não admin.
+ */
+export async function getAdminUser(
+  jwtInstance: { verify: (token: string) => Promise<Record<string, unknown> | null | false> },
+  headers: Headers,
+): Promise<AuthUser | null> {
+  const user = await getAuthUser(jwtInstance, headers);
+  if (!user?.isAdmin) return null;
+  return user;
 }

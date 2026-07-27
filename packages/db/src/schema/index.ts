@@ -1,18 +1,16 @@
-import {
-  boolean,
-  integer,
-  jsonb,
-  pgEnum,
-  serial,
-  text,
-  timestamp,
-} from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, pgEnum, serial, text, timestamp } from 'drizzle-orm/pg-core';
 import { omestre } from './omestre.ts';
 import { users } from './users.ts';
 
 // ─── Enums ──────────────────────────────────────────────────────────
 
-export const marketplaceEnum = pgEnum('marketplace', ['shopee', 'mercadolivre', 'amazon', 'magalu', 'unknown']);
+export const marketplaceEnum = pgEnum('marketplace', [
+  'shopee',
+  'mercadolivre',
+  'amazon',
+  'magalu',
+  'unknown',
+]);
 
 export const offerStatusEnum = pgEnum('offer_status', ['sent', 'failed', 'blocked']);
 
@@ -118,6 +116,9 @@ export { mirrors } from './mirrors.ts';
 
 export { amazonAffiliates } from './amazonAffiliates.ts';
 export type { AmazonTrackingId, AmazonRegion } from './amazonAffiliates.ts';
+
+// ─── Feature Flags ─────────────────────────────────────────
+export { featureFlags } from './featureFlags.ts';
 
 // ─── Re-export dos schemas auxiliares ───────────────────────────────
 export { omestre } from './omestre.ts';
