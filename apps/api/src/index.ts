@@ -14,6 +14,7 @@ import { swagger } from '@elysiajs/swagger';
 import { convertUrl } from '@omestre/converters';
 import { detectMarketplace } from '@omestre/shared';
 import { UserRepository, UserCredentialsRepository, checkDbHealth } from '@omestre/db';
+import { config } from './config.ts';
 import { authRoutes } from './modules/auth/auth.routes.ts';
 import { affiliateRoutes } from './modules/affiliate/affiliate.routes.ts';
 import { mirrorRoutes } from './modules/mirrors/mirrors.routes.ts';
@@ -21,6 +22,7 @@ import { whatsAppRoutes } from './modules/whatsapp/whatsapp.routes.ts';
 import { webhookRoutes } from './modules/webhook/webhook.routes.ts';
 import { mlRoutes } from './modules/ml/ml.routes.ts';
 import { amazonRoutes } from './modules/amazon/amazon.routes.ts';
+import { extensionRoutes } from './modules/extension/extension.routes.ts';
 import { warmSourceGroupCache } from './services/group-cache.ts';
 import {
   getAggregatedWorkerStatus,
@@ -30,7 +32,6 @@ import {
   purgeDlq,
 } from './services/worker-metrics.ts';
 import { makeLogger } from '@omestre/shared';
-import { config } from './config.ts';
 
 const log = makeLogger('api');
 const PORT = parseInt(config.API_PORT, 10);
@@ -84,6 +85,7 @@ const app = new Elysia()
   .use(webhookRoutes)
   .use(mlRoutes)
   .use(amazonRoutes)
+  .use(extensionRoutes)
   .get('/', () => ({
     service: 'O Mestre Afiliado API',
     version: '1.0.0',
@@ -152,99 +154,54 @@ const app = new Elysia()
       detail: {
         summary: 'Converter link de afiliado (padrão)',
         description: 'Converte uma URL usando as credenciais do .env',
-        requestBody: {
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  url: { type: 'string', example: 'https://shopee.com.br/product/123/456' },
-                },
-                required: ['url'],
-              },
-            },
-          },
-        },
       },
     },
   )
 
-  // ─── Worker Status — Agregador (Ingestor + Dispatcher) ───
+  // ─── Worker Status ───────────────────────────────────────────────────
   .get('/api/worker/status', async () => {
-    return await getAggregatedWorkerStatus();
+    return getAggregatedWorkerStatus();
   })
 
-  // ─── DLQ — operações diretas na fila compartilhada ───
+  // ─── DLQ ─────────────────────────────────────────────────────────────
   .get('/api/worker/dlq', async ({ query }) => {
-    const offset = parseInt(String(query.offset ?? '0'), 10) || 0;
-    const limit = parseInt(String(query.limit ?? '20'), 10) || 20;
-    // Filtros server-side opcionais
-    const queueRaw = query.queue;
-    const queue = queueRaw === 'A' || queueRaw === 'B' ? (queueRaw as 'A' | 'B') : undefined;
-    const reasonRaw = query.reason;
-    const failureReason =
-      typeof reasonRaw === 'string' && reasonRaw.length > 0 ? reasonRaw : undefined;
-    // since aceita ISO string (2026-07-20T00:00:00Z) OU duração relativa
-    // no formato "Nh" / "Nd" (ex: "1h", "24h", "7d"). Default: sem filtro.
-    let since: number | undefined;
-    const sinceRaw = query.since;
-    if (typeof sinceRaw === 'string' && sinceRaw.length > 0) {
-      const relativeMatch = sinceRaw.match(/^(\d+)(h|d)$/);
-      if (relativeMatch) {
-        const n = parseInt(relativeMatch[1] ?? '0', 10);
-        const unit = relativeMatch[2];
-        const ms = unit === 'd' ? n * 24 * 60 * 60 * 1000 : n * 60 * 60 * 1000;
-        since = Date.now() - ms;
-      } else {
-        const parsed = Date.parse(sinceRaw);
-        if (!Number.isNaN(parsed)) since = parsed;
-      }
-    }
-    const result = await listDlqItems({ offset, limit, queue, failureReason, since });
-    return { success: true, ...result };
+    const q = query as Record<string, string>;
+    return listDlqItems({
+      offset: q.offset ? parseInt(q.offset, 10) : 0,
+      limit: q.limit ? parseInt(q.limit, 10) : 20,
+      queue: q.queue as 'A' | 'B' | undefined,
+      failureReason: q.reason || undefined,
+      since: q.since ? parseInt(q.since, 10) || undefined : undefined,
+    });
   })
   .post('/api/worker/dlq/requeue', async ({ query, set }) => {
-    const id = query.id as string | undefined;
+    const { id } = query as { id?: string };
     if (!id) {
       set.status = 400;
-      return { success: false, error: 'Parâmetro "id" é obrigatório' };
+      return { success: false, error: 'ID é obrigatório' };
     }
-    const result = await requeueDlqItem(id);
-    if (!result.success) {
-      set.status = 404;
-      return { success: false, error: 'Item não encontrado na DLQ' };
-    }
-    return { success: true, dlqId: id, targetStream: result.targetStream };
+    return requeueDlqItem(id);
   })
   .post('/api/worker/dlq/remove', async ({ query, set }) => {
-    const id = query.id as string | undefined;
+    const { id } = query as { id?: string };
     if (!id) {
       set.status = 400;
-      return { success: false, error: 'Parâmetro "id" é obrigatório' };
+      return { success: false, error: 'ID é obrigatório' };
     }
-    const ok = await removeDlqItem(id);
-    if (!ok) {
-      set.status = 404;
-      return { success: false, error: 'Item não encontrado na DLQ' };
-    }
-    return { success: true, dlqId: id };
+    return removeDlqItem(id);
   })
   .post('/api/worker/dlq/purge', async () => {
-    const removed = await purgeDlq();
-    return { success: true, removed };
+    return purgeDlq();
   })
 
-  // ─── Cache warming no startup ─────────────────────────────────────
-  .onStart(async () => {
-    // Carrega todos os sourceGroups do PostgreSQL para o Redis
-    // para evitar que mensagens sejam ignoradas após restart
+  // ─── Warm source group cache ─────────────────────────────────────────
+  .get('/api/internal/warm-cache', async () => {
     await warmSourceGroupCache();
-  });
+    return { success: true };
+  })
 
-app.listen(PORT);
+  // ─── Start ───────────────────────────────────────────────────────────
+  .listen(PORT);
 
-log('info', `API rodando em http://localhost:${PORT}`);
-log('info', `Swagger docs em http://localhost:${PORT}/docs`);
-log('info', 'Store: PostgreSQL via Drizzle');
-
-export type App = typeof app;
+console.log(`🟢 API rodando em http://localhost:${PORT}`);
+console.log(`📄 Swagger em http://localhost:${PORT}/docs`);

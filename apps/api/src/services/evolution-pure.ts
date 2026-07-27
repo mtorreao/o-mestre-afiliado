@@ -46,6 +46,7 @@ export const evolutionEndpoints = {
     `/group/groupInfo/${instanceName}/${encodeURIComponent(groupJid)}`,
   findMessages: (instanceName: string): string => `/chat/findMessages/${instanceName}`,
   sendText: (instanceName: string): string => `/message/sendText/${instanceName}`,
+  sendMedia: (instanceName: string): string => `/message/sendMedia/${instanceName}`,
 } as const;
 
 /** Body do POST /instance/create (inclui webhook per-instância obrigatório). */
@@ -86,6 +87,22 @@ export function buildSendTextBody(
     text,
     delay: delayMs,
     linkPreview: true,
+  };
+}
+
+/** Body do POST /message/sendMedia (imagem + legenda). */
+export function buildSendMediaBody(
+  groupJid: string,
+  mediaUrl: string,
+  caption: string = '',
+  delayMs: number = 2000,
+): Record<string, unknown> {
+  return {
+    number: groupJid,
+    mediatype: 'image',
+    media: mediaUrl,
+    caption: caption || '',
+    delay: delayMs,
   };
 }
 

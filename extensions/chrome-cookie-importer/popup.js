@@ -1,236 +1,421 @@
-// popup.js — Lógica da extensão Cookie Importer
-
-const ML_DOMAINS = [
-  '.mercadolivre.com.br',
-  '.mercadolibre.com',
-  '.mercadolivre.com',
-];
+import {
+  DEFAULT_API_URL,
+  ML_DOMAINS,
+  cookieMetadata,
+  deduplicateCookies,
+  isMercadoLivreUrl,
+  normalizeApiUrl,
+  redactSensitiveText,
+  serializeCookies,
+} from './lib/pure.js';
 
 const $ = (id) => document.getElementById(id);
+const PRODUCT_DATA_TTL = 10 * 60 * 1000; // 10 min
 
 let affiliates = [];
 let selectedUserId = null;
+let productData = null;
+let availableGroups = [];
+let selectedGroups = new Set();
+let mirrorMap = new Map(); // jid → mirror name
 
-// ─── Init ─────────────────────────────────────────────────────────────────
+void init();
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // Restore saved API URL
-  const saved = await chrome.storage.local.get('apiUrl');
-  if (saved.apiUrl) $('apiUrl').value = saved.apiUrl;
+async function init() {
+  const saved = await chrome.storage.local.get([
+    'apiUrl',
+    'sessionState',
+    'productData',
+    'productDataAt',
+    'offerLog',
+  ]);
+  $('apiUrl').value = saved.apiUrl || DEFAULT_API_URL;
+  productData = getValidProductData(saved.productData, saved.productDataAt);
 
-  // Check if we're on ML
-  await checkMLTab();
+  if (productData) {
+    const isFromMenu = await chrome.storage.local.get('productFromContextMenu');
+    if (isFromMenu.productFromContextMenu) {
+      await chrome.storage.local.remove('productFromContextMenu');
+    }
+  }
 
-  // Load affiliates
-  await loadAffiliates();
+  await updateMLStatus();
+  await loadAffiliates(saved.sessionState);
+  renderSessionState(saved.sessionState);
 
-  // Events
-  $('apiUrl').addEventListener('change', saveApiUrl);
-  $('affiliateSelect').addEventListener('change', onAffiliateChange);
-  $('importBtn').addEventListener('click', importCookies);
-});
+  setupTabs();
+  setupEvents();
 
-// ─── Check ML tab ──────────────────────────────────────────────────────────
+  if (productData) {
+    fillOfferForm();
+    updatePreview();
+    await loadGroups();
+  }
+}
 
-async function checkMLTab() {
+function getValidProductData(data, timestamp) {
+  if (!data || !timestamp) return null;
+  if (Date.now() - timestamp > PRODUCT_DATA_TTL) return null;
+  return data;
+}
+
+async function updateMLStatus() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.url) return;
-
-  const isML = ML_DOMAINS.some((d) => tab.url.includes(d));
-  $('mlStatus').textContent = isML ? '🟢 ML detectado' : '🔴 Abra o ML';
-  $('mlStatus').style.color = isML ? '#4ade80' : '#f87171';
+  const isML = Boolean(tab?.url && isMercadoLivreUrl(tab.url));
+  const isShopee = Boolean(tab?.url?.includes('shopee'));
+  const isAmazon = Boolean(tab?.url?.includes('amazon'));
+  const hasProduct = isML || isShopee || isAmazon || productData;
+  $('mlStatus').textContent = productData
+    ? `🟢 Produto detectado`
+    : hasProduct
+      ? '🟡 Abra um produto'
+      : '🔴 Abra um marketplace';
 }
 
-// ─── Load affiliates ────────────────────────────────────────────────────────
-
-async function loadAffiliates() {
-  const apiUrl = $('apiUrl').value.replace(/\/+$/, '');
-  const sel = $('affiliateSelect');
-  const btn = $('importBtn');
+async function loadGroups() {
+  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  if (!apiUrl || !selectedUserId) {
+    $('groupList').innerHTML = '<span style="color:#64748b">Selecione um afiliado primeiro.</span>';
+    return;
+  }
 
   try {
-    const res = await fetch(`${apiUrl}/api/ml/affiliates`);
+    const res = await fetch(`${apiUrl}/api/mirrors?status=active&pageSize=50`, {
+      headers: authHeaders(),
+    });
     const data = await res.json();
-
-    if (!data.success || !data.affiliates?.length) {
-      sel.innerHTML = '<option value="">Nenhum afiliado encontrado</option>';
-      btn.disabled = true;
+    if (!data.success) {
+      $('groupList').innerHTML = '<span style="color:#f87171">Erro ao carregar grupos.</span>';
       return;
     }
 
-    affiliates = data.affiliates;
-    sel.innerHTML = '<option value="">— Selecione um afiliado —</option>';
-    affiliates.forEach((a) => {
-      const opt = document.createElement('option');
-      opt.value = a.mlUserId;
-      const hasCookies = a.hasSessionCookies ? ' 🔗' : '';
-      opt.textContent = `${a.nickname} (ID: ${a.mlUserId})${hasCookies}`;
-      sel.appendChild(opt);
-    });
+    const mirrors = data.rows || [];
+    const groups = [];
+    mirrorMap = new Map();
 
-    btn.disabled = true;
-  } catch (err) {
-    sel.innerHTML = '<option value="">Erro ao conectar com a API</option>';
-    showStatus(`Erro de conexão: ${err.message}`, 'error');
+    for (const m of mirrors) {
+      const targets = m.targetGroups || [];
+      for (const g of targets) {
+        groups.push(g);
+        mirrorMap.set(g.jid, m.name);
+      }
+    }
+
+    if (!groups.length) {
+      $('groupList').innerHTML =
+        '<span style="color:#94a3b8">Nenhum grupo de destino configurado.</span>';
+      availableGroups = [];
+      return;
+    }
+
+    availableGroups = deduplicateGroups(groups);
+    selectedGroups = new Set(availableGroups.map((g) => g.jid));
+    renderGroupList();
+  } catch {
+    $('groupList').innerHTML = '<span style="color:#f87171">Erro de conexão.</span>';
   }
 }
 
-// ─── Events ─────────────────────────────────────────────────────────────────
-
-function saveApiUrl() {
-  chrome.storage.local.set({ apiUrl: $('apiUrl').value });
+function authHeaders() {
+  return { 'Content-Type': 'application/json' };
 }
 
-function onAffiliateChange() {
-  selectedUserId = $('affiliateSelect').value;
-  $('importBtn').disabled = !selectedUserId;
+function deduplicateGroups(groups) {
+  const seen = new Set();
+  return groups.filter((g) => {
+    if (seen.has(g.jid)) return false;
+    seen.add(g.jid);
+    return true;
+  });
 }
 
-// ─── Import cookies ────────────────────────────────────────────────────────
-
-async function importCookies() {
-  if (!selectedUserId) return;
-
-  const apiUrl = $('apiUrl').value.replace(/\/+$/, '');
-  const btn = $('importBtn');
-  const status = $('status');
-
-  btn.disabled = true;
-  showStatus('Lendo cookies do Mercado Livre...', 'loading');
-
-  try {
-    // 1. Read ALL cookies from ML domains (including HttpOnly)
-    const allCookies = [];
-    for (const domain of ML_DOMAINS) {
-      const cookies = await chrome.cookies.getAll({ domain });
-      allCookies.push(...cookies);
-    }
-
-    // Deduplicate by name+path (keep last occurrence)
-    const seen = new Map();
-    for (const c of allCookies) {
-      const key = `${c.name}:${c.path}`;
-      seen.set(key, c);
-    }
-
-    const uniqueCookies = [...seen.values()];
-
-    if (uniqueCookies.length === 0) {
-      showStatus('Nenhum cookie encontrado. Você está logado no ML?', 'error');
-      btn.disabled = false;
-      return;
-    }
-
-    // Build cookie string
-    const cookieStr = uniqueCookies.map((c) => `${c.name}=${c.value}`).join('; ');
-
-    // Show preview (truncated)
-    $('cookiePreview').textContent =
-      `${uniqueCookies.length} cookies encontrados\n${cookieStr.substring(0, 200)}...`;
-    $('cookiePreview').style.display = 'block';
-
-    // 2. Send to API
-    showStatus(`Enviando ${uniqueCookies.length} cookies para o servidor...`, 'loading');
-
-    const res = await fetch(`${apiUrl}/api/ml/affiliates/${selectedUserId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionCookies: cookieStr }),
+function renderGroupList() {
+  const el = $('groupList');
+  el.innerHTML = '';
+  if (!availableGroups.length) {
+    el.innerHTML = '<span style="color:#94a3b8">Nenhum grupo disponível.</span>';
+    return;
+  }
+  let html = '';
+  for (const g of availableGroups) {
+    mirrorMap.get(g.jid);
+    html += `<div class="group-item"><input type="checkbox" data-jid="${g.jid}" ${selectedGroups.has(g.jid) ? 'checked' : ''}> ${g.name}</div>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (cb.dataset.jid) {
+        if (cb.checked) selectedGroups.add(cb.dataset.jid);
+        else selectedGroups.delete(cb.dataset.jid);
+        $('groupCount').textContent = selectedGroups.size;
+      }
     });
+  });
+  $('groupCount').textContent = selectedGroups.size;
+}
 
-    const data = await res.json();
+function setupTabs() {
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document
+        .querySelectorAll('.tab, .tab-content')
+        .forEach((el) => el.classList.remove('active'));
+      tab.classList.add('active');
+      const target = document.getElementById(`tab-${tab.dataset.tab}`);
+      if (target) target.classList.add('active');
+      if (tab.dataset.tab === 'log') renderLog();
+    });
+  });
+}
 
-    if (data.success) {
-      // Tentar extrair melitat diretamente da página do linkbuilder
-      showStatus(`✅ Cookies salvos! Detectando etiqueta...`, 'loading');
-      try {
-        const tag = await detectMelitat();
-        if (tag) {
-          // Salvar melitat no servidor
-          await fetch(`${apiUrl}/api/ml/affiliates/${selectedUserId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ melitat: tag }),
-          });
-          showStatus(`✅ Etiqueta "${tag}" detectada e salva!`, 'success');
-        } else {
-          showStatus(`✅ Cookies importados! Etiqueta: configure manualmente.`, 'success');
-        }
-      } catch {
-        showStatus(`✅ Cookies importados para ${data.mlUserId}!`, 'success');
-      }
-
-      // Update the select option to show the 🔗 badge
-      const affiliate = affiliates.find((a) => a.mlUserId === selectedUserId);
-      if (affiliate) {
-        affiliate.hasSessionCookies = true;
-        updateSelectOptions();
-      }
+function setupEvents() {
+  $('importBtn').addEventListener('click', importCookies);
+  $('validateBtn').addEventListener('click', validateSession);
+  $('sendOfferBtn').addEventListener('click', sendOffer);
+  $('clearLogBtn').addEventListener('click', clearLog);
+  $('selectAllGroups').addEventListener('change', () => {
+    if ($('selectAllGroups').checked) {
+      selectedGroups = new Set(availableGroups.map((g) => g.jid));
     } else {
-      showStatus(`❌ Erro do servidor: ${data.error}`, 'error');
+      selectedGroups = new Set();
     }
-  } catch (err) {
-    showStatus(`❌ Erro: ${err.message}`, 'error');
-  } finally {
-    btn.disabled = false;
-  }
+    document.querySelectorAll('.group-item input[type=checkbox]').forEach((cb) => {
+      cb.checked = $('selectAllGroups').checked;
+    });
+    $('groupCount').textContent = selectedGroups.size;
+  });
+  $('optionsLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.runtime.openOptionsPage();
+  });
+
+  ['offerTitle', 'offerProductName', 'offerCoupon', 'offerPriceFrom', 'offerPrice'].forEach(
+    (id) => {
+      $(id).addEventListener('input', updatePreview);
+    },
+  );
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+function fillOfferForm() {
+  if (!productData) return;
+  $('offerUrl').value = productData.url || '';
+  $('offerProductName').value = productData.name || '';
+  if (productData.price) $('offerPrice').value = `R$ ${productData.price}`;
+}
 
-function showStatus(msg, type) {
-  const el = $('status');
-  el.textContent = msg;
+function updatePreview() {
+  const title = $('offerTitle').value.trim();
+  const name = $('offerProductName').value.trim();
+  const coupon = $('offerCoupon').value.trim();
+  const priceFrom = $('offerPriceFrom').value.trim();
+  const priceTo = $('offerPrice').value.trim();
+
+  const lines = [];
+  if (title) lines.push(`🔥 *${title}*`);
+  if (lines.length > 0 && (name || priceFrom || priceTo || coupon)) lines.push('');
+  if (name) lines.push(`📦 *${name}*`);
+  if (priceFrom) lines.push(`~~ De: ${priceFrom} ~~`);
+  if (priceTo) lines.push(`🔥 Por: *${priceTo}*`);
+  if (coupon) lines.push(`🏷️ Cupom: *${coupon}*`);
+  if (lines.length > 0) lines.push('');
+  lines.push(`🔗 {link_afiliado}`);
+
+  $('offerPreview').value = lines.join('\n');
+}
+
+async function loadAffiliates(sessionState) {
+  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  if (!apiUrl) return;
+  try {
+    const res = await fetch(`${apiUrl}/api/ml/affiliates`, { headers: authHeaders() });
+    const data = await res.json();
+    if (!data.success || !data.affiliates?.length) return;
+    affiliates = data.affiliates;
+    const select = $('affiliateSelect');
+    select.innerHTML = '<option value="">— Selecione —</option>';
+    for (const a of affiliates)
+      select.appendChild(
+        new Option(`${a.nickname} (${a.mlUserId})${a.hasSessionCookies ? ' 🔗' : ''}`, a.mlUserId),
+      );
+
+    const remembered = sessionState?.mlUserId;
+    const only = affiliates.length === 1 ? affiliates[0].mlUserId : null;
+    selectedUserId = remembered || only || null;
+    select.value = selectedUserId || '';
+    setActionState();
+  } catch {}
+}
+
+function setActionState() {
+  const has = Boolean(selectedUserId);
+  $('importBtn').disabled = !has;
+  $('validateBtn').disabled = !has;
+  $('sendOfferBtn').disabled = !has || !productData || !selectedGroups.size;
+}
+
+function renderSessionState(state) {
+  const el = $('sessionState');
+  if (!state?.status) {
+    el.textContent = 'Ainda não validada';
+    el.className = 'session-state neutral';
+    return;
+  }
+  el.textContent =
+    state.status === 'valid'
+      ? `🟢 Válida${state.melitat ? ' · ' + state.melitat : ''}`
+      : '🔴 Expirada';
+  el.className = `session-state ${state.status}`;
+  $('sessionBadge').textContent = state.status === 'valid' ? '🟢' : '🔴';
+}
+
+function showStatus(id, msg, type) {
+  const el = $(id);
+  el.textContent = redactSensitiveText(msg);
   el.className = `status ${type}`;
 }
 
-function updateSelectOptions() {
-  const sel = $('affiliateSelect');
-  const currentVal = sel.value;
-  sel.innerHTML = '<option value="">— Selecione um afiliado —</option>';
-  affiliates.forEach((a) => {
-    const opt = document.createElement('option');
-    opt.value = a.mlUserId;
-    const hasCookies = a.hasSessionCookies ? ' 🔗' : '';
-    opt.textContent = `${a.nickname} (ID: ${a.mlUserId})${hasCookies}`;
-    sel.appendChild(opt);
-  });
-  sel.value = currentVal;
-}
+async function importCookies() {
+  if (!selectedUserId) return;
+  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  if (!apiUrl) return showStatus('sessionStatus', 'URL da API inválida', 'error');
 
-/**
- * Extrai o melitat (etiqueta de afiliado) da página do linkbuilder.
- * Usa uma tab ativa do ML pra executar um script que lê o tag_in_use.
- */
-async function detectMelitat() {
-  // Procura uma tab aberta do ML
-  const tabs = await chrome.tabs.query({ url: ['*://*.mercadolivre.com.br/*', '*://*.mercadolibre.com/*'] });
-  if (tabs.length === 0) return null;
-
-  const tab = tabs[0];
-
+  $('importBtn').disabled = true;
+  showStatus('sessionStatus', 'Lendo cookies...', 'loading');
   try {
-    // Navega a tab pra página do linkbuilder (se já não estiver)
-    const targetUrl = 'https://www.mercadolivre.com.br/afiliados/linkbuilder';
-    if (!tab.url?.includes('linkbuilder')) {
-      await chrome.tabs.update(tab.id, { url: targetUrl });
-      // Espera a página carregar
-      await new Promise((r) => setTimeout(r, 3000));
+    const allCookies = [];
+    for (const domain of ML_DOMAINS) allCookies.push(...(await chrome.cookies.getAll({ domain })));
+    const cookies = deduplicateCookies(allCookies);
+    const meta = cookieMetadata(cookies);
+    if (!meta.count) {
+      showStatus('sessionStatus', 'Nenhum cookie encontrado. Faça login no ML.', 'error');
+      return;
     }
 
-    // Executa script pra extrair o tag_in_use do HTML
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        // Procura no HTML o tag_in_use
-        const html = document.documentElement.innerHTML;
-        const match = html.match(/tag_in_use["']:\s*["']([^"']+)/i);
-        return match ? match[1] : null;
-      },
+    const res = await fetch(`${apiUrl}/api/ml/affiliates/${encodeURIComponent(selectedUserId)}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ sessionCookies: serializeCookies(cookies) }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      showStatus('sessionStatus', `Erro: ${data.error}`, 'error');
+      return;
+    }
+    await validateSession();
+  } catch (err) {
+    showStatus('sessionStatus', `Erro: ${err.message}`, 'error');
+  }
+}
+
+async function validateSession() {
+  if (!selectedUserId) return;
+  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  if (!apiUrl) return;
+  $('validateBtn').disabled = true;
+  showStatus('sessionStatus', 'Validando...', 'loading');
+  try {
+    const res = await fetch(
+      `${apiUrl}/api/ml/affiliates/${encodeURIComponent(selectedUserId)}/validate-cookies`,
+      { method: 'POST', headers: authHeaders() },
+    );
+    const data = await res.json();
+    const state = {
+      mlUserId: selectedUserId,
+      status: data.valid ? 'valid' : 'expired',
+      melitat: data.melitat || null,
+      checkedAt: new Date().toISOString(),
+    };
+    await chrome.storage.local.set({ sessionState: state });
+    await chrome.runtime.sendMessage({ type: 'set-session-state', state });
+    renderSessionState(state);
+    showStatus(
+      'sessionStatus',
+      data.valid
+        ? `✅ Válida${data.melitat ? ' · ' + data.melitat : ''}`
+        : `❌ ${data.error || 'Inválida'}`,
+      data.valid ? 'success' : 'error',
+    );
+  } catch (err) {
+    showStatus('sessionStatus', `Erro: ${err.message}`, 'error');
+  }
+}
+
+async function sendOffer() {
+  if (!selectedUserId || !productData) return;
+  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  if (!apiUrl) return showStatus('offerStatus', 'URL da API inválida', 'error');
+  if (!selectedGroups.size)
+    return showStatus('offerStatus', 'Selecione ao menos um grupo.', 'error');
+
+  $('sendOfferBtn').disabled = true;
+  showStatus('offerStatus', 'Enviando oferta...', 'loading');
+
+  try {
+    const res = await fetch(`${apiUrl}/api/extension/offers/create`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        url: productData.url,
+        marketplace: productData.marketplace,
+        title: $('offerTitle').value.trim() || undefined,
+        productName: $('offerProductName').value.trim(),
+        coupon: $('offerCoupon').value.trim() || undefined,
+        priceFrom: $('offerPriceFrom').value.trim() || undefined,
+        priceTo: $('offerPrice').value.trim() || undefined,
+        imageUrl: $('offerWithImage').checked ? productData.imageUrl || undefined : undefined,
+        targetGroupJids: [...selectedGroups],
+      }),
     });
 
-    return results?.[0]?.result || null;
-  } catch {
-    return null;
+    const data = await res.json();
+    if (data.success) {
+      const totalSent = data.sentTo?.length || 0;
+      showStatus('offerStatus', `✅ Enviado para ${totalSent} grupo(s)!`, 'success');
+
+      const entry = {
+        marketplace: productData.marketplace,
+        productName: $('offerProductName').value.trim(),
+        sentTo: data.sentTo,
+        totalSent,
+        status: 'sent',
+      };
+      await chrome.runtime.sendMessage({ type: 'add-offer-log', entry });
+    } else {
+      showStatus('offerStatus', `❌ ${data.error || 'Erro'}`, 'error');
+    }
+  } catch (err) {
+    showStatus('offerStatus', `❌ ${err.message}`, 'error');
+  } finally {
+    $('sendOfferBtn').disabled = false;
+    setActionState();
   }
+}
+
+async function renderLog() {
+  const res = await chrome.runtime.sendMessage({ type: 'get-offer-log' });
+  const log = res?.log || [];
+  const el = $('logList');
+  if (!log.length) {
+    el.innerHTML =
+      '<span style="color:#64748b;font-size:12px">Nenhuma oferta enviada ainda.</span>';
+    return;
+  }
+
+  el.innerHTML = log
+    .map((entry) => {
+      const time = entry.sentAt ? new Date(entry.sentAt).toLocaleString('pt-BR') : '';
+      const groups = entry.sentTo?.map((g) => g.groupName || g.groupJid).join(', ') || '—';
+      return `<div class="log-entry">
+      <div class="time">${time}</div>
+      <div><span class="status-badge ${entry.status}">${entry.status === 'sent' ? '✅ Enviado' : '❌ Erro'}</span>
+      <span style="color:#e2e8f0">${entry.productName || entry.marketplace || ''}</span></div>
+      <div style="color:#94a3b8;font-size:10px">${groups}</div>
+    </div>`;
+    })
+    .join('');
+}
+
+async function clearLog() {
+  await chrome.runtime.sendMessage({ type: 'clear-offer-log' });
+  renderLog();
 }

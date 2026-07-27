@@ -1,66 +1,61 @@
-# 🍪 O Mestre Afiliado — Chrome Cookie Importer
+# 🍪 O Mestre Afiliado — Extensão Chrome
 
-Extensão Chrome que importa cookies de sessão do Mercado Livre para gerar **links curtos de afiliado** (meli.la) automaticamente.
+Extensão Manifest V3 para sincronizar e validar a sessão do Mercado Livre usada pelo O Mestre Afiliado.
 
-## Por que isso existe?
+## Funcionalidades implementadas
 
-A API de links curtos do ML (`/affiliate-program/api/v2/affiliates/createLink`) exige **cookies de sessão** (incluindo HttpOnly), que JavaScript comum não consegue ler. A extensão usa a API `chrome.cookies.getAll()` que tem acesso a todos os cookies.
+- detecta se a aba ativa está em um domínio Mercado Livre;
+- lista afiliados disponíveis pela API;
+- seleciona automaticamente o afiliado quando existe apenas um, ou restaura o último afiliado usado;
+- lê cookies HttpOnly somente após ação explícita do usuário;
+- deduplica cookies e envia a sessão para a API;
+- não exibe nem persiste o cookie header na extensão;
+- valida a sessão no endpoint de Link Builder após a sincronização;
+- mostra estado sanitizado: válida, expirada ou ainda não validada;
+- mostra o `melitat` detectado sem exibir credenciais;
+- salva a URL da API sem credenciais, query string ou hash;
+- oferece página de opções;
+- agenda lembretes locais para sessões marcadas como expiradas;
+- redige valores sensíveis em mensagens de erro.
 
-## Instalação (manual)
+## Instalação manual
 
-1. Abra o Chrome e vá para `chrome://extensions/`
-2. Ative **"Modo do desenvolvedor"** (canto superior direito)
-3. Clique em **"Carregar sem compactação"**
-4. Selecione a pasta `extensions/chrome-cookie-importer/`
-5. A extensão aparecerá na barra de ferramentas como 🍪
+1. Abra `chrome://extensions/`.
+2. Ative o **Modo do desenvolvedor**.
+3. Clique em **Carregar sem compactação**.
+4. Selecione `extensions/chrome-cookie-importer/`.
+5. Após alterações, clique em **Recarregar** no card da extensão.
 
-## Como usar
+## Uso
 
-1. **Faça login** no Mercado Livre (`mercadolivre.com.br`) com a conta de afiliado
-2. **Abra a extensão** clicando no ícone 🍪
-3. **Selecione o afiliado** no dropdown (a lista vem do seu servidor)
-4. **Clique em "Importar Cookies"**
-5. ✅ Pronto! Agora o protótipo gera links curtos pra essa conta
+1. Faça login no Mercado Livre.
+2. Abra o popup da extensão.
+3. Configure a URL da API em **Configurações**, se necessário.
+4. Selecione o afiliado, caso existam vários.
+5. Clique em **Sincronizar e validar**.
+6. Confira o estado da sessão e a etiqueta detectada.
 
-## Como funciona
+A extensão não sincroniza cookies silenciosamente em background. O service worker apenas mantém o estado sanitizado e agenda lembretes; a leitura e o envio da sessão exigem ação explícita.
 
-```
-Extensão (chrome.cookies.getAll)
-    │ Lê TODOS os cookies do ML (incluindo HttpOnly)
-    ▼
-Concatena como "nome=valor; nome=valor; ..."
-    │
-    ▼
-PUT /api/ml/affiliates/:mlUserId
-    { sessionCookies: "..." }
-    │
-    ▼
-Backend armazena no PostgreSQL (tabela `ml_affiliates`)
-    │
-    ▼
-POST /api/ml/convert → tenta link curto via API interna do ML
-    ├── ✅ Cookies válidos → https://meli.la/XXXXX
-    └── ❌ Cookies expirados → fallback URL params
-```
+## Segurança
 
-## Estrutura
+- Cookies não são gravados em `chrome.storage`.
+- Cookies não são exibidos no popup, preview, logs ou mensagens de erro.
+- A extensão não recebe tokens OAuth do Mercado Livre.
+- A API deve ser uma origem confiável; ambientes locais são suportados somente para desenvolvimento.
+- A validação é feita pelo backend existente, que mantém `sessionCookies` criptografado no banco.
 
-```
-extensions/chrome-cookie-importer/
-├── manifest.json          # Manifest v3
-├── popup.html             # Interface do popup
-├── popup.js               # Lógica (cookies + API)
-├── icons/
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
-└── README.md
+## Testes locais
+
+```bash
+bun test extensions/chrome-cookie-importer/tests/pure.test.js
 ```
 
-## Permissões
+Os testes cobrem normalização da API, domínios ML, deduplicação, metadados sem segredo e redaction.
 
-- `cookies` — leitura de cookies (incluindo HttpOnly)
-- `https://*.mercadolivre.com.br/*` — cookies do ML
-- `https://dev.omestreafiliado.com.br/*` — envio para a API
-- `http://127.0.0.1:5441/*` — ambiente dev local
-- `http://127.0.0.1:5442/*` — ambiente dev local
+## Próximas fases
+
+- menu de contexto para gerar link de afiliado;
+- conversão contextual de produtos;
+- captura de ofertas como rascunho;
+- campanhas e suporte a Shopee/Amazon.
