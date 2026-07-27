@@ -81,7 +81,7 @@ Exportar em `packages/db/src/schema/index.ts`.
 ```
 packages/feature-flags/
 ├── src/
-│   ├── index.ts        # re-exports públicos
+| `index.ts`        # re-exports: isFeatureEnabled, countFlagChecks, invalidateFlagCache, initFlagInvalidation, publishFlagInvalidation, waitForFlagChange, FLAG_DEFINITIONS, ALL_FLAG_KEYS, isFlagKey |
 │   ├── registry.ts     # FlagKey + FLAG_DEFINITIONS
 │   ├── redis.ts        # singleton Redis best-effort (métrica cross-process)
 │   ├── client.ts       # isFeatureEnabled() + countFlagChecks() + cache TTL 10s
@@ -234,6 +234,74 @@ Padrão idêntico ao cache de config do rate-limiter (`apps/dispatcher/src/rate-
 
 **Nota (pitfall conhecido):** `--hot` do Bun não observa `packages/` — mudar o package exige restart manual dos apps em dev.
 
+### 4.3 Propagação imediata (Redis PubSub)
+
+O TTL de 10s do cache (§4.2) é apenas **fallback** (processo que reinicia e perde o aviso, ou Redis fora). Para "atualizar a flag o quanto antes" quando o admin alterna, usamos **invalidação por PubSub** — padrão já usado no repo (API→Worker via Redis).
+
+- **Canal:** `omestre:flag:invalidate`.
+- No PATCH (`feature-flags.routes.ts`), após `upsert` + `invalidateFlagCache()` local, a API publica `""` nesse canal.
+- Todos os processos (API + dispatcher, via `initFlagInvalidation()` no startup) assinam o canal; ao receber mensagem → `invalidateFlagCache()` **imediato** (próxima avaliação já lê o banco) + acordam esperas pausadas.
+- **Efeito:** toggle propaga em **sub-segundo**, sem polling.
+
+`redis.ts` (package) ganha o subscriber + helpers:
+
+```typescript
+let sub: Redis | null = null;
+let wakeWaiters: Array<() => void> = [];
+
+/** Assina o canal de invalidação. Chamar no startup da API e do dispatcher. */
+export function initFlagInvalidation(): void {
+  try {
+    const url = process.env.REDIS_URL;
+    if (!url || sub) return;
+    sub = new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 1 });
+    sub.on('error', () => {});
+    sub.subscribe('omestre:flag:invalidate').catch(() => {});
+    sub.on('message', () => {
+      invalidateFlagCache();
+      const ws = wakeWaiters;
+      wakeWaiters = [];
+      ws.forEach((f) => f()); // acorda dispatcher pausado
+    });
+  } catch {
+    /* sem Redis → só o TTL de 10s cobre */
+  }
+}
+
+/** Publica invalidação (chamado pela API após PATCH). Best-effort. */
+export function publishFlagInvalidation(): void {
+  try {
+    getFlagRedis()
+      ?.publish('omestre:flag:invalidate', '')
+      .catch(() => {});
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** Resolve após timeout OU ao receber invalidação (usado pelo dispatcher pausado). */
+export function waitForFlagChange(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, timeoutMs);
+    const w = () => {
+      clearTimeout(timer);
+      cleanup();
+      resolve();
+    };
+    const cleanup = () => {
+      wakeWaiters = wakeWaiters.filter((x) => x !== w);
+    };
+    wakeWaiters.push(w);
+  });
+}
+```
+
+- A API chama `initFlagInvalidation()` no startup (multi-réplica safe; numa instância única o `invalidateFlagCache()` local já basta, mas o subscriber cobre toggles de outras instâncias futuras).
+- **O dispatcher é quem mais se beneficia**: não tem request para "esperar", então precisa ser acordado — ver §6.
+
 ---
 
 ## 5. API — módulo admin
@@ -290,6 +358,7 @@ Novo módulo `apps/api/src/modules/admin/feature-flags.routes.ts`, montado em `a
 
 - `checksLastHour` vem de `countFlagChecks(key, 60)` (agregado de API + dispatcher via Redis). Se o Redis estiver indisponível, vem `0` (métrica degrada graciosamente, não quebra a tela).
 
+- Após o `upsert` + `invalidateFlagCache()` local → `publishFlagInvalidation()` (publica no canal `omestre:flag:invalidate` via PubSub para os demais processos — v. §4.3).
 - Todo PATCH gera log estruturado: `{ flag, enabled, updatedBy }` — trilha de auditoria mínima via stdout.
 
 ### 5.3 Gate de manutenção na API
@@ -329,23 +398,30 @@ Regras:
 
 `apps/dispatcher/src/index.ts`, no topo do `while (true)` do `mainLoop()` (linha ~162), ANTES do `xreadgroup`:
 
-```typescript
+````typescript
 import { isFeatureEnabled } from '@omestre/feature-flags';
-
+```typescript
+let wasPaused = false;
 while (true) {
   if (!(await isFeatureEnabled('evolution_send_enabled'))) {
-    log('warn', 'Envio pausado por feature flag (evolution_send_enabled=false)');
-    await Bun.sleep(5_000);
+    if (!wasPaused) {
+      log('warn', 'Envio pausado por feature flag (evolution_send_enabled=false)');
+      wasPaused = true;
+    }
+    // Acorda na hora se a flag voltar (PubSub); 5s é só fallback (v. §4.3)
+    await waitForFlagChange(5_000);
     continue;
   }
+  wasPaused = false;
   // ... xreadgroup existente
 }
-```
+````
 
 Comportamento:
 
 - Pausa **antes** de ler a fila → nada entra na PEL, nada é perdido, XLEN da Queue B cresce (visível no `/worker-status`).
-- Re-check a cada 5s (+ até 10s do TTL do cache ⇒ efeito em ≤15s).
+- O dispatcher chama `initFlagInvalidation()` no startup (assina o canal de invalidação).
+- Re-ativar é **imediato** (PubSub acorda o `waitForFlagChange` em sub-segundo); os 5s são só fallback caso o aviso seja perdido. O TTL de 10s do cache cobre processo que reiniciou.
 - Log `warn` uma vez por ciclo de pausa — considerar logar só na transição (flag booleano local `wasPaused`) para não poluir stdout.
 - `evolution_send_enabled` **não afeta** API nem Ingestor — o pipeline continua convertendo e enfileirando. É exatamente o cenário "Evolution API em manutenção / número em risco de ban: segura o envio, não perde oferta".
 - Adicionar `dispatcher_paused_by_flag` como gauge/counter no metrics-server (opcional, ver §10).
@@ -410,6 +486,7 @@ Layout (lista simples — poucas flags, sem master-detail):
   - repo lançando erro → retorna `defaultValue`, não propaga
   - `isFlagKey` rejeita chave desconhecida
   - **métrica**: `countFlagChecks` soma buckets quando Redis mock retorna valores; retorna `0` se Redis nulo/erro; `isFeatureEnabled` chama `recordFlagCheck` (INCR no bucket do minuto atual)
+  - **invalidation**: `initFlagInvalidation` registra handler que chama `invalidateFlagCache` + resolve `waitForFlagChange`; `publishFlagInvalidation` publica no canal; handler de `message` acorda waiters (assert que `waitForFlagChange` resolve antes do timeout ao simular mensagem)
 - `apps/api/src/modules/__tests__/feature-flags.routes.test.ts` (se houver padrão de teste de rota): 401/403/PATCH ok/flag desconhecida.
 
 ### 8.2 E2E (Playwright — `bun run test:e2e`, obrigatório para UI nova)
@@ -475,7 +552,7 @@ Cada fase = commit próprio (conventional commits: `feat(db):`, `feat(api):`, `f
 
 ## 11. Riscos e questões abertas
 
-1. **Propagação em até ~15s** (TTL 10s + sleep 5s do dispatcher). Aceitável para manutenção? Se precisar de efeito imediato, trocar cache TTL por Redis PubSub de invalidação (mais infra, provavelmente YAGNI).
+1. **Propagação**: com PubSub (§4.3) o toggle é sub-segundo em todos os processos; o TTL de 10s do cache é apenas fallback (caso o aviso seja perdido ou Redis esteja fora). Se Redis estiver indisponível, pior caso ~10s — aceitável para manutenção/kill switch.
 2. **`maintenance_mode` não pausa o webhook nem o pipeline** (decisão deliberada — manutenção é da experiência do usuário). Se a manutenção for do _banco_ (migration pesada), o operador deve ativar as **duas** flags. Documentar isso na descrição da flag? (proposto: sim, já está na description).
 3. **Dispatcher pausado por muito tempo** → Queue B cresce (maxlen do stream trunca em cenários extremos) e, ao reativar, rajada de envios limitada pelo rate limiter — comportamento desejado, mas vale monitorar o XLEN no worker-status durante manutenções longas.
 4. **Client no dispatcher usa conexão PG** — o dispatcher hoje já depende de `@omestre/db` (resolve mirrorId), então não há dependência nova. Confirmar na implementação que `getDb()` está inicializado no startup do dispatcher.
