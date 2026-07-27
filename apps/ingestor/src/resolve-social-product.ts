@@ -98,6 +98,9 @@ function extractOgImage(html: string): string | null {
   return null;
 }
 
+/** Exportado apenas para teste unitário. */
+export const _testExtractOgImage = extractOgImage;
+
 /** Extrai URL do produto e imagem do mesmo HTML /social/. */
 export function extractSocialProductDataFromHtml(html: string): SocialProductResolution | null {
   const productUrlMatch = html.match(

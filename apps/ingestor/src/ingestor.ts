@@ -156,9 +156,9 @@ function loadWhitelist(): string[] {
  * - 'other':   marketplace detectado mas sem padrão de produto claro
  *              (ex.: shortlink s.shopee.com.br não resolvido)
  */
-type LinkKind = 'product' | 'coupon' | 'other';
+export type LinkKind = 'product' | 'coupon' | 'other';
 
-interface ExtractedLink {
+export interface ExtractedLink {
   url: string;
   kind: LinkKind;
 }
@@ -217,8 +217,10 @@ export function extractAllMarketplaceLinks(text: string): ExtractedLink[] {
  * Extrai a URL de marketplace da mensagem (compatibilidade).
  * Pega o primeiro link não-cupom — mantém o comportamento antigo para
  * chamadores que não tratam múltiplos links.
+ *
+ * Exportado apenas para teste unitário.
  */
-function extractMarketplaceUrl(text: string): string | null {
+export function extractMarketplaceUrl(text: string): string | null {
   const links = extractAllMarketplaceLinks(text);
   if (links.length === 0) return null;
   const nonCoupon = links.find((l) => l.kind !== 'coupon');
@@ -232,8 +234,10 @@ function extractMarketplaceUrl(text: string): string | null {
  *
  * Exemplo: "#MercadoLivre #Parceria | t.me/cuponsm"
  *       →  "#MercadoLivre #Parceria"
+ *
+ * Exportado apenas para teste unitário.
  */
-function sanitizeNonOfferLinks(text: string): string {
+export function sanitizeNonOfferLinks(text: string): string {
   // Remove URLs de Telegram (t.me/*)
   let sanitized = text.replace(/https?:\/\/t\.me\/[^\s<>"']+/gi, '');
   // Remove separadores órfãos no final de linha (ex.: "| " sem link)

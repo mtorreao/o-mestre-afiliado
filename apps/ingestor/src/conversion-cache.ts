@@ -7,10 +7,7 @@
 
 import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
-import {
-  MIRROR_CONVERSION_CACHE_PREFIX,
-  MIRROR_CONVERSION_CACHE_TTL,
-} from '@omestre/shared';
+import { MIRROR_CONVERSION_CACHE_PREFIX, MIRROR_CONVERSION_CACHE_TTL } from '@omestre/shared';
 
 export interface CachedConversion {
   convertedUrl: string | null;
@@ -53,6 +50,29 @@ function getCacheRedis(): Redis | null {
 function urlToCacheKey(url: string): string {
   const hash = createHash('sha256').update(url).digest('hex');
   return `${MIRROR_CONVERSION_CACHE_PREFIX}${hash}`;
+}
+
+/** Exportado apenas para teste unitário. */
+export const _testUrlToCacheKey = urlToCacheKey;
+
+/**
+ * Injeta um Redis mock para testes unitários. Quando `mockRedis` é null,
+ * o cache desabilita (enabled=false) para evitar lazy-connect real.
+ */
+export function _setRedisForTest(mockRedis: Redis | null): void {
+  redis = mockRedis;
+  if (mockRedis === null) {
+    enabled = false;
+  } else {
+    enabled = true;
+  }
+}
+
+/**
+ * Força o estado "enabled" para testes.
+ */
+export function _setEnabledForTest(value: boolean): void {
+  enabled = value;
 }
 
 export async function getCachedConversion(url: string): Promise<CachedConversion | null> {
