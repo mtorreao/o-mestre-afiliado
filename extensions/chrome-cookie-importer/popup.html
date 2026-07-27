@@ -3,96 +3,124 @@
 <head>
 <meta charset="utf-8">
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { width: 400px; min-height: 300px; background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; font-size: 14px; }
-.container { padding: 16px; }
-h1 { font-size: 16px; margin-bottom: 2px; background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.subtitle { font-size: 12px; color: #64748b; margin-bottom: 12px; }
-label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
-select, input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 13px; outline: none; margin-bottom: 8px; }
-input.half { width: 48%; }
-.row { display: flex; gap: 4%; margin-bottom: 0; }
-button { width: 100%; padding: 10px; border-radius: 8px; border: none; background: #6366f1; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .2s; }
-button:hover { background: #4f46e5; }
-button:disabled { background: #6366f180; cursor: not-allowed; }
-button.secondary { background: #1e293b; border: 1px solid #334155; color: #94a3b8; margin-top: 6px; }
-button.success { background: #059669; }
-button.success:hover { background: #047857; }
-.status { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; }
-.status.success { display: block; background: #14532d; border: 1px solid #166534; color: #86efac; }
-.status.error { display: block; background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; }
-.status.loading { display: block; background: #1e3a5f; border: 1px solid #1d4ed8; color: #93c5fd; }
-.session-state { margin: 6px 0 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
-.session-state.neutral { background: #1e293b; color: #94a3b8; }
-.session-state.valid { background: #14532d; color: #86efac; }
-.session-state.expired { background: #7f1d1d; color: #fca5a5; }
-.header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.header-logo { width: 36px; height: 36px; border-radius: 8px; }
-.header-text { flex: 1; }
-.badge { background: #1e293b; color: #64748b; font-size: 10px; padding: 3px 8px; border-radius: 12px; }
-.hr { border: none; border-top: 1px solid #1e293b; margin: 12px 0; }
-.section-title { font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 8px; }
-.url-preview { font-size: 11px; color: #475569; word-break: break-all; margin-bottom: 8px; }
-.footer { text-align: center; font-size: 11px; color: #475569; margin-top: 12px; line-height: 1.4; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { width:420px; min-height:350px; background:#0f172a; color:#e2e8f0; font-family:system-ui,sans-serif; font-size:14px; }
+.container { padding:14px; }
+h1 { font-size:15px; background:linear-gradient(135deg,#818cf8,#c084fc); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.subtitle { font-size:11px; color:#64748b; margin-bottom:10px; }
+label { display:block; font-size:11px; color:#94a3b8; margin-bottom:3px; }
+select,input,textarea { width:100%; padding:6px 8px; border-radius:6px; border:1px solid #334155; background:#1e293b; color:#e2e8f0; font-size:13px; outline:none; margin-bottom:6px; }
+textarea { font-family:monospace; font-size:12px; resize:vertical; min-height:60px; }
+.row { display:flex; gap:4%; margin-bottom:0; }
+.row > div { width:48%; }
+button { width:100%; padding:9px; border-radius:8px; border:none; background:#6366f1; color:white; font-size:13px; font-weight:600; cursor:pointer; transition:background .2s; }
+button:hover { background:#4f46e5; }
+button:disabled { background:#6366f180; cursor:not-allowed; }
+button.success { background:#059669; }
+button.success:hover { background:#047857; }
+button.danger { background:#dc2626; }
+button.small { width:auto; padding:5px 10px; font-size:11px; }
+.tab-bar { display:flex; gap:4px; margin-bottom:10px; }
+.tab { flex:1; text-align:center; padding:6px; border-radius:6px; background:#1e293b; color:#94a3b8; cursor:pointer; font-size:12px; }
+.tab.active { background:#6366f1; color:white; }
+.tab-content { display:none; }
+.tab-content.active { display:block; }
+.status { margin-top:8px; padding:8px 10px; border-radius:6px; font-size:12px; display:none; }
+.status.success { display:block; background:#14532d; color:#86efac; }
+.status.error { display:block; background:#7f1d1d; color:#fca5a5; }
+.status.loading { display:block; background:#1e3a5f; color:#93c5fd; }
+.session-state { margin:4px 0 8px; padding:6px 8px; border-radius:6px; font-size:11px; }
+.session-state.neutral { background:#1e293b; color:#94a3b8; }
+.session-state.valid { background:#14532d; color:#86efac; }
+.session-state.expired { background:#7f1d1d; color:#fca5a5; }
+.group-list { max-height:100px; overflow-y:auto; margin-bottom:6px; padding:6px; background:#0f172a; border-radius:6px; border:1px solid #1e293b; }
+.group-item { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:12px; }
+.group-item input { width:auto; margin:0; }
+.log-list { max-height:180px; overflow-y:auto; }
+.log-entry { padding:6px 8px; border-bottom:1px solid #1e293b; font-size:11px; }
+.log-entry:last-child { border-bottom:0; }
+.log-entry .time { color:#64748b; font-size:10px; }
+.log-entry .status-badge { display:inline-block; padding:1px 5px; border-radius:4px; font-size:10px; }
+.status-badge.sent { background:#14532d; color:#86efac; }
+.status-badge.error { background:#7f1d1d; color:#fca5a5; }
+.opt-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.opt-row input[type=checkbox] { width:auto; margin:0; }
+.opt-row label { margin:0; }
+.ml-badge { background:#1e293b; color:#64748b; font-size:10px; padding:2px 6px; border-radius:10px; }
+.ml-status { font-size:11px; }
 </style>
 </head>
 <body>
 <div class="container">
-  <div class="header-row">
-    <img src="icons/icon128.png" alt="" class="header-logo">
-    <div class="header-text"><h1>O Mestre Afiliado</h1><div class="subtitle">Criar oferta para grupos</div></div>
-    <div class="badge" id="mlStatus">🔴 ML</div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    <div style="flex:1"><h1>O Mestre Afiliado</h1><div class="subtitle" id="mlStatus">🔴 Abra um marketplace</div></div>
+    <div class="ml-badge" id="sessionBadge">—</div>
   </div>
 
-  <label for="apiUrl">URL da API</label>
-  <input type="url" id="apiUrl" value="https://dev.omestreafiliado.com.br" placeholder="https://dev.omestreafiliado.com.br">
-
-  <label for="affiliateSelect">Afiliado</label>
-  <select id="affiliateSelect"><option value="">— Carregando... —</option></select>
-
-  <!-- Session UI (hidden when product detected) -->
-  <div class="session-ui">
-    <div id="sessionState" class="session-state neutral">Sessão ainda não validada</div>
-    <button id="importBtn" disabled>📥 Sincronizar cookies</button>
-    <button id="validateBtn" class="secondary" disabled>🔎 Validar sessão</button>
-    <hr class="hr">
+  <div class="tab-bar">
+    <div class="tab active" data-tab="offer">📦 Oferta</div>
+    <div class="tab" data-tab="session">🔑 Sessão</div>
+    <div class="tab" data-tab="log">📋 Histórico</div>
   </div>
 
-  <!-- Offer UI (hidden when no product) -->
-  <div class="offer-ui" style="display:none">
-    <hr class="hr">
-    <div class="section-title">📦 Nova oferta</div>
-    <label>Marketplace <span id="offerMarketplace" style="color:#94a3b8">—</span></label>
-    <div class="url-preview" id="offerUrlPreview"></div>
+  <!-- Tab: Oferta -->
+  <div class="tab-content active" id="tab-offer">
+    <label>URL do produto</label>
+    <input id="offerUrl" readonly style="color:#64748b">
 
-    <label for="offerTitle">Título (opcional)</label>
+    <label>Título (opcional)</label>
     <input id="offerTitle" placeholder="Ex: Oferta imperdível!">
 
-    <label for="offerProductName">Nome do produto</label>
+    <label>Nome do produto</label>
     <input id="offerProductName">
 
     <div class="row">
-      <div style="width:48%">
-        <label for="offerPriceFrom">De</label>
-        <input id="offerPriceFrom" class="half" placeholder="R$ 199,90">
-      </div>
-      <div style="width:48%">
-        <label for="offerPrice">Por</label>
-        <input id="offerPrice" class="half" placeholder="R$ 149,90">
-      </div>
+      <div><label>De</label><input id="offerPriceFrom" placeholder="R$ 199,90"></div>
+      <div><label>Por</label><input id="offerPrice" placeholder="R$ 149,90"></div>
     </div>
 
-    <label for="offerCoupon">Cupom (opcional)</label>
-    <input id="offerCoupon" placeholder="Ex: AFILIADO10">
+    <label>Cupom (opcional)</label>
+    <input id="offerCoupon" placeholder="AFILIADO10">
 
+    <label>Imagem do produto</label>
+    <div class="opt-row">
+      <input type="checkbox" id="offerWithImage" checked>
+      <label for="offerWithImage">Incluir imagem no post</label>
+    </div>
+
+    <label>Preview da mensagem</label>
+    <textarea id="offerPreview" readonly></textarea>
+
+    <label>Grupos de destino (<span id="groupCount">0</span> selecionados)</label>
+    <div class="group-list" id="groupList"><span style="color:#64748b">Carregando grupos...</span></div>
+    <div class="opt-row">
+      <input type="checkbox" id="selectAllGroups" checked>
+      <label for="selectAllGroups">Selecionar todos</label>
+    </div>
+
+    <div class="status" id="offerStatus"></div>
     <button id="sendOfferBtn" class="success" disabled>🚀 Enviar para grupos</button>
+    <a id="optionsLink" href="#" style="display:block;text-align:center;margin-top:6px;font-size:11px;color:#6366f1">⚙️ Abrir configurações</a>
   </div>
 
-  <div class="status" id="status"></div>
-  <div class="footer" id="offerHelp">
-    Produto detectado automaticamente na página. Preencha e envie para seus grupos de destino.
+  <!-- Tab: Sessão -->
+  <div class="tab-content" id="tab-session">
+    <label for="affiliateSelect">Afiliado</label>
+    <select id="affiliateSelect"><option>— Carregando... —</option></select>
+    <div id="sessionState" class="session-state neutral">Sessão ainda não validada</div>
+    <button id="importBtn" disabled>📥 Sincronizar cookies</button>
+    <button id="validateBtn" style="margin-top:4px" class="secondary" disabled>🔎 Validar sessão</button>
+    <div class="status" id="sessionStatus"></div>
   </div>
-  <button id="optionsBtn" class="secondary" style="margin-top:8px">⚙️ Configurações</button>
+
+  <!-- Tab: Histórico -->
+  <div class="tab-content" id="tab-log">
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+      <span style="font-size:12px;color:#94a3b8">Últimas ofertas enviadas</span>
+      <button id="clearLogBtn" class="small danger" style="width:auto">Limpar</button>
+    </div>
+    <div id="logList" class="log-list"><span style="color:#64748b;font-size:12px">Nenhuma oferta enviada ainda.</span></div>
+  </div>
 </div>
 <script type="module" src="popup.js"></script>
 </body>
