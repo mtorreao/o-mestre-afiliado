@@ -7,7 +7,11 @@
 import { Elysia, t } from 'elysia';
 import { MirrorRepository, WhatsAppInstanceRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
-import { instanceNameFromUserId, sendGroupMessage } from '../../services/evolution.ts';
+import {
+  instanceNameFromUserId,
+  sendGroupMessage,
+  sendMediaMessage,
+} from '../../services/evolution.ts';
 import { convertMarketplaceUrl } from './extension.service.ts';
 
 const mirrorRepo = new MirrorRepository();
@@ -132,13 +136,21 @@ export const extensionRoutes = new Elysia()
 
       for (const group of groupsToSend) {
         try {
-          // Se imageUrl foi fornecida, inclui no texto como fallback
-          let textToSend = message;
+          let evoRes;
           if (imageUrl) {
-            textToSend = message + '\n\n📷 ' + imageUrl;
+            // Envia como mídia nativa (imagem + legenda) via Evolution API
+            evoRes = await sendMediaMessage(instanceName, group.jid, imageUrl, message);
+            // Fallback para texto se mídia falhar
+            if (!evoRes.success) {
+              evoRes = await sendGroupMessage(
+                instanceName,
+                group.jid,
+                message + '\n\n📷 ' + imageUrl,
+              );
+            }
+          } else {
+            evoRes = await sendGroupMessage(instanceName, group.jid, message);
           }
-
-          const evoRes = await sendGroupMessage(instanceName, group.jid, textToSend);
           sentTo.push({
             groupJid: group.jid,
             groupName: group.name,

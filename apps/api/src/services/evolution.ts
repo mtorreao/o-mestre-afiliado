@@ -16,6 +16,7 @@ import {
   buildEvolutionUrl,
   buildFindMessagesBody,
   buildSendTextBody,
+  buildSendMediaBody,
   evolutionEndpoints,
   extractGroupList,
   extractMessageList,
@@ -440,6 +441,35 @@ export async function refreshInstance(instanceName: string): Promise<{
   }
 
   return result;
+}
+
+/**
+ * Envia imagem com legenda para um grupo via Evolution API.
+ *
+ * POST /message/sendMedia/{instanceName}
+ * media é uma URL pública da imagem.
+ */
+export async function sendMediaMessage(
+  instanceName: string,
+  groupJid: string,
+  mediaUrl: string,
+  caption: string = '',
+  delayMs: number = 2000,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(url(evolutionEndpoints.sendMedia(instanceName)), {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(buildSendMediaBody(groupJid, mediaUrl, caption, delayMs)),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      return { success: false, error: httpErrorMessage(res.status, body) };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Erro ao enviar mídia' };
+  }
 }
 
 /**
