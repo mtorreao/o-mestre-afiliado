@@ -239,6 +239,30 @@ describe('sendGroupMessage', () => {
   });
 });
 
+describe('sendMediaMessage', () => {
+  it('POST /message/sendMedia/{name}', async () => {
+    fetchImpl = async () => jsonResponse({ success: true });
+    const res = await (
+      await import('./evolution.ts')
+    ).sendMediaMessage('user-1', '1@g.us', 'https://http2.mlstatic.com/img.jpg', '🔥 Oferta!');
+    expect(res.success).toBe(true);
+    const call = calls[calls.length - 1]!;
+    expect(call.url).toContain('/message/sendMedia/user-1');
+    const body = JSON.parse(call.init.body as string);
+    expect(body.mediatype).toBe('image');
+    expect(body.media).toContain('https://http2.mlstatic.com/img.jpg');
+    expect(body.caption).toBe('🔥 Oferta!');
+  });
+
+  it('erro HTTP → success false', async () => {
+    fetchImpl = async () => textResponse('invalid media', 400);
+    const res = await (
+      await import('./evolution.ts')
+    ).sendMediaMessage('user-1', '1@g.us', 'http://bad.url/img.jpg');
+    expect(res.success).toBe(false);
+  });
+});
+
 describe('createInstanceWithQR', () => {
   it('retorna qrcode quando createInstance traz', async () => {
     fetchImpl = async () =>

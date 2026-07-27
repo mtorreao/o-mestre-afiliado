@@ -94,14 +94,14 @@ export function buildSendTextBody(
 export function buildSendMediaBody(
   groupJid: string,
   mediaUrl: string,
-  caption: string,
+  caption: string = '',
   delayMs: number = 2000,
 ): Record<string, unknown> {
   return {
     number: groupJid,
     mediatype: 'image',
     media: mediaUrl,
-    caption,
+    caption: caption || '',
     delay: delayMs,
   };
 }
