@@ -14,11 +14,20 @@
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 
 const ALGORITHM = 'aes-256-gcm';
-const IV_LENGTH = 12;   // 96 bits — recomendado para GCM
-const TAG_LENGTH = 16;  // 128 bits — auth tag
+const IV_LENGTH = 12; // 96 bits — recomendado para GCM
+const TAG_LENGTH = 16; // 128 bits — auth tag
 
 /** Cache da chave derivada — evita parse a cada chamada. */
 let _key: Buffer | null = null;
+
+/**
+ * Reseta o cache da chave derivada. Útil em testes para garantir
+ * que mudanças em `process.env.ENCRYPTION_KEY` entre casos sejam
+ * aplicadas. Não usar em produção.
+ */
+export function _resetKeyCache(): void {
+  _key = null;
+}
 
 function getKey(): Buffer {
   if (_key) return _key;
@@ -27,7 +36,7 @@ function getKey(): Buffer {
   if (!raw) {
     throw new Error(
       'ENCRYPTION_KEY não configurada. Defina uma chave de 32 bytes em hex ' +
-      '(64 caracteres hex). Ex: openssl rand -hex 32',
+        '(64 caracteres hex). Ex: openssl rand -hex 32',
     );
   }
 
@@ -42,7 +51,7 @@ function getKey(): Buffer {
     // Aviso: menos seguro, mas evita crash em dev
     console.warn(
       '[crypto] ENCRYPTION_KEY com formato desconhecido — usando SHA-256. ' +
-      'Para produção, gere uma chave de 32 bytes com: openssl rand -hex 32',
+        'Para produção, gere uma chave de 32 bytes com: openssl rand -hex 32',
     );
     _key = createHash('sha256').update(normalized).digest();
   }
@@ -64,10 +73,7 @@ export function encrypt(plaintext: string | null | undefined): string | null {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
 
-  const encrypted = Buffer.concat([
-    cipher.update(plaintext, 'utf-8'),
-    cipher.final(),
-  ]);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
   // Formato: iv + authTag + ciphertext → base64
@@ -100,15 +106,10 @@ export function decrypt(encrypted: string | null | undefined): string | null {
   decipher.setAuthTag(authTag);
 
   try {
-    const decrypted = Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final(),
-    ]);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     return decrypted.toString('utf-8');
   } catch {
-    console.warn(
-      '[crypto] Falha ao descriptografar — chave pode ter mudado ou dados corrompidos',
-    );
+    console.warn('[crypto] Falha ao descriptografar — chave pode ter mudado ou dados corrompidos');
     return null;
   }
 }

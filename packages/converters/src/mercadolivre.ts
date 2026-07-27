@@ -102,7 +102,7 @@ export async function getAccessToken(
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as Record<string, unknown>;
+    const err = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     throw new Error(`OAuth erro ${res.status}: ${(err.message as string) || res.statusText}`);
   }
 
@@ -151,9 +151,20 @@ function generateMetadataSessionId(): string {
 }
 
 /**
+ * Gera um session ID para o header X-Metadata-Session-Id usado pelo
+ * Link Builder do Mercado Livre. Exportado apenas para teste unitário.
+ */
+export function _testGenerateMetadataSessionId(): string {
+  return generateMetadataSessionId();
+}
+
+/**
  * Tenta gerar link simulando o Link Builder via cookies
  */
-export async function generateViaCookies(productUrl: string, cookies: string | undefined): Promise<string | null> {
+export async function generateViaCookies(
+  productUrl: string,
+  cookies: string | undefined,
+): Promise<string | null> {
   if (!cookies) return null;
 
   const metadataSessionId = generateMetadataSessionId();
@@ -212,7 +223,7 @@ export async function refreshSessionCookies(currentCookies: string | undefined):
   return currentCookies;
 }
 
-function mergeCookies(existing: string, setCookie: string): string {
+function mergeCookiesInternal(existing: string, setCookie: string): string {
   const cookieMap = new Map<string, string>();
 
   existing.split(';').forEach((c) => {
@@ -231,6 +242,14 @@ function mergeCookies(existing: string, setCookie: string): string {
   return Array.from(cookieMap.entries())
     .map(([k, v]) => `${k}=${v}`)
     .join('; ');
+}
+
+/**
+ * Mescla cookies existentes com novos Set-Cookie headers.
+ * Exportado apenas para teste unitário.
+ */
+export function mergeCookies(existing: string, setCookie: string): string {
+  return mergeCookiesInternal(existing, setCookie);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

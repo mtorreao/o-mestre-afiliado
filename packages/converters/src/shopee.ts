@@ -376,6 +376,11 @@ function extractShopeeSlug(url: string): string | null {
   return null;
 }
 
+/** Exportado apenas para teste unitário. */
+export const _testExtractShopeeItemIdFromUrl = extractShopeeItemIdFromUrl;
+/** Exportado apenas para teste unitário. */
+export const _testExtractShopeeSlug = extractShopeeSlug;
+
 /**
  * Converte uma URL de produto Shopee em link de afiliado
  * (usa credenciais do .env).
