@@ -256,6 +256,7 @@ const EXCLUDED_FROM_COVERAGE = new Set<string>([
   'apps/ingestor/src/link-converters.ts',
   'apps/ingestor/src/product-image.ts',
   'apps/ingestor/src/resolve-social-product.ts',
+  'apps/ingestor/src/resolve-redirect.ts', // orquestração de fetch de redirects (rede)
   'apps/ingestor/src/conversion-cache.ts',
   'apps/ingestor/src/source-group-cache.ts',
   'apps/ingestor/src/offer-logger.ts',
