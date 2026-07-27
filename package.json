@@ -32,6 +32,7 @@
     "typecheck": "bun run scripts/typecheck-all.ts",
     "typecheck:root": "tsc --noEmit",
     "test:unit": "bun run scripts/test-unit.ts",
+    "test:coverage": "bun run scripts/test-coverage.ts",
     "test:all": "bun run test:unit && bun run test:e2e",
     "setup:hooks": "bun run scripts/setup-hooks.sh"
   },

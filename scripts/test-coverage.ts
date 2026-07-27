@@ -1,0 +1,341 @@
+#!/usr/bin/env bun
+/**
+ * scripts/test-coverage.ts — Mede cobertura de testes unitários em
+ * todos os subprojetos, agregando num único relatório.
+ *
+ * Roda `bun test --coverage` em cada apps/* e packages/* que tenha
+ * *.test.ts. Cada subprojeto gera seu próprio .lcov em
+ * `<subdir>/coverage/lcov.info`. Consolidamos tudo num relatório
+ * agregado com:
+ *  - % médio de cobertura (functions, lines, branches)
+ *  - tabela por arquivo/módulo (top 20 piores)
+ *  - paths uncovered
+ *
+ * Variáveis de ambiente:
+ *  - COVERAGE_REPORTER: 'text' (default), 'lcov', ou 'text+lcov'
+ *
+ * Uso:
+ *   bun run scripts/test-coverage.ts
+ */
+import { spawn } from 'node:child_process';
+import { resolve, join } from 'node:path';
+import {
+  readdirSync,
+  statSync,
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+
+const ROOT = resolve(import.meta.dir, '..');
+const COVERAGE_DIR = resolve(ROOT, 'coverage');
+const REPORTER = process.env.COVERAGE_REPORTER || 'text';
+
+function hasTestFiles(dir: string): boolean {
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (hasTestFiles(full)) return true;
+      } else if (entry.isFile() && entry.name.endsWith('.test.ts')) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function listSubprojectsWithTests(dir: string): string[] {
+  const abs = resolve(ROOT, dir);
+  try {
+    return readdirSync(abs)
+      .filter((name) => {
+        const subdir = resolve(abs, name);
+        const tsconfig = resolve(subdir, 'tsconfig.json');
+        try {
+          if (!statSync(tsconfig).isFile()) return false;
+        } catch {
+          return false;
+        }
+        const srcDir = resolve(subdir, 'src');
+        try {
+          if (!statSync(srcDir).isDirectory()) return false;
+        } catch {
+          return false;
+        }
+        return hasTestFiles(srcDir);
+      })
+      .map((name) => resolve(abs, name));
+  } catch {
+    return [];
+  }
+}
+
+const subprojects = [
+  ...listSubprojectsWithTests('apps'),
+  ...listSubprojectsWithTests('packages'),
+].sort();
+
+if (subprojects.length === 0) {
+  console.log('⚠️  Nenhum subprojeto com *.test.ts encontrado — nada a medir.');
+  process.exit(0);
+}
+
+// Limpa coverage/ raiz e prepara estrutura
+if (existsSync(COVERAGE_DIR)) {
+  rmSync(COVERAGE_DIR, { recursive: true, force: true });
+}
+mkdirSync(COVERAGE_DIR, { recursive: true });
+
+console.log(`📊 Medindo cobertura em ${subprojects.length} subprojeto(s) em paralelo...\n`);
+
+interface SubprojectResult {
+  name: string;
+  rel: string;
+  durationMs: number;
+  exitCode: number;
+  textSummary: string;
+  hasLcov: boolean;
+  lcovPath: string;
+}
+
+async function runProject(dir: string): Promise<SubprojectResult> {
+  const rel = dir.replace(ROOT, '').replace(/\\/g, '/').replace(/^\//, '');
+  const name = rel.split('/').slice(-2).join('/');
+  const startedAt = Date.now();
+  const lcovPath = join(dir, 'coverage', 'lcov.info');
+
+  return new Promise((resolveRun) => {
+    const child = spawn(
+      'bun',
+      ['test', '--coverage', '--coverage-reporter=text', '--coverage-reporter=lcov'],
+      {
+        cwd: dir,
+        env: { ...process.env, DOCKER_CLI_HINTS: 'false' },
+        shell: process.platform === 'win32',
+      },
+    );
+
+    const chunks: Buffer[] = [];
+    child.stdout?.on('data', (c) => chunks.push(Buffer.from(c)));
+    child.stderr?.on('data', (c) => chunks.push(Buffer.from(c)));
+
+    child.on('close', (code) => {
+      const rawOutput = Buffer.concat(chunks).toString('utf8');
+      const hasLcov = existsSync(lcovPath);
+      resolveRun({
+        name,
+        rel,
+        durationMs: Date.now() - startedAt,
+        exitCode: code ?? 0,
+        textSummary: rawOutput,
+        hasLcov: existsSync(lcovPath),
+        lcovPath,
+      });
+      if (!existsSync(lcovPath)) {
+        console.warn(`  ⚠️  ${name}: lcov NÃO gerado em ${lcovPath}`);
+        console.warn(`  ⚠️  Raw exit: ${code}, dir exists: ${existsSync(dir)}`);
+      }
+    });
+  });
+}
+
+const results: SubprojectResult[] = [];
+for (const dir of subprojects) {
+  const r = await runProject(dir);
+  results.push(r);
+}
+results.sort((a, b) => a.rel.localeCompare(b.rel));
+
+// ─── Consolida lcov se disponível ────────────────────────────────────
+interface LcovRecord {
+  file: string;
+  linesFound: number;
+  linesHit: number;
+  functionsFound: number;
+  functionsHit: number;
+  branchesFound: number;
+  branchesHit: number;
+}
+
+function parseLcov(content: string): LcovRecord {
+  const rec: LcovRecord = {
+    file: '',
+    linesFound: 0,
+    linesHit: 0,
+    functionsFound: 0,
+    functionsHit: 0,
+    branchesFound: 0,
+    branchesHit: 0,
+  };
+  for (const line of content.split('\n')) {
+    if (line.startsWith('SF:')) rec.file = line.slice(3);
+    else if (line.startsWith('LF:')) rec.linesFound = Number(line.slice(3));
+    else if (line.startsWith('LH:')) rec.linesHit = Number(line.slice(3));
+    else if (line.startsWith('FNF:')) rec.functionsFound = Number(line.slice(4));
+    else if (line.startsWith('FNH:')) rec.functionsHit = Number(line.slice(4));
+    else if (line.startsWith('BRF:')) rec.branchesFound = Number(line.slice(4));
+    else if (line.startsWith('BRH:')) rec.branchesHit = Number(line.slice(4));
+  }
+  return rec;
+}
+
+const allRecords: LcovRecord[] = [];
+for (const r of results) {
+  if (r.hasLcov) {
+    try {
+      const content = readFileSync(r.lcovPath, 'utf-8');
+      // lcov pode ter múltiplos records (separados por 'end_of_record')
+      const records = content
+        .split('end_of_record')
+        .map((chunk) => {
+          const trimmed = chunk.trim();
+          return trimmed ? parseLcov(trimmed + '\nend_of_record\n') : null;
+        })
+        .filter((x): x is LcovRecord => x !== null && x.file !== '');
+      allRecords.push(...records);
+    } catch (err) {
+      console.warn(`⚠️  Não foi possível ler ${r.lcovPath}: ${err}`);
+    }
+  }
+}
+
+// ─── Sumariza ─────────────────────────────────────────────────────────
+let totalLines = 0,
+  hitLines = 0;
+let totalFuncs = 0,
+  hitFuncs = 0;
+let totalBranches = 0,
+  hitBranches = 0;
+for (const rec of allRecords) {
+  totalLines += rec.linesFound;
+  hitLines += rec.linesHit;
+  totalFuncs += rec.functionsFound;
+  hitFuncs += rec.functionsHit;
+  totalBranches += rec.branchesFound;
+  hitBranches += rec.branchesHit;
+}
+
+const linePct = totalLines > 0 ? (hitLines / totalLines) * 100 : 0;
+const funcPct = totalFuncs > 0 ? (hitFuncs / totalFuncs) * 100 : 0;
+const branchPct = totalBranches > 0 ? (hitBranches / totalBranches) * 100 : 0;
+
+// ─── Relatório ────────────────────────────────────────────────────────
+console.log('━'.repeat(78));
+console.log('📊 Cobertura Agregada');
+console.log('━'.repeat(78));
+console.log(
+  `  Funções:  ${hitFuncs.toString().padStart(5)} / ${totalFuncs.toString().padStart(5)}  (${funcPct.toFixed(2)}%)`,
+);
+console.log(
+  `  Linhas:  ${hitLines.toString().padStart(5)} / ${totalLines.toString().padStart(5)}  (${linePct.toFixed(2)}%)`,
+);
+console.log(
+  `  Branches: ${hitBranches.toString().padStart(5)} / ${totalBranches.toString().padStart(5)}  (${branchPct.toFixed(2)}%)`,
+);
+console.log('━'.repeat(78));
+
+// Tabela por subprojeto
+console.log('\n📦 Por subprojeto:');
+console.log('-'.repeat(78));
+console.log(
+  'Subprojeto'.padEnd(34) +
+    ' ' +
+    'Funções'.padStart(10) +
+    ' ' +
+    'Linhas'.padStart(10) +
+    ' ' +
+    'Branches'.padStart(10) +
+    ' ' +
+    'Tempo'.padStart(8),
+);
+console.log('-'.repeat(78));
+for (const r of results) {
+  // Soma só os records deste subprojeto (heurística simples: por path)
+  // Como o lcov é um arquivo por subprojeto, podemos acumular
+  // por re-parsear. Aqui simplificamos para exibir só a média global
+  // do subprojeto (se o bun --coverage text imprime).
+  const m = r.textSummary.match(/All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/);
+  const subFunc = m ? m[1] : '-';
+  const subLine = m ? m[2] : '-';
+  const ms = `${(r.durationMs / 1000).toFixed(1)}s`;
+  console.log(
+    r.name.padEnd(34) +
+      ' ' +
+      subFunc.padStart(8) +
+      '% ' +
+      subLine.padStart(8) +
+      '% ' +
+      '-'.padStart(9) +
+      ' ' +
+      ms.padStart(8),
+  );
+}
+console.log('-'.repeat(78));
+
+// Top 20 piores (menor % de linhas cobertas)
+const fileStats = allRecords
+  .filter((r) => r.linesFound > 0)
+  .map((r) => ({
+    file: r.file,
+    pct: (r.linesHit / r.linesFound) * 100,
+    lines: r.linesFound,
+    hits: r.linesHit,
+  }))
+  .sort((a, b) => a.pct - b.pct)
+  .slice(0, 20);
+
+if (fileStats.length > 0) {
+  console.log('\n🔻 Arquivos com menor cobertura (top 20):');
+  console.log('-'.repeat(78));
+  console.log('Arquivo'.padEnd(60) + ' ' + 'Linhas'.padStart(14) + ' ' + '%'.padStart(7));
+  console.log('-'.repeat(78));
+  for (const f of fileStats) {
+    const shortName = f.file.length > 58 ? '...' + f.file.slice(-55) : f.file;
+    console.log(
+      shortName.padEnd(60) +
+        ' ' +
+        `${f.hits}/${f.lines}`.padStart(14) +
+        ' ' +
+        `${f.pct.toFixed(1)}%`.padStart(7),
+    );
+  }
+  console.log('-'.repeat(78));
+}
+
+// Salva relatório consolidado
+const reportPath = join(COVERAGE_DIR, 'summary.md');
+let md = `# Cobertura Agregada — O Mestre Afiliado\n\n`;
+md += `Total: **${linePct.toFixed(2)}% linhas**, **${funcPct.toFixed(2)}% funções**, **${branchPct.toFixed(2)}% branches**\n\n`;
+md += `| Métrica | Coberto | Total | % |\n|---|---|---|---|\n`;
+md += `| Funções | ${hitFuncs} | ${totalFuncs} | ${funcPct.toFixed(2)}% |\n`;
+md += `| Linhas | ${hitLines} | ${totalLines} | ${linePct.toFixed(2)}% |\n`;
+md += `| Branches | ${hitBranches} | ${totalBranches} | ${branchPct.toFixed(2)}% |\n\n`;
+md += `## Por subprojeto\n\n`;
+md += `| Subprojeto | Funções | Linhas | Branches | Tempo |\n|---|---|---|---|---|\n`;
+for (const r of results) {
+  const m = r.textSummary.match(/All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/);
+  const subFunc = m ? `${m[1]}%` : '-';
+  const subLine = m ? `${m[2]}%` : '-';
+  md += `| ${r.name} | ${subFunc} | ${subLine} | - | ${(r.durationMs / 1000).toFixed(1)}s |\n`;
+}
+if (fileStats.length > 0) {
+  md += `\n## Arquivos com menor cobertura (top 20)\n\n`;
+  md += `| Arquivo | Linhas | % |\n|---|---|---|\n`;
+  for (const f of fileStats) {
+    md += `| ${f.file} | ${f.hits}/${f.lines} | ${f.pct.toFixed(1)}% |\n`;
+  }
+}
+writeFileSync(reportPath, md, 'utf-8');
+console.log(`\n📄 Relatório Markdown salvo em: ${reportPath.replace(ROOT + '/', '')}`);
+
+const failed = results.filter((r) => r.exitCode !== 0);
+if (failed.length > 0) {
+  console.log(`\n❌ ${failed.length} subprojeto(s) falharam`);
+  process.exit(1);
+}
