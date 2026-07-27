@@ -82,6 +82,10 @@ export function isMeliProductUrl(url: string): boolean {
     if (/\/p\/MLB\d+/i.test(u.pathname)) return true;
     // Social commerce: /social/<id> — página de produto com preço e CTA
     if (/^\/social\/[a-zA-Z0-9]+\/?$/i.test(u.pathname)) return true;
+    // Produto via resolução de /social/: produto.mercadolivre.com.br/MLB-{id}-{slug}
+    // Extraído por resolveSocialProductUrl(), o formato é MLB-{id} no pathname
+    // sem o prefixo /p/. Ex: /MLB-3310895673-tnis-fila-recovery-...
+    if (/\/MLB-\d+/i.test(u.pathname)) return true;
     return false;
   } catch {
     return false;
@@ -147,7 +151,7 @@ async function resolvePromozone(url: string): Promise<string | null> {
     });
 
     if (!res.ok) return null;
-    const data = await res.json() as { destinationUrl?: string };
+    const data = (await res.json()) as { destinationUrl?: string };
     if (!data.destinationUrl) return null;
 
     try {
@@ -203,11 +207,16 @@ async function resolveShopeeShortlink(url: string): Promise<string | null> {
     // Se a URL aponta para cupom/afiliado/voucher/wallet, descarta — não é
     // um produto. Esses links não devem ser usados como originalLink para
     // dedup nem para extração de imagem.
+    //
+    // NOTE: NÃO incluir /utm_/i.test(parsed.search) aqui! URLs de produto
+    // legítimas na Shopee frequentemente têm utm_campaign, utm_source,
+    // utm_medium, utm_content, utm_term — esses parâmetros são inseridos
+    // pelo próprio sistema de afiliados da Shopee para rastreamento e NÃO
+    // indicam que a página não é um produto. O padrão -i.SHOPID.ITEMID no
+    // pathname é o único indicador confiável de página de produto Shopee.
     const isProductPage = /-i\.\d+\.\d+/i.test(parsed.pathname);
     const isLandingPage =
-      /^\/user\//i.test(parsed.pathname) ||
-      /utm_/i.test(parsed.search) ||
-      /voucher-wallet/i.test(parsed.pathname);
+      /^\/user\//i.test(parsed.pathname) || /voucher-wallet/i.test(parsed.pathname);
 
     if (!isProductPage || isLandingPage) {
       return null;
@@ -386,8 +395,7 @@ export async function resolveRedirectUrl(url: string): Promise<string> {
       const resolved = await redirector.resolve(url);
       // Resolvers podem retornar string ou ResolvedMeliRedirect.
       // Normaliza para string (URL canônica ou URL original).
-      const resolvedUrl =
-        typeof resolved === 'string' ? resolved : resolved?.url;
+      const resolvedUrl = typeof resolved === 'string' ? resolved : resolved?.url;
       if (resolvedUrl && resolvedUrl !== url) return resolvedUrl;
       break;
     }
