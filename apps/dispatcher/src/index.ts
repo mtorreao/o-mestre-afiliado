@@ -12,16 +12,10 @@
 
 import Redis from 'ioredis';
 import type { SendEvent } from '@omestre/shared';
-import {
-  MIRROR_SEND_STREAM,
-  MIRROR_SEND_CONSUMER_GROUP,
-} from '@omestre/shared';
-import {
-  startMetricsServer,
-  setStatusMeta,
-  setQueueSizeProvider,
-} from '@omestre/worker-common';
-import { processSendEvent, initMetrics } from './dispatcher.ts';
+import { MIRROR_SEND_STREAM, MIRROR_SEND_CONSUMER_GROUP } from '@omestre/shared';
+import { startMetricsServer, setStatusMeta, setQueueSizeProvider } from '@omestre/worker-common';
+import { processSendEvent } from './dispatcher.ts';
+import { initMetrics } from './metrics.ts';
 
 // ─── Config ──────────────────────────────────────────────────────────
 
@@ -44,13 +38,15 @@ function connectRedis(): Redis {
   });
 
   r.on('error', (err) => {
-    console.error(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'error',
-      service: 'dispatcher',
-      message: 'Redis connection error',
-      error: err.message,
-    }));
+    console.error(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        service: 'dispatcher',
+        message: 'Redis connection error',
+        error: err.message,
+      }),
+    );
   });
 
   return r;
@@ -58,28 +54,26 @@ function connectRedis(): Redis {
 
 async function ensureConsumerGroup(): Promise<void> {
   try {
-    await redis.xgroup(
-      'CREATE',
-      MIRROR_SEND_STREAM,
-      MIRROR_SEND_CONSUMER_GROUP,
-      '0',
-      'MKSTREAM',
-    );
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      service: 'dispatcher',
-      message: `Consumer group criado: ${MIRROR_SEND_CONSUMER_GROUP} no stream ${MIRROR_SEND_STREAM}`,
-    }));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('BUSYGROUP')) {
-      console.log(JSON.stringify({
+    await redis.xgroup('CREATE', MIRROR_SEND_STREAM, MIRROR_SEND_CONSUMER_GROUP, '0', 'MKSTREAM');
+    console.log(
+      JSON.stringify({
         timestamp: new Date().toISOString(),
         level: 'info',
         service: 'dispatcher',
-        message: `Consumer group já existe: ${MIRROR_SEND_CONSUMER_GROUP}`,
-      }));
+        message: `Consumer group criado: ${MIRROR_SEND_CONSUMER_GROUP} no stream ${MIRROR_SEND_STREAM}`,
+      }),
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('BUSYGROUP')) {
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          service: 'dispatcher',
+          message: `Consumer group já existe: ${MIRROR_SEND_CONSUMER_GROUP}`,
+        }),
+      );
     } else {
       throw err;
     }
@@ -95,22 +89,21 @@ async function processOne(event: SendEvent, id: string): Promise<void> {
       await redis.xack(MIRROR_SEND_STREAM, MIRROR_SEND_CONSUMER_GROUP, id);
     }
   } catch (err) {
-    console.error(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'error',
-      service: 'dispatcher',
-      message: 'Erro ao processar SendEvent',
-      messageId: id,
-      error: err instanceof Error ? err.message : String(err),
-    }));
+    console.error(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        service: 'dispatcher',
+        message: 'Erro ao processar SendEvent',
+        messageId: id,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
     // Não dá ACK — será reentregue para retry
   }
 }
 
-async function processBatch(
-  messageIds: string[],
-  events: SendEvent[],
-): Promise<void> {
+async function processBatch(messageIds: string[], events: SendEvent[]): Promise<void> {
   // Agrupa eventos por mirrorId para serializar dentro do mesmo destino
   // (respeitando rate-limit por instanceName+targetGroupJid sem deadlock).
   // Mirrors distintos rodam em paralelo — preserva paralelismo entre
@@ -147,26 +140,34 @@ async function processBatch(
 // ─── Main loop ───────────────────────────────────────────────────────
 
 async function mainLoop(): Promise<void> {
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    service: 'dispatcher',
-    message: 'Dispatcher iniciado — aguardando mensagens da Queue B',
-    stream: MIRROR_SEND_STREAM,
-    consumerGroup: MIRROR_SEND_CONSUMER_GROUP,
-    consumerName: CONSUMER_NAME,
-    batchCount: BATCH_COUNT,
-    blockMs: BLOCK_MS,
-  }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'dispatcher',
+      message: 'Dispatcher iniciado — aguardando mensagens da Queue B',
+      stream: MIRROR_SEND_STREAM,
+      consumerGroup: MIRROR_SEND_CONSUMER_GROUP,
+      consumerName: CONSUMER_NAME,
+      batchCount: BATCH_COUNT,
+      blockMs: BLOCK_MS,
+    }),
+  );
 
   while (true) {
     try {
-      const results = await redis.xreadgroup(
-        'GROUP', MIRROR_SEND_CONSUMER_GROUP, CONSUMER_NAME,
-        'COUNT', BATCH_COUNT,
-        'BLOCK', BLOCK_MS,
-        'STREAMS', MIRROR_SEND_STREAM, '>',
-      ) as [string, Array<[string, string[]]>][] | null;
+      const results = (await redis.xreadgroup(
+        'GROUP',
+        MIRROR_SEND_CONSUMER_GROUP,
+        CONSUMER_NAME,
+        'COUNT',
+        BATCH_COUNT,
+        'BLOCK',
+        BLOCK_MS,
+        'STREAMS',
+        MIRROR_SEND_STREAM,
+        '>',
+      )) as [string, Array<[string, string[]]>][] | null;
 
       if (!results) continue;
 
@@ -198,13 +199,15 @@ async function mainLoop(): Promise<void> {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'error',
-        service: 'dispatcher',
-        message: 'Erro no loop principal',
-        error: msg,
-      }));
+      console.error(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          service: 'dispatcher',
+          message: 'Erro no loop principal',
+          error: msg,
+        }),
+      );
       await new Promise((r) => setTimeout(r, 1000));
     }
   }
@@ -218,12 +221,14 @@ async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
 
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    service: 'dispatcher',
-    message: `Recebido ${signal} — iniciando graceful shutdown`,
-  }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'dispatcher',
+      message: `Recebido ${signal} — iniciando graceful shutdown`,
+    }),
+  );
 
   try {
     if (redis) {
@@ -233,12 +238,14 @@ async function shutdown(signal: string): Promise<void> {
     // silencia
   }
 
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    service: 'dispatcher',
-    message: 'Shutdown completo',
-  }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'dispatcher',
+      message: 'Shutdown completo',
+    }),
+  );
 
   process.exit(0);
 }
@@ -270,7 +277,8 @@ async function reclaimPendingEntries(): Promise<void> {
         CONSUMER_NAME,
         minIdleMs,
         cursor,
-        'COUNT', batchSize,
+        'COUNT',
+        batchSize,
       )) as [string, Array<[string, string[]]>, string[]] | null;
 
       if (!result || !Array.isArray(result)) break;
@@ -304,14 +312,16 @@ async function reclaimPendingEntries(): Promise<void> {
             skipped++;
           }
         } catch (err) {
-          console.error(JSON.stringify({
-            timestamp: new Date().toISOString(),
-            level: 'error',
-            service: 'dispatcher',
-            message: 'Erro ao processar entrada órfã',
-            messageId,
-            error: err instanceof Error ? err.message : String(err),
-          }));
+          console.error(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: 'error',
+              service: 'dispatcher',
+              message: 'Erro ao processar entrada órfã',
+              messageId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
           skipped++;
         }
       }
@@ -321,37 +331,43 @@ async function reclaimPendingEntries(): Promise<void> {
     }
 
     if (totalDeletedIds > 0 || reclaimed > 0 || skipped > 0) {
-      console.log(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'dispatcher',
-        message: 'XAUTOCLAIM no startup concluído',
-        reclaimed,
-        skipped,
-        deletedIds: totalDeletedIds,
-        minIdleMs,
-      }));
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          service: 'dispatcher',
+          message: 'XAUTOCLAIM no startup concluído',
+          reclaimed,
+          skipped,
+          deletedIds: totalDeletedIds,
+          minIdleMs,
+        }),
+      );
     }
   } catch (err) {
-    console.error(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'error',
-      service: 'dispatcher',
-      message: 'Erro no XAUTOCLAIM no startup',
-      error: err instanceof Error ? err.message : String(err),
-    }));
+    console.error(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        service: 'dispatcher',
+        message: 'Erro no XAUTOCLAIM no startup',
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
     // Não propaga — startup continua mesmo se reclam falhar
   }
 }
 
 async function main(): Promise<void> {
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    service: 'dispatcher',
-    message: 'Dispatcher starting...',
-    pid: process.pid,
-  }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      service: 'dispatcher',
+      message: 'Dispatcher starting...',
+      pid: process.pid,
+    }),
+  );
 
   initMetrics();
   startMetricsServer('dispatcher', MIRROR_SEND_STREAM);
@@ -375,12 +391,14 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level: 'error',
-    service: 'dispatcher',
-    message: 'Fatal error',
-    error: err instanceof Error ? err.message : String(err),
-  }));
+  console.error(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      service: 'dispatcher',
+      message: 'Fatal error',
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
   process.exit(1);
 });
