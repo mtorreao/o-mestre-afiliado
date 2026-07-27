@@ -26,6 +26,10 @@
 
 import Redis from 'ioredis';
 import { AffiliatesRepository } from '@omestre/db';
+import { makeLogger } from '@omestre/shared';
+import { config } from './config.ts';
+
+const log = makeLogger('notifier');
 
 const affiliatesRepo = new AffiliatesRepository();
 
@@ -37,8 +41,7 @@ const DEFAULT_COOLDOWN_SECONDS = 3600;
 const OCCURRENCE_WINDOW_SECONDS = 3600;
 const MIN_OCCURRENCES_FOR_NOTIFICATION = 1;
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:5444';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────
 
@@ -50,10 +53,7 @@ export type UserFixableType =
   | 'ml_account_not_linked'
   | 'evolution_api_offline';
 
-export type SilentType =
-  | 'network_timeout'
-  | 'dedup'
-  | 'blacklist';
+export type SilentType = 'network_timeout' | 'dedup' | 'blacklist';
 
 export type FailureType = UserFixableType | SilentType;
 
@@ -62,8 +62,7 @@ const NOTIFICATION_MESSAGES: Record<UserFixableType, string> = {
     '🍪 Cookies de sessão do Mercado Livre expirados.\n' +
     'Reimporte os cookies pela extensão Chrome.',
   refresh_token_expired:
-    '🔑 Token de refresh do Mercado Livre expirado.\n' +
-    'Reconecte sua conta ML.',
+    '🔑 Token de refresh do Mercado Livre expirado.\n' + 'Reconecte sua conta ML.',
   invalid_shopee_creds:
     '⚠️ Credenciais da Shopee (App ID/Secret) inválidas.\n' +
     'Verifique suas credenciais no painel.',
@@ -71,11 +70,9 @@ const NOTIFICATION_MESSAGES: Record<UserFixableType, string> = {
     '🛒 Tracking ID da Amazon não configurado.\n' +
     'Cadastre seu tracking ID no painel para receber comissões de ofertas Amazon.',
   ml_account_not_linked:
-    '🔗 Nenhuma conta do Mercado Livre vinculada.\n' +
-    'Conecte-se primeiro no painel.',
+    '🔗 Nenhuma conta do Mercado Livre vinculada.\n' + 'Conecte-se primeiro no painel.',
   evolution_api_offline:
-    '📡 Evolution API está offline.\n' +
-    'Verifique se o container da Evolution API está rodando.',
+    '📡 Evolution API está offline.\n' + 'Verifique se o container da Evolution API está rodando.',
 };
 
 const NOTIFICATION_LABELS: Record<UserFixableType, string> = {
@@ -89,7 +86,6 @@ const NOTIFICATION_LABELS: Record<UserFixableType, string> = {
 
 // ─── Redis (lazy singleton) ──────────────────────────────────────────────
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:5455';
 let redis: Redis | null = null;
 let enabled = true;
 
@@ -98,7 +94,7 @@ function getNotifierRedis(): Redis | null {
   if (redis) return redis;
 
   try {
-    redis = new Redis(REDIS_URL, {
+    redis = new Redis(config.REDIS_URL, {
       maxRetriesPerRequest: 1,
       retryStrategy(times) {
         if (times > 2) {
@@ -126,26 +122,17 @@ function getNotifierRedis(): Redis | null {
 function evolutionHeaders(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    apikey: EVOLUTION_API_KEY,
+    apikey: config.EVOLUTION_API_KEY,
   };
 }
 
 // ─── Telegram Bot API ────────────────────────────────────────────────────
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-
-async function sendTelegramNotification(
-  chatId: string,
-  text: string,
-): Promise<boolean> {
+async function sendTelegramNotification(chatId: string, text: string): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN) {
-    console.warn(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'warn',
-      service: 'notifier',
-      message: 'TELEGRAM_BOT_TOKEN não configurado — pulando envio Telegram',
+    log('warn', 'TELEGRAM_BOT_TOKEN não configurado — pulando envio Telegram', {
       targetJid: chatId,
-    }));
+    });
     return false;
   }
 
@@ -163,36 +150,22 @@ async function sendTelegramNotification(
     });
 
     if (res.ok) {
-      console.log(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'notifier',
-        message: `Notificação enviada via Telegram para ${chatId}`,
-        targetJid: chatId,
-      }));
+      log('info', `Notificação enviada via Telegram para ${chatId}`, { targetJid: chatId });
       return true;
     }
 
     const body = await res.text();
-    console.warn(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'warn',
-      service: 'notifier',
-      message: 'Falha ao enviar notificação Telegram',
+    log('warn', 'Falha ao enviar notificação Telegram', {
       status: res.status,
       body: body.slice(0, 200),
       targetJid: chatId,
-    }));
+    });
     return false;
   } catch (err) {
-    console.warn(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'warn',
-      service: 'notifier',
-      message: 'Erro ao enviar notificação Telegram',
+    log('warn', 'Erro ao enviar notificação Telegram', {
       error: err instanceof Error ? err.message : String(err),
       targetJid: chatId,
-    }));
+    });
     return false;
   }
 }
@@ -255,14 +228,10 @@ export function classifyConversionError(
   }
 
   if (marketplace === 'amazon') {
-      if (
-        err.includes('tracking') ||
-        err.includes('tag') ||
-        err.includes('invalid')
-      ) {
-        return 'invalid_amazon_tracking_id';
-      }
+    if (err.includes('tracking') || err.includes('tag') || err.includes('invalid')) {
+      return 'invalid_amazon_tracking_id';
     }
+  }
 
   if (
     err.includes('fetch failed') ||
@@ -294,10 +263,7 @@ export function getNotifiableType(type: FailureType): UserFixableType | null {
 
 // ─── Cooldown ────────────────────────────────────────────────────────────
 
-export async function isInCooldown(
-  type: UserFixableType,
-  instanceName: string,
-): Promise<boolean> {
+export async function isInCooldown(type: UserFixableType, instanceName: string): Promise<boolean> {
   const r = getNotifierRedis();
   if (!r) return false;
 
@@ -347,10 +313,7 @@ export async function incrementOccurrence(
   }
 }
 
-async function getOccurrenceCount(
-  type: UserFixableType,
-  instanceName: string,
-): Promise<number> {
+async function getOccurrenceCount(type: UserFixableType, instanceName: string): Promise<number> {
   const r = getNotifierRedis();
   if (!r) return 0;
 
@@ -363,10 +326,7 @@ async function getOccurrenceCount(
   }
 }
 
-async function resetOccurrences(
-  type: UserFixableType,
-  instanceName: string,
-): Promise<void> {
+async function resetOccurrences(type: UserFixableType, instanceName: string): Promise<void> {
   const r = getNotifierRedis();
   if (!r) return;
 
@@ -398,60 +358,37 @@ async function sendWhatsAppNotification(
   targetJid?: string | null,
 ): Promise<boolean> {
   if (!targetJid) {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      service: 'notifier',
-      message: `[NOTIFICAÇÃO] ${text.replace(/\n/g, ' | ')}`,
-      instanceName,
-    }));
+    log('info', `[NOTIFICAÇÃO] ${text.replace(/\n/g, ' | ')}`, { instanceName });
     return true;
   }
 
   try {
-    const res = await fetch(
-      `${EVOLUTION_API_URL}/message/sendText/${instanceName}`,
-      {
-        method: 'POST',
-        headers: evolutionHeaders(),
-        body: JSON.stringify({
-          number: targetJid,
-          text,
-          delay: 1000,
-          linkPreview: false,
-        }),
-      },
-    );
+    const res = await fetch(`${config.EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+      method: 'POST',
+      headers: evolutionHeaders(),
+      body: JSON.stringify({
+        number: targetJid,
+        text,
+        delay: 1000,
+        linkPreview: false,
+      }),
+    });
 
     if (res.ok) {
-      console.log(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        service: 'notifier',
-        message: `Notificação enviada via WhatsApp para ${targetJid}`,
-        instanceName,
-      }));
+      log('info', `Notificação enviada via WhatsApp para ${targetJid}`, { instanceName });
       return true;
     }
 
-    console.warn(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'warn',
-      service: 'notifier',
-      message: 'Falha ao enviar notificação WhatsApp',
+    log('warn', 'Falha ao enviar notificação WhatsApp', {
       status: res.status,
       instanceName,
-    }));
+    });
     return false;
   } catch (err) {
-    console.warn(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'warn',
-      service: 'notifier',
-      message: 'Erro ao enviar notificação WhatsApp',
+    log('warn', 'Erro ao enviar notificação WhatsApp', {
       error: err instanceof Error ? err.message : String(err),
       instanceName,
-    }));
+    });
     return false;
   }
 }
@@ -465,41 +402,29 @@ export async function processFailure(
 ): Promise<void> {
   const notifiableType = getNotifiableType(failureType);
   if (!notifiableType) {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'debug',
-      service: 'notifier',
-      message: `Falha silenciosa ignorada: ${failureType}`,
+    log('info', `Falha silenciosa ignorada: ${failureType}`, {
       instanceName,
       ...(context ?? {}),
-    }));
+    });
     return;
   }
 
   const total = await incrementOccurrence(notifiableType, instanceName);
 
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level: 'debug',
-    service: 'notifier',
-    message: `Ocorrência registrada: ${notifiableType} (total: ${total})`,
+  log('info', `Ocorrência registrada: ${notifiableType} (total: ${total})`, {
     instanceName,
     type: notifiableType,
     totalOccurrences: total,
     ...(context ?? {}),
-  }));
+  });
 
   const inCooldown = await isInCooldown(notifiableType, instanceName);
   if (inCooldown) {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'debug',
-      service: 'notifier',
-      message: `Cooldown ativo para ${notifiableType} — ${total} ocorrências acumuladas`,
+    log('info', `Cooldown ativo para ${notifiableType} — ${total} ocorrências acumuladas`, {
       instanceName,
       type: notifiableType,
       totalOccurrences: total,
-    }));
+    });
     return;
   }
 
@@ -508,15 +433,11 @@ export async function processFailure(
   const targetJid = notificationConfig?.jid ?? null;
 
   if (channel === 'disabled' || !targetJid) {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      service: 'notifier',
-      message: `Notificação disponível para ${notifiableType} (${total} ocorrências) — sem canal configurado.`,
-      instanceName,
-      type: notifiableType,
-      totalOccurrences: total,
-    }));
+    log(
+      'info',
+      `Notificação disponível para ${notifiableType} (${total} ocorrências) — sem canal configurado.`,
+      { instanceName, type: notifiableType, totalOccurrences: total },
+    );
     await setCooldown(notifiableType, instanceName);
     await resetOccurrences(notifiableType, instanceName);
     return;
@@ -528,25 +449,23 @@ export async function processFailure(
   let notificationText: string;
   if (total >= MIN_OCCURRENCES_FOR_NOTIFICATION && total > 1) {
     notificationText =
-      `📊 *Relatório de falhas*\n\n` +
-      `${total} ofertas bloqueadas por ${label}.\n\n` +
-      `${msg}`;
+      `📊 *Relatório de falhas*\n\n` + `${total} ofertas bloqueadas por ${label}.\n\n` + `${msg}`;
   } else {
     notificationText = `⚠️ ${msg}`;
   }
 
   let sent = false;
-    if (channel === 'whatsapp') {
-      sent = await sendWhatsAppNotification(instanceName, notificationText, targetJid);
-    } else if (channel === 'telegram') {
-      sent = await sendTelegramNotification(targetJid, notificationText);
-    }
-
-    if (sent) {
-      await setCooldown(notifiableType, instanceName);
-      await resetOccurrences(notifiableType, instanceName);
-    }
+  if (channel === 'whatsapp') {
+    sent = await sendWhatsAppNotification(instanceName, notificationText, targetJid);
+  } else if (channel === 'telegram') {
+    sent = await sendTelegramNotification(targetJid, notificationText);
   }
+
+  if (sent) {
+    await setCooldown(notifiableType, instanceName);
+    await resetOccurrences(notifiableType, instanceName);
+  }
+}
 
 export async function notifyDirect(
   instanceName: string,
@@ -555,14 +474,10 @@ export async function notifyDirect(
 ): Promise<boolean> {
   const inCooldown = await isInCooldown(type, instanceName);
   if (inCooldown) {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'debug',
-      service: 'notifier',
-      message: `Cooldown ativo para notificação direta ${type} — ignorando`,
+    log('info', `Cooldown ativo para notificação direta ${type} — ignorando`, {
       instanceName,
       type,
-    }));
+    });
     return false;
   }
 
@@ -571,14 +486,11 @@ export async function notifyDirect(
   const targetJid = notificationConfig?.jid ?? null;
 
   if (channel === 'disabled' || !targetJid) {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      service: 'notifier',
-      message: `[NOTIFICAÇÃO] Notificação direta sem canal configurado: ${message ?? NOTIFICATION_MESSAGES[type]}`,
-      instanceName,
-      type,
-    }));
+    log(
+      'info',
+      `[NOTIFICAÇÃO] Notificação direta sem canal configurado: ${message ?? NOTIFICATION_MESSAGES[type]}`,
+      { instanceName, type },
+    );
     return false;
   }
 
@@ -586,10 +498,10 @@ export async function notifyDirect(
   let sent = false;
 
   if (channel === 'whatsapp') {
-      sent = await sendWhatsAppNotification(instanceName, text, targetJid);
-    } else if (channel === 'telegram') {
-      sent = await sendTelegramNotification(targetJid, text);
-    }
+    sent = await sendWhatsAppNotification(instanceName, text, targetJid);
+  } else if (channel === 'telegram') {
+    sent = await sendTelegramNotification(targetJid, text);
+  }
 
   if (sent) {
     await setCooldown(type, instanceName);

@@ -12,15 +12,8 @@
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import type { MirrorDLQEntry, RawMessageEvent, SendEvent } from '@omestre/shared';
-import {
-  MIRROR_DLQ_LIST,
-  MIRROR_DLQ_INDEX,
-  MIRROR_DLQ_TTL,
-} from '@omestre/shared';
-
-// ─── Config ───────────────────────────────────────────────────────────
-
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:5455';
+import { MIRROR_DLQ_LIST, MIRROR_DLQ_INDEX, MIRROR_DLQ_TTL, makeLogger } from '@omestre/shared';
+import { config } from './config.ts';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -71,7 +64,7 @@ function getDLQRedis(): Redis | null {
   if (redis) return redis;
 
   try {
-    redis = new Redis(REDIS_URL, {
+    redis = new Redis(config.REDIS_URL, {
       maxRetriesPerRequest: 1,
       retryStrategy(times) {
         if (times > 2) {
@@ -96,20 +89,7 @@ function getDLQRedis(): Redis | null {
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function log(level: 'info' | 'warn' | 'error', message: string, data?: unknown) {
-  const entry = {
-    timestamp: new Date().toISOString(),
-    level,
-    service: 'mirror-dlq',
-    message,
-    ...(data ? { data } : {}),
-  };
-  if (level === 'error') {
-    console.error(JSON.stringify(entry));
-  } else {
-    console.log(JSON.stringify(entry));
-  }
-}
+const log = makeLogger('mirror-dlq');
 
 // ─── API pública ──────────────────────────────────────────────────────
 
@@ -146,7 +126,8 @@ export async function pushToDLQ(params: DLQPushParams): Promise<void> {
 
     log('info', 'Item adicionado à Dead Letter Queue', {
       dlqId: id,
-      messageId: 'messageId' in params.event ? params.event.messageId : params.event.sourceMessageId,
+      messageId:
+        'messageId' in params.event ? params.event.messageId : params.event.sourceMessageId,
       failureReason: params.failureReason,
       attempts: params.attempts,
       marketplace: params.marketplace,
@@ -154,14 +135,13 @@ export async function pushToDLQ(params: DLQPushParams): Promise<void> {
   } catch (err) {
     log('error', 'Falha ao adicionar item à DLQ', {
       error: err instanceof Error ? err.message : String(err),
-      messageId: 'messageId' in params.event ? params.event.messageId : params.event.sourceMessageId,
+      messageId:
+        'messageId' in params.event ? params.event.messageId : params.event.sourceMessageId,
     });
   }
 }
 
-export async function listDLQ(
-  options: DLQListOptions = {},
-): Promise<DLQListResult> {
+export async function listDLQ(options: DLQListOptions = {}): Promise<DLQListResult> {
   const emptyResult: DLQListResult = {
     items: [],
     total: 0,
@@ -266,10 +246,7 @@ export async function getDLQItem(itemId: string): Promise<MirrorDLQEntry | null>
   }
 }
 
-export async function requeueFromDLQ(
-  itemId: string,
-  targetStream: string,
-): Promise<boolean> {
+export async function requeueFromDLQ(itemId: string, targetStream: string): Promise<boolean> {
   const r = getDLQRedis();
   if (!r) return false;
 
