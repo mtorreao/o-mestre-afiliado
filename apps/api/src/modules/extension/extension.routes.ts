@@ -7,7 +7,7 @@
 import { Elysia, t } from 'elysia';
 import { MirrorRepository, WhatsAppInstanceRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
-import { instanceNameFromUserId } from '../../services/evolution.ts';
+import { instanceNameFromUserId, sendGroupMessage } from '../../services/evolution.ts';
 import { convertMarketplaceUrl } from './extension.service.ts';
 
 const mirrorRepo = new MirrorRepository();
@@ -26,7 +26,17 @@ export const extensionRoutes = new Elysia()
         return { success: false, error: 'Não autenticado' };
       }
 
-      const { url, marketplace, title, productName, coupon, priceFrom, priceTo } = body as {
+      const {
+        url,
+        marketplace,
+        title,
+        productName,
+        coupon,
+        priceFrom,
+        priceTo,
+        imageUrl,
+        targetGroupJids,
+      } = body as {
         url: string;
         marketplace?: string;
         title?: string;
@@ -34,6 +44,8 @@ export const extensionRoutes = new Elysia()
         coupon?: string;
         priceFrom?: string;
         priceTo?: string;
+        imageUrl?: string;
+        targetGroupJids?: string[];
       };
 
       if (!url) {
@@ -44,7 +56,7 @@ export const extensionRoutes = new Elysia()
       // 1. Converter URL para link de afiliado
       const conversion = await convertMarketplaceUrl(url, marketplace);
       if (!conversion.success) {
-        set.status = 200; // erro de negócio
+        set.status = 200;
         return { success: false, error: conversion.error || 'Falha na conversão do link' };
       }
 
@@ -66,13 +78,13 @@ export const extensionRoutes = new Elysia()
       // 3. Montar mensagem com template fixo
       const lines: string[] = [];
       if (title) lines.push(`🔥 *${title}*`);
-      if (lines.length > 0 && (productName || conversion.convertedUrl)) lines.push('');
+      if (lines.length > 0 && (productName || priceFrom || priceTo || coupon)) lines.push('');
       if (productName) lines.push(`📦 *${productName}*`);
       if (priceFrom) lines.push(`~~ De: ${priceFrom} ~~`);
       if (priceTo) lines.push(`🔥 Por: *${priceTo}*`);
       if (coupon) lines.push(`🏷️ Cupom: *${coupon}*`);
-      if (lines.length > 0 && conversion.convertedUrl) lines.push('');
-      if (conversion.convertedUrl) lines.push(`🔗 ${conversion.convertedUrl}`);
+      if (lines.length > 0) lines.push('');
+      lines.push(`🔗 ${conversion.convertedUrl}`);
 
       const message = lines.join('\n');
 
@@ -87,45 +99,56 @@ export const extensionRoutes = new Elysia()
         };
       }
 
-      // 5. Import dinâmico do cliente Evolution (evita circular deps)
-      const { sendGroupMessage } = await import('../../services/evolution.ts');
-
-      // 6. Enviar para todos os grupos de destino
-      const targetGroups: { jid: string; name: string }[] = [];
+      // 5. Coletar grupos de destino
+      const allGroups: { jid: string; name: string }[] = [];
       for (const mirror of activeMirrors) {
         const groups = mirror.targetGroups as { jid: string; name: string }[] | null;
-        if (groups) targetGroups.push(...groups);
+        if (groups) allGroups.push(...groups);
       }
 
-      // Deduplica grupos (mesmo JID em múltiplos espelhamentos)
+      // Deduplica
       const seen = new Set<string>();
-      const uniqueGroups = targetGroups.filter((g) => {
-        const key = g.jid;
-        if (seen.has(key)) return false;
-        seen.add(key);
+      const uniqueGroups = allGroups.filter((g) => {
+        if (seen.has(g.jid)) return false;
+        seen.add(g.jid);
         return true;
       });
 
+      // Filtra por targetGroupJids se enviado (seleção do popup)
+      const groupsToSend = targetGroupJids?.length
+        ? uniqueGroups.filter((g) => targetGroupJids.includes(g.jid))
+        : uniqueGroups;
+
+      if (groupsToSend.length === 0) {
+        return {
+          success: false,
+          error: 'Nenhum grupo selecionado para envio',
+          convertedUrl: conversion.convertedUrl,
+        };
+      }
+
+      // 6. Enviar
       const sentTo: { groupJid: string; groupName: string; status: string }[] = [];
 
-      for (const group of uniqueGroups) {
+      for (const group of groupsToSend) {
         try {
-          const evoRes = await sendGroupMessage(instanceName, group.jid, message);
+          // Se imageUrl foi fornecida, inclui no texto como fallback
+          let textToSend = message;
+          if (imageUrl) {
+            textToSend = message + '\n\n📷 ' + imageUrl;
+          }
+
+          const evoRes = await sendGroupMessage(instanceName, group.jid, textToSend);
           sentTo.push({
             groupJid: group.jid,
             groupName: group.name,
             status: evoRes.success ? 'sent' : 'error',
           });
         } catch {
-          sentTo.push({
-            groupJid: group.jid,
-            groupName: group.name,
-            status: 'error',
-          });
+          sentTo.push({ groupJid: group.jid, groupName: group.name, status: 'error' });
         }
 
-        // Pequeno delay entre envios
-        if (uniqueGroups.length > 1) {
+        if (groupsToSend.length > 1) {
           await new Promise((r) => setTimeout(r, 2000));
         }
       }
@@ -145,6 +168,8 @@ export const extensionRoutes = new Elysia()
         coupon: t.Optional(t.String()),
         priceFrom: t.Optional(t.String()),
         priceTo: t.Optional(t.String()),
+        imageUrl: t.Optional(t.String()),
+        targetGroupJids: t.Optional(t.Array(t.String())),
       }),
     },
   );
