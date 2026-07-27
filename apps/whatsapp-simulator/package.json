@@ -12,7 +12,7 @@
     "start": "bun run dist/index.js"
   },
   "dependencies": {
-    "elysia": "^1.2.0"
+    "elysia": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest"

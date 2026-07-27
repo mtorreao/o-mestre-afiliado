@@ -20,7 +20,14 @@ interface RateLimitConfig {
 const CONFIG_CACHE_TTL_MS = 60_000;
 const configCache = new Map<string, RateLimitConfig>();
 
-const instanceRepo = new WhatsAppInstanceRepository();
+let instanceRepo: WhatsAppInstanceRepository | null = null;
+
+function getInstanceRepo(): WhatsAppInstanceRepository {
+  if (!instanceRepo) {
+    instanceRepo = new WhatsAppInstanceRepository();
+  }
+  return instanceRepo;
+}
 
 let redis: Redis | null = null;
 let enabled = true;
@@ -39,6 +46,13 @@ export function _setRedisForTest(mockRedis: Redis | null): void {
   } else {
     enabled = true;
   }
+}
+
+/**
+ * Injeta um repositório mock para testes unitários. Não usar em produção.
+ */
+export function _setInstanceRepoForTest(repo: WhatsAppInstanceRepository | null): void {
+  instanceRepo = repo;
 }
 
 /**
@@ -86,7 +100,8 @@ async function getInstanceConfig(
   }
 
   try {
-    const instance = await instanceRepo.findByInstanceName(instanceName);
+    const repo = getInstanceRepo();
+    const instance = await repo.findByInstanceName(instanceName);
     if (instance) {
       const config: RateLimitConfig = {
         maxMsgs: instance.rateLimitMaxMsgs,

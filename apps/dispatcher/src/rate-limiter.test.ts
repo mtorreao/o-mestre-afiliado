@@ -13,8 +13,19 @@
  * controladas via `_setRedisForTest()` e `_setEnabledForTest()` para
  * isolar o estado entre testes.
  */
+
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import {
+
+// Mock do @omestre/db para evitar conexão real com o banco
+// DEVE ser chamado antes de importar rate-limiter.ts
+mock.module('@omestre/db', () => ({
+  WhatsAppInstanceRepository: mock(() => ({
+    findByInstanceName: mock(() => Promise.resolve(null)),
+  })),
+}));
+
+// Importa dinamicamente após o mock estar configurado
+const {
   tryAcquireSlot,
   tryAcquireGroupSlot,
   waitForSlot,
@@ -25,7 +36,8 @@ import {
   _testMsUntilWindowEnd,
   _setRedisForTest,
   _setEnabledForTest,
-} from './rate-limiter.ts';
+  _setInstanceRepoForTest,
+} = await import('./rate-limiter.ts');
 
 // ─── Redis mock helper ──────────────────────────────────────────────────
 
@@ -133,11 +145,15 @@ describe('tryAcquireSlot — com Redis mockado', () => {
     mockRedis = makeRedisMock();
     _setRedisForTest(mockRedis as unknown as Parameters<typeof _setRedisForTest>[0]);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest({
+      findByInstanceName: async () => null,
+    } as any);
   });
 
   afterEach(() => {
     _setRedisForTest(null);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest(null);
     clearInstanceConfigCache('inst-1');
   });
 
@@ -188,11 +204,15 @@ describe('tryAcquireSlot — com Redis mockado', () => {
 describe('tryAcquireSlot — modo degradado (Redis=null)', () => {
   beforeEach(() => {
     _setRedisForTest(null);
+    _setInstanceRepoForTest({
+      findByInstanceName: async () => null,
+    } as any);
   });
 
   afterEach(() => {
     _setRedisForTest(null);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest(null);
     clearInstanceConfigCache('inst-1');
   });
 
@@ -210,6 +230,9 @@ describe('tryAcquireSlot — enabled=false', () => {
     const mockRedis = makeRedisMock();
     _setRedisForTest(mockRedis as unknown as Parameters<typeof _setRedisForTest>[0]);
     _setEnabledForTest(false);
+    _setInstanceRepoForTest({
+      findByInstanceName: async () => null,
+    } as any);
 
     try {
       const result = await tryAcquireSlot('inst-1');
@@ -219,6 +242,7 @@ describe('tryAcquireSlot — enabled=false', () => {
     } finally {
       _setRedisForTest(null);
       _setEnabledForTest(true);
+      _setInstanceRepoForTest(null);
       clearInstanceConfigCache('inst-1');
     }
   });
@@ -231,11 +255,15 @@ describe('tryAcquireGroupSlot', () => {
     mockRedis = makeRedisMock();
     _setRedisForTest(mockRedis as unknown as Parameters<typeof _setRedisForTest>[0]);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest({
+      findByInstanceName: async () => null,
+    } as any);
   });
 
   afterEach(() => {
     _setRedisForTest(null);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest(null);
   });
 
   it('adquire slot quando count <= maxMsgs customizado', async () => {
@@ -282,11 +310,15 @@ describe('waitForSlot', () => {
     mockRedis = makeRedisMock();
     _setRedisForTest(mockRedis as unknown as Parameters<typeof _setRedisForTest>[0]);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest({
+      findByInstanceName: async () => null,
+    } as any);
   });
 
   afterEach(() => {
     _setRedisForTest(null);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest(null);
     clearInstanceConfigCache('wait-inst');
   });
 
@@ -328,11 +360,15 @@ describe('waitForGroupSlot', () => {
     mockRedis = makeRedisMock();
     _setRedisForTest(mockRedis as unknown as Parameters<typeof _setRedisForTest>[0]);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest({
+      findByInstanceName: async () => null,
+    } as any);
   });
 
   afterEach(() => {
     _setRedisForTest(null);
     _setEnabledForTest(true);
+    _setInstanceRepoForTest(null);
   });
 
   it('retorna true quando slot está disponível', async () => {
@@ -353,6 +389,16 @@ describe('waitForGroupSlot', () => {
 });
 
 describe('clearInstanceConfigCache', () => {
+  beforeEach(() => {
+    _setInstanceRepoForTest({
+      findByInstanceName: async () => null,
+    } as any);
+  });
+
+  afterEach(() => {
+    _setInstanceRepoForTest(null);
+  });
+
   it('não lança erro quando cache está vazio para a instância', () => {
     expect(() => clearInstanceConfigCache('inst-inexistente')).not.toThrow();
   });
@@ -384,9 +430,20 @@ describe('clearInstanceConfigCache', () => {
 });
 
 describe('integração — rateLimitKey + tryAcquireSlot', () => {
+  beforeEach(() => {
+    _setInstanceRepoForTest({
+      findByInstanceName: async () => null,
+    } as any);
+  });
+
+  afterEach(() => {
+    _setInstanceRepoForTest(null);
+  });
+
   it('chaves geradas pela função pura são as mesmas usadas em tryAcquireSlot', async () => {
     const mockRedis = makeRedisMock();
     _setRedisForTest(mockRedis as unknown as Parameters<typeof _setRedisForTest>[0]);
+    _setEnabledForTest(true);
 
     try {
       // Captura a chave antes de chamar
@@ -399,6 +456,7 @@ describe('integração — rateLimitKey + tryAcquireSlot', () => {
       expect(keys).toContain(expectedKey);
     } finally {
       _setRedisForTest(null);
+      _setEnabledForTest(true);
       clearInstanceConfigCache('inst-x');
     }
   });

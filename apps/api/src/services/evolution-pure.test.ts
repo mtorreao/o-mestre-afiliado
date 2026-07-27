@@ -10,6 +10,7 @@ import {
   buildEvolutionHeaders,
   buildEvolutionUrl,
   buildFindMessagesBody,
+  buildSendMediaBody,
   buildSendTextBody,
   evolutionEndpoints,
   extractEphemeralCaption,
@@ -103,6 +104,10 @@ describe('evolutionEndpoints', () => {
 
   it('sendText', () => {
     expect(evolutionEndpoints.sendText('user-1')).toBe('/message/sendText/user-1');
+  });
+
+  it('sendMedia', () => {
+    expect(evolutionEndpoints.sendMedia('user-1')).toBe('/message/sendMedia/user-1');
   });
 });
 
@@ -489,5 +494,24 @@ describe('parseSendTextResponse', () => {
 
   it('campos ausentes → undefined', () => {
     expect(parseSendTextResponse({})).toEqual({ key: undefined, status: undefined });
+  });
+});
+
+describe('buildSendMediaBody', () => {
+  it('monta body com image URL e caption', () => {
+    expect(
+      buildSendMediaBody('123@g.us', 'https://http2.mlstatic.com/img.jpg', '🔥 Oferta!'),
+    ).toEqual({
+      number: '123@g.us',
+      mediatype: 'image',
+      media: 'https://http2.mlstatic.com/img.jpg',
+      caption: '🔥 Oferta!',
+      delay: 2000,
+    });
+  });
+
+  it('aceita caption vazia', () => {
+    const body = buildSendMediaBody('123@g.us', 'https://img.com/foto.jpg');
+    expect(body.caption).toBe('');
   });
 });
