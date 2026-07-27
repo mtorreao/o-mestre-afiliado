@@ -27,6 +27,28 @@ let enabled = true;
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:5455';
 
+/**
+ * Injeta um Redis mock para testes unitários. Não usar em produção.
+ * Quando `mockRedis` é null, o rate-limiter desabilita (enabled=false)
+ * para evitar lazy-connect a um Redis real.
+ */
+export function _setRedisForTest(mockRedis: Redis | null): void {
+  redis = mockRedis;
+  if (mockRedis === null) {
+    enabled = false;
+  } else {
+    enabled = true;
+  }
+}
+
+/**
+ * Força o estado "enabled" para testes. Quando `false`, todas as funções
+ * do rate-limiter retornam acquired=true sem consultar Redis.
+ */
+export function _setEnabledForTest(value: boolean): void {
+  enabled = value;
+}
+
 function getRateLimiterRedis(): Redis | null {
   if (!enabled) return null;
   if (redis) return redis;
@@ -55,7 +77,9 @@ function getRateLimiterRedis(): Redis | null {
   return redis;
 }
 
-async function getInstanceConfig(instanceName: string): Promise<{ maxMsgs: number; windowSec: number }> {
+async function getInstanceConfig(
+  instanceName: string,
+): Promise<{ maxMsgs: number; windowSec: number }> {
   const cached = configCache.get(instanceName);
   if (cached && Date.now() - cached.cachedAt < CONFIG_CACHE_TTL_MS) {
     return { maxMsgs: cached.maxMsgs, windowSec: cached.windowSec };
@@ -97,6 +121,11 @@ function msUntilWindowEnd(windowSec: number): number {
   const windowStart = windowIndex * windowMs;
   return windowStart + windowMs - now;
 }
+
+/** Exportado apenas para teste unitário. */
+export const _testRateLimitKey = rateLimitKey;
+/** Exportado apenas para teste unitário. */
+export const _testMsUntilWindowEnd = msUntilWindowEnd;
 
 export async function tryAcquireSlot(
   instanceName: string,
@@ -150,6 +179,9 @@ function subRateLimitKey(groupJid: string, windowSec: number): string {
   const windowIndex = Math.floor(Date.now() / (windowSec * 1000));
   return `mirror:ratelimit:group:${groupJid}:${windowIndex}`;
 }
+
+/** Exportado apenas para teste unitário. */
+export const _testSubRateLimitKey = subRateLimitKey;
 
 export async function tryAcquireGroupSlot(
   groupJid: string,
