@@ -21,15 +21,14 @@
 
   const SERVICE = 'chrome-cookie-importer';
   const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
+  const DEFAULT_LEVEL = LEVELS.debug; // padrão: ver tudo
 
-  // Default debug: queremos ver TUDO durante desenvolvimento.
-  // Para mudar em prod, setar authLogLevel=info no storage.
-  let cachedThreshold = LEVELS.debug;
+  let cachedThreshold = DEFAULT_LEVEL;
   let configLoaded = false;
 
   function readConfig() {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) {
-      cachedThreshold = LEVELS.info;
+      cachedThreshold = DEFAULT_LEVEL;
       configLoaded = true;
       return;
     }
@@ -39,11 +38,11 @@
       chrome.storage.local.get(['authDebugEnabled', 'authLogLevel'], (saved) => {
         const enabled = saved && saved.authDebugEnabled === true;
         const configured = saved && saved.authLogLevel;
-        cachedThreshold = LEVELS[configured] ?? (enabled ? LEVELS.debug : LEVELS.info);
+        cachedThreshold = LEVELS[configured] ?? (enabled ? LEVELS.debug : DEFAULT_LEVEL);
         configLoaded = true;
       });
     } catch {
-      cachedThreshold = LEVELS.info;
+      cachedThreshold = DEFAULT_LEVEL;
       configLoaded = true;
     }
   }
