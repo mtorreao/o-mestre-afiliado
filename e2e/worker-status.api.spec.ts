@@ -63,7 +63,6 @@ test.describe('Worker DLQ — Listagem', () => {
     expect(res.status).toBe(200);
 
     const body = (await res.json()) as {
-      success: boolean;
       items: unknown[];
       total: number;
       totalFiltered: number;
@@ -71,7 +70,6 @@ test.describe('Worker DLQ — Listagem', () => {
       limit: number;
     };
 
-    expect(body.success).toBe(true);
     expect(Array.isArray(body.items)).toBe(true);
     expect(typeof body.total).toBe('number');
     expect(typeof body.totalFiltered).toBe('number');
@@ -80,8 +78,7 @@ test.describe('Worker DLQ — Listagem', () => {
   test('GET /api/worker/dlq aceita filtros server-side (queue, since)', async () => {
     const res = await fetch(`${API}/api/worker/dlq?queue=A&since=24h&limit=50`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean; items: unknown[] };
-    expect(body.success).toBe(true);
+    const body = (await res.json()) as { items: unknown[] };
     expect(Array.isArray(body.items)).toBe(true);
   });
 
@@ -90,8 +87,8 @@ test.describe('Worker DLQ — Listagem', () => {
       `${API}/api/worker/dlq?since=${encodeURIComponent('2020-01-01T00:00:00Z')}`,
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean };
-    expect(body.success).toBe(true);
+    const body = (await res.json()) as { items: unknown[] };
+    expect(Array.isArray(body.items)).toBe(true);
   });
 });
 
@@ -105,11 +102,13 @@ test.describe('Worker DLQ — Operações', () => {
     expect(body.success).toBe(false);
   });
 
-  test('POST /api/worker/dlq/requeue id inexistente retorna 404', async () => {
+  test('POST /api/worker/dlq/requeue id inexistente retorna success=false', async () => {
+    // Por convenção do projeto (AGENTS.md), erros de negócio NÃO retornam 4xx —
+    // sempre HTTP 200 com { success: false }.
     const res = await fetch(`${API}/api/worker/dlq/requeue?id=nao-existe-${Date.now()}`, {
       method: 'POST',
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
     const body = (await res.json()) as { success: boolean };
     expect(body.success).toBe(false);
   });
@@ -119,18 +118,19 @@ test.describe('Worker DLQ — Operações', () => {
     expect(res.status).toBe(400);
   });
 
-  test('POST /api/worker/dlq/remove id inexistente retorna 404', async () => {
+  test('POST /api/worker/dlq/remove id inexistente retorna false', async () => {
     const res = await fetch(`${API}/api/worker/dlq/remove?id=nao-existe-${Date.now()}`, {
       method: 'POST',
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as boolean;
+    expect(body).toBe(false);
   });
 
-  test('POST /api/worker/dlq/purge retorna success + removed', async () => {
+  test('POST /api/worker/dlq/purge retorna número (itens removidos)', async () => {
     const res = await fetch(`${API}/api/worker/dlq/purge`, { method: 'POST' });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean; removed: number };
-    expect(body.success).toBe(true);
-    expect(typeof body.removed).toBe('number');
+    const body = (await res.json()) as number;
+    expect(typeof body).toBe('number');
   });
 });

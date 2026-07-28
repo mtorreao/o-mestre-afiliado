@@ -69,7 +69,8 @@ test.describe('Mirrors API — CRUD', () => {
     expect(body.success).toBe(true);
     expect(body.rows).toEqual([]);
     expect(body.total).toBe(0);
-    expect(body.totalPages).toBe(0);
+    // computeTotalPages(0, 25) === 1 por convenção (sempre ≥ 1 página).
+    expect(body.totalPages).toBe(1);
   });
 
   // ─── Criação ───────────────────────────────────────────────────────

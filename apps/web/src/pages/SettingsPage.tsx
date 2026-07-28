@@ -42,7 +42,15 @@ interface ProfileData {
   amazon?: { connected: false } | AmazonAffiliateInfo;
   mercadoLivre:
     | { connected: false }
-    | { connected: true; nickname: string; mlUserId: string; expired: boolean; hasSessionCookies: boolean; meliid: string | null; melitat: string | null };
+    | {
+        connected: true;
+        nickname: string;
+        mlUserId: string;
+        expired: boolean;
+        hasSessionCookies: boolean;
+        meliid: string | null;
+        melitat: string | null;
+      };
   sourceGroups?: { jid: string; name: string }[];
   targetGroups?: { jid: string; name: string }[];
   excludedGroups?: {
@@ -78,21 +86,28 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadProfile = useCallback(async () => {
-    setLoading(true);
-    const res = await fetchApi<{ success: boolean; profile: ProfileData }>(
-      '/api/affiliate/profile',
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (res.success && res.data?.profile) {
-      setProfile(res.data.profile);
-    }
-    setLoading(false);
-  }, [token]);
+  const loadProfile = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      const res = await fetchApi<{ success: boolean; profile: ProfileData }>(
+        '/api/affiliate/profile',
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (res.success && res.data?.profile) {
+        setProfile(res.data.profile);
+      }
+      if (showLoading) setLoading(false);
+    },
+    [token],
+  );
 
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  // Atualização pós-save: refaz o fetch do perfil SEM resetar `loading`,
+  // para não desmontar a seção ativa (o que apagaria o feedback "✅ Salvo!").
+  const refreshProfile = useCallback(() => loadProfile(false), [loadProfile]);
 
   const mlConnected = profile?.mercadoLivre.connected === true;
   const ml = mlConnected
@@ -100,9 +115,7 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
     : null;
 
   const amazonConnected = profile?.amazon?.connected === true;
-  const amazon = amazonConnected
-    ? (profile!.amazon as AmazonAffiliateInfo)
-    : null;
+  const amazon = amazonConnected ? (profile!.amazon as AmazonAffiliateInfo) : null;
 
   return (
     <PageLayout maxWidth="960px">
@@ -119,7 +132,7 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
           <ShopeeConfigSection
             token={token}
             initialAppId={profile?.shopeeAppId || ''}
-            onUpdate={loadProfile}
+            onUpdate={refreshProfile}
           />
         )}
 
@@ -135,13 +148,29 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                   <>
                     Conectado como <strong>{ml.nickname}</strong>
                     {ml.expired && (
-                      <span style={{ marginLeft: '0.4rem', color: 'var(--color-error)', fontSize: 'var(--text-xs)' }}>
+                      <span
+                        style={{
+                          marginLeft: '0.4rem',
+                          color: 'var(--color-error)',
+                          fontSize: 'var(--text-xs)',
+                        }}
+                      >
                         (token expirado)
                       </span>
                     )}
                   </>
                 }
-                action={<span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-success)' }}>✅ Conectado</span>}
+                action={
+                  <span
+                    style={{
+                      fontSize: 'var(--text-xs)',
+                      fontWeight: 500,
+                      color: 'var(--color-success)',
+                    }}
+                  >
+                    ✅ Conectado
+                  </span>
+                }
               >
                 <MlConfigSection
                   mlUserId={ml.mlUserId}
@@ -149,17 +178,25 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                   melitat={ml.melitat || ''}
                   hasSessionCookies={ml.hasSessionCookies}
                   token={token}
-                  onUpdate={loadProfile}
+                  onUpdate={refreshProfile}
                 />
               </Card>
             ) : (
               <Card>
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
+                  <p
+                    style={{
+                      fontSize: 'var(--text-sm)',
+                      color: 'var(--color-text-secondary)',
+                      marginBottom: '1rem',
+                    }}
+                  >
                     Conecte sua conta do Mercado Livre para gerar links de afiliado.
                   </p>
                   <button
-                    onClick={() => { window.location.href = `/api/ml/auth?userId=${user.id}`; }}
+                    onClick={() => {
+                      window.location.href = `/api/ml/auth?userId=${user.id}`;
+                    }}
                     style={{
                       padding: '0.5rem 1rem',
                       borderRadius: 'var(--radius-md)',
@@ -188,7 +225,7 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
             <AmazonConfigSection
               token={token}
               initialAffiliate={amazon}
-              onUpdate={loadProfile}
+              onUpdate={refreshProfile}
             />
             <TestConversionSection token={token} />
           </div>
