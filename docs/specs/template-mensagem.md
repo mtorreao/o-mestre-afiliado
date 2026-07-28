@@ -2,7 +2,7 @@
 
 > **Status:** Fases 1–4 **entregues**. Fase 5 (E2E dedicado + remoção de `MirrorConfigSection`) parcialmente pendente.
 >
-> **Este arquivo é a fonte de detalhe do que está no código.** Ver [`docs/plans/roadmap.md`](../plans/roadmap.md) para o status operacional.
+> **Este arquivo é a fonte de detalhe do que está no código.** Ver [`docs/roadmap.md`](../roadmap.md) para o status operacional.
 
 ## Resumo
 

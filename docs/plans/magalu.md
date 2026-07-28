@@ -4,7 +4,7 @@
 >
 > **Objetivo:** tornar o **Magalu** (Magazine Luiza) o **quarto marketplace real** do `O Mestre Afiliado`, multi-tenant e operável pelo painel, espelhando o que já existe para Shopee / Mercado Livre / Amazon.
 >
-> **Origem:** consolidação da **subfase 2B (Magalu real)** do `docs/plans/roadmap.md` (Fase 2 — Hardening Amazon + Magalu real).
+> **Origem:** consolidação da **subfase 2B (Magalu real)** do `docs/roadmap.md` (Fase 2 — Hardening Amazon + Magalu real).
 >
 > **Pesquisa:** os detalhes técnicos abaixo foram confirmados via:
 >
@@ -66,7 +66,7 @@
 
 ### 1.2 Por que agora
 
-- O roadmap (`docs/plans/roadmap.md`) já tem a Magalu como **subfase 2B** da Fase 2. Mas a Fase 2 também inclui hardening Amazon (subfase 2A) e observabilidade (2C). Separar **Magalu** em plano próprio desacopla o trabalho e permite paralelizar com Amazon.
+- O roadmap (`docs/roadmap.md`) já tem a Magalu como **subfase 2B** da Fase 2. Mas a Fase 2 também inclui hardening Amazon (subfase 2A) e observabilidade (2C). Separar **Magalu** em plano próprio desacopla o trabalho e permite paralelizar com Amazon.
 - O usuário pediu priorização explícita: **Magalu primeiro**, Amazon depois.
 - A feature entrega valor direto: hoje, qualquer link `magalu.com.br/p/...` ou `maga.lu/...` é **bloqueado** com mensagem "Marketplace ainda não liberado". O espelho fica inutilizável para esse mercado, que é o **3º maior e-commerce do Brasil**.
 
@@ -708,7 +708,7 @@ Cenário novo:
 
 - [ ] `docs/marketplaces/magalu/api-reference.md` criado (template Amazon).
 - [ ] `AGENTS.md` atualizado com bloco "Magalu" em "Conversores" + "Env vars" + link para `docs/plans/magalu.md`.
-- [ ] `docs/plans/roadmap.md` atualizado: Magalu real sai de "subfase 2B" e vira plano próprio (prioridade alta).
+- [ ] `docs/roadmap.md` atualizado: Magalu real sai de "subfase 2B" e vira plano próprio (prioridade alta).
 
 ---
 
@@ -755,7 +755,7 @@ Cada commit: typecheck + test:unit + lint verde. PR com os 10 commits encadeados
 
 ## 14. Mudança no roadmap
 
-`docs/plans/roadmap.md` precisa de 2 mudanças:
+`docs/roadmap.md` precisa de 2 mudanças:
 
 ### 14.1 Renomear Fase 2
 

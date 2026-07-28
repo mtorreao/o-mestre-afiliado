@@ -6,16 +6,16 @@
 
 ## 🗂️ Índice da Documentação
 
-| Pasta                                         | Conteúdo                                                                                                                                                                                                   |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/README.md`](./README.md)               | Este arquivo — arquitetura geral, stack, variáveis de ambiente.                                                                                                                                            |
-| [`docs/plans/roadmap.md`](./plans/roadmap.md) | Roadmap operacional: **topo = entregue** (com link para spec) + **final = planejado por impacto** (maior → menor).                                                                                         |
-| [`docs/specs/`](./specs/)                     | **Specs do que já foi implementado.** Fonte da verdade do que está no código hoje. Critério de aceite e decisões ficam registrados.                                                                        |
-| [`docs/plans/`](./plans/)                     | Planos de features ainda não iniciadas. É a casa do `roadmap.md` e de `feature-flags`, `historico-precos`, `magalu`, `melhorias-ml`, `template-mensagem` (estes dois últimos migrados para `docs/specs/`). |
-| [`docs/investigacoes/`](./investigacoes/)     | Relatórios de investigação (`investigacao-mirror-2026-07-25`).                                                                                                                                             |
-| [`docs/marketplaces/`](./marketplaces/)       | Referências de API de terceiros (`mercadolivre`, `shopee`, `amazon`) + PDFs de cadastro ML.                                                                                                                |
-| [`docs/evolution-api/`](./evolution-api/)     | Referência da Evolution API (WhatsApp).                                                                                                                                                                    |
-| [`docs/known-issues.md`](./known-issues.md)   | Índice de testes E2E desativados temporariamente com `test.skip` + motivo e reativação.                                                                                                                    |
+| Pasta                                       | Conteúdo                                                                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/README.md`](./README.md)             | Este arquivo — arquitetura geral, stack, variáveis de ambiente.                                                                     |
+| [`docs/roadmap.md`](./roadmap.md)           | Roadmap operacional: **topo = entregue** (com link para spec) + **final = planejado por impacto** (maior → menor).                  |
+| [`docs/specs/`](./specs/)                   | **Specs do que já foi implementado.** Fonte da verdade do que está no código hoje. Critério de aceite e decisões ficam registrados. |
+| [`docs/plans/`](./plans/)                   | Planos de features ainda não iniciadas: `feature-flags`, `historico-precos`, `magalu`, `melhorias-ml`.                              |
+| [`docs/investigacoes/`](./investigacoes/)   | Relatórios de investigação (`investigacao-mirror-2026-07-25`).                                                                      |
+| [`docs/marketplaces/`](./marketplaces/)     | Referências de API de terceiros (`mercadolivre`, `shopee`, `amazon`) + PDFs de cadastro ML.                                         |
+| [`docs/evolution-api/`](./evolution-api/)   | Referência da Evolution API (WhatsApp).                                                                                             |
+| [`docs/known-issues.md`](./known-issues.md) | Índice de testes E2E desativados temporariamente com `test.skip` + motivo e reativação.                                             |
 
 ### Specs disponíveis (`docs/specs/`)
 
@@ -31,12 +31,12 @@
 
 ### Planos disponíveis
 
-| Plano                                                           | Status                                           | Resumo                                                                                                                                                                                                                                                                |
-| --------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/plans/magalu.md`](./plans/magalu.md)                     | Planejado (prioridade alta)                      | Marketplace 4 funcional (afiliado/tenant/conversor/E2E). Conversor já existe (`packages/converters/src/magalu{,-pure}.ts`); falta DB/API/UI/ingestor.                                                                                                                 |
-| [`docs/plans/feature-flags.md`](./plans/feature-flags.md)       | Fases 1–4 + 6 parciais; bootstrap admin pendente | Modo manutenção + kill switch do envio + kill switch do ingestor + tela admin. **⚠️ Bootstrap admin quebrado hoje** (sem `users.is_admin`, sem `ADMIN_EMAILS`, sem assignment no JWT). Detalhes do entregue no topo do [`docs/plans/roadmap.md`](./plans/roadmap.md). |
-| [`docs/plans/historico-precos.md`](./plans/historico-precos.md) | Não iniciado                                     | Persistência de ofertas + histórico de preço + UI admin. Worker isolado (Queue C `omestre:mirror:catalog`).                                                                                                                                                           |
-| [`docs/plans/melhorias-ml.md`](./plans/melhorias-ml.md)         | Não iniciado                                     | Renovação automática de cookies (`refreshSessionCookies` já existe), fallback inteligente, batch de URLs, mensagens descritivas, testes ML.                                                                                                                           |
+| Plano                                                           | Status                                           | Resumo                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/plans/magalu.md`](./plans/magalu.md)                     | Planejado (prioridade alta)                      | Marketplace 4 funcional (afiliado/tenant/conversor/E2E). Conversor já existe (`packages/converters/src/magalu{,-pure}.ts`); falta DB/API/UI/ingestor.                                                                                                     |
+| [`docs/plans/feature-flags.md`](./plans/feature-flags.md)       | Fases 1–4 + 6 parciais; bootstrap admin pendente | Modo manutenção + kill switch do envio + kill switch do ingestor + tela admin. **⚠️ Bootstrap admin quebrado hoje** (sem `users.is_admin`, sem `ADMIN_EMAILS`, sem assignment no JWT). Detalhes do entregue no topo do [`docs/roadmap.md`](./roadmap.md). |
+| [`docs/plans/historico-precos.md`](./plans/historico-precos.md) | Não iniciado                                     | Persistência de ofertas + histórico de preço + UI admin. Worker isolado (Queue C `omestre:mirror:catalog`).                                                                                                                                               |
+| [`docs/plans/melhorias-ml.md`](./plans/melhorias-ml.md)         | Não iniciado                                     | Renovação automática de cookies (`refreshSessionCookies` já existe), fallback inteligente, batch de URLs, mensagens descritivas, testes ML.                                                                                                               |
 
 ---
 

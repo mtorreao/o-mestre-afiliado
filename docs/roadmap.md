@@ -60,7 +60,7 @@ A ordem abaixo foi escolhida para maximizar o retorno de cada entrega. Cada item
 3. **Aproveitar o padrão existente:** Magalu (item 2) e Amazon hardening (item 4) seguem o template já validado (DB → converter → API → UI → E2E). Reaproveitar reduz risco e tempo.
 4. **Magalu antes de Amazon:** owner pediu explicitamente; trabalho isolado, não bloqueia o resto.
 5. **Multi-usuário → multi-tenant:** item 5 (tenant) só faz sentido depois do catálogo e do hardening Amazon, porque a UI admin vai consumir dados cross-tenant.
-6. **Roadmap é vivo:** após cada leva, este documento é reescrito — `docs/plans/roadmap.md` não acumula fases históricas, só o estado atual + próximo horizonte.
+6. **Roadmap é vivo:** após cada leva, este documento é reescrito — `docs/roadmap.md` não acumula fases históricas, só o estado atual + próximo horizonte.
 
 ---
 
@@ -87,7 +87,7 @@ Item 5 (Tenant/convites) → base de qualquer feature multi-usuário daqui em di
 
 ## Como usar este documento
 
-- **Novo no projeto?** Leia primeiro `docs/README.md` (arquitetura), depois `docs/plans/roadmap.md` (estado atual + horizonte).
+- **Novo no projeto?** Leia primeiro `docs/README.md` (arquitetura), depois `docs/roadmap.md` (estado atual + horizonte).
 - **Vai implementar um item da tabela "Planejado"?** Abra o plano linkado em `docs/plans/`. Eles têm o detalhamento técnico, critérios de aceite e commits sugeridos.
 - **Vai consultar uma entrega?** Abra a spec linkada em `docs/specs/`. Ela é a fonte da verdade do que está no código hoje.
 - **Achou algo fora do lugar?** Edite este arquivo e o índice em `docs/README.md` no mesmo PR.

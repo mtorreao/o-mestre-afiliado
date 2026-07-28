@@ -1,8 +1,8 @@
 # Plano: Feature Flags (admin-only) + Modo Manutenção
 
-> **Status:** Fases 1–4 (fundação admin + DB + package + API) e Fase 6 (UI `FeatureFlagsPage` + `MaintenancePage`) **entregues**. Fases 5 (kill switch ingestor) e 7 (E2E dedicado) ainda pendentes. Ver [`docs/plans/roadmap.md`](../plans/roadmap.md) para o status operacional.
+> **Status:** Fases 1–4 (fundação admin + DB + package + API) e Fase 6 (UI `FeatureFlagsPage` + `MaintenancePage`) **entregues**. Fases 5 (kill switch ingestor) e 7 (E2E dedicado) ainda pendentes. Ver [`docs/roadmap.md`](../roadmap.md) para o status operacional.
 >
-> **Este arquivo é a fonte de detalhe das Fases pendentes** (5 + 7). Para o que já foi entregue, ver o resumo do item 8 em [`docs/plans/roadmap.md`](../plans/roadmap.md#-entregue-com-link-para-spec).
+> **Este arquivo é a fonte de detalhe das Fases pendentes** (5 + 7). Para o que já foi entregue, ver o resumo do item 8 em [`docs/roadmap.md`](../roadmap.md#-entregue-com-link-para-spec).
 
 ---
 
