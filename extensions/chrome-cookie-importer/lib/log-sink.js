@@ -120,6 +120,7 @@
   async function flush() {
     if (!API_KEY) return;
     const buffer = await loadBuffer();
+    log.debug('log-sink.flush.start', { bufferSize: buffer.length });
     if (buffer.length === 0) return;
 
     const endpoint = (state.apiUrl || ENDPOINT_DEFAULT).replace(/\/+$/, '') + '/api/extension/logs';
@@ -201,7 +202,13 @@
   }
 
   async function init() {
+    log.debug('log-sink.init.start');
     await loadState();
+    log.debug('log-sink.init.state-loaded', {
+      hasApiKey: Boolean(API_KEY),
+      apiUrl: state.apiUrl,
+      sessionId: state.sessionId,
+    });
     if (API_KEY) {
       startTimer();
       log.info('logs-sink.started', { sessionId: state.sessionId });
