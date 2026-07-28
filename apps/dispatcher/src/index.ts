@@ -16,6 +16,7 @@ import { MIRROR_SEND_STREAM, MIRROR_SEND_CONSUMER_GROUP } from '@omestre/shared'
 import { startMetricsServer, setStatusMeta, setQueueSizeProvider } from '@omestre/worker-common';
 import { processSendEvent } from './dispatcher.ts';
 import { initMetrics } from './metrics.ts';
+import { isFeatureEnabled, initFlagInvalidation, waitForFlagChange } from '@omestre/feature-flags';
 
 // ─── Config ──────────────────────────────────────────────────────────
 
@@ -155,6 +156,24 @@ async function mainLoop(): Promise<void> {
   );
 
   while (true) {
+    // ─── Kill switch feature flag: evolution_send_enabled ───────
+    if (!(await isFeatureEnabled('evolution_send_enabled'))) {
+      if (!sendPaused) {
+        console.log(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            level: 'warn',
+            service: 'dispatcher',
+            message: 'Envio pausado por feature flag (evolution_send_enabled=false)',
+          }),
+        );
+        sendPaused = true;
+      }
+      await waitForFlagChange('evolution_send_enabled', 5_000);
+      continue;
+    }
+    sendPaused = false;
+
     try {
       const results = (await redis.xreadgroup(
         'GROUP',
@@ -216,6 +235,7 @@ async function mainLoop(): Promise<void> {
 // ─── Graceful shutdown ───────────────────────────────────────────────
 
 let shuttingDown = false;
+let sendPaused = false;
 
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
@@ -382,6 +402,7 @@ async function main(): Promise<void> {
 
   redis = connectRedis();
   await ensureConsumerGroup();
+  initFlagInvalidation();
   await reclaimPendingEntries();
 
   process.on('SIGINT', () => shutdown('SIGINT'));

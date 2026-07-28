@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { getAuthUser } from './auth.ts';
 
 function makeHeaders(auth: string | null): Headers {

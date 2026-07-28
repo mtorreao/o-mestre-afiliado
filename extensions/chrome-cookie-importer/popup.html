@@ -67,53 +67,11 @@ a { color:#818cf8; }
   </div>
 
   <div class="tab-bar">
-    <div class="tab active" data-tab="offer">📦 Oferta</div>
-    <div class="tab" data-tab="session">🔑 Sessão</div>
-    <div class="tab" data-tab="log">📋 Histórico</div>
-  </div>
-
-  <!-- Tab: Oferta -->
-  <div class="tab-content active" id="tab-offer">
-    <label>URL do produto</label>
-    <input id="offerUrl" readonly style="color:#64748b">
-
-    <label>Título (opcional)</label>
-    <input id="offerTitle" placeholder="Ex: Oferta imperdível!">
-
-    <label>Nome do produto</label>
-    <input id="offerProductName">
-
-    <div class="row">
-      <div><label>De</label><input id="offerPriceFrom" placeholder="R$ 199,90"></div>
-      <div><label>Por</label><input id="offerPrice" placeholder="R$ 149,90"></div>
-    </div>
-
-    <label>Cupom (opcional)</label>
-    <input id="offerCoupon" placeholder="AFILIADO10">
-
-    <label>Imagem do produto</label>
-    <div class="opt-row">
-      <input type="checkbox" id="offerWithImage" checked>
-      <label for="offerWithImage">Incluir imagem no post</label>
-    </div>
-
-    <label>Preview da mensagem</label>
-    <textarea id="offerPreview" readonly></textarea>
-
-    <label>Grupos de destino (<span id="groupCount">0</span> selecionados)</label>
-    <div class="group-list" id="groupList"><span style="color:#64748b">Carregando grupos...</span></div>
-    <div class="opt-row">
-      <input type="checkbox" id="selectAllGroups" checked>
-      <label for="selectAllGroups">Selecionar todos</label>
-    </div>
-
-    <div class="status" id="offerStatus"></div>
-    <button id="sendOfferBtn" class="success" disabled>🚀 Enviar para grupos</button>
-    <a id="optionsLink" href="#" style="display:block;text-align:center;margin-top:6px;font-size:11px;color:#6366f1">⚙️ Abrir configurações</a>
+    <div class="tab active" data-tab="session">🔑 Sessão</div>
   </div>
 
   <!-- Tab: Sessão -->
-  <div class="tab-content" id="tab-session">
+  <div class="tab-content active" id="tab-session">
     <label for="affiliateSelect">Afiliado</label>
     <select id="affiliateSelect"><option>— Carregando... —</option></select>
     <div id="sessionState" class="session-state neutral">Sessão ainda não validada</div>
@@ -127,15 +85,8 @@ a { color:#818cf8; }
     <button id="magaluTestBtn">🧪 Testar OneLink (sessão do navegador)</button>
     <button id="magaluSyncBtn" style="margin-top:4px">📥 Sincronizar cookies Magalu</button>
     <div class="status" id="magaluStatus"></div>
-  </div>
 
-  <!-- Tab: Histórico -->
-  <div class="tab-content" id="tab-log">
-    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-      <span style="font-size:12px;color:#94a3b8">Últimas ofertas enviadas</span>
-      <button id="clearLogBtn" class="small danger" style="width:auto">Limpar</button>
-    </div>
-    <div id="logList" class="log-list"><span style="color:#64748b;font-size:12px">Nenhuma oferta enviada ainda.</span></div>
+    <a id="optionsLink" href="#" style="display:block;text-align:center;margin-top:10px;font-size:11px;color:#6366f1">⚙️ Abrir configurações</a>
   </div>
 </div>
 <script type="module" src="popup.js"></script>

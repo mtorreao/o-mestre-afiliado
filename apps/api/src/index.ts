@@ -23,6 +23,8 @@ import { webhookRoutes } from './modules/webhook/webhook.routes.ts';
 import { mlRoutes } from './modules/ml/ml.routes.ts';
 import { amazonRoutes } from './modules/amazon/amazon.routes.ts';
 import { extensionRoutes } from './modules/extension/extension.routes.ts';
+import { featureFlagsRoutes } from './modules/admin/feature-flags.routes.ts';
+import { isFeatureEnabled, initFlagInvalidation } from '@omestre/feature-flags';
 import { warmSourceGroupCache } from './services/group-cache.ts';
 import {
   getAggregatedWorkerStatus,
@@ -86,6 +88,35 @@ const app = new Elysia()
   .use(mlRoutes)
   .use(amazonRoutes)
   .use(extensionRoutes)
+  .use(featureFlagsRoutes)
+
+  // ─── Gate de manutenção (feature flag global) ────────────────────
+  .onBeforeHandle(async ({ request }) => {
+    if (await isFeatureEnabled('maintenance_mode')) {
+      const path = new URL(request.url).pathname;
+      const isExempt =
+        path.startsWith('/webhook') ||
+        path.startsWith('/api/auth') ||
+        path.startsWith('/api/admin') ||
+        path === '/health' ||
+        path === '/docs' ||
+        path.startsWith('/swagger');
+      if (!isExempt) {
+        const authHeader = request.headers.get('authorization');
+        if (authHeader?.startsWith('Bearer ')) {
+          // Se tem token, verifica se é admin
+          return; // não bloqueia — deixa a rota decidir
+        }
+        // Sem token → bloqueia
+        return {
+          success: false,
+          error: 'Sistema em manutenção. Tente novamente em instantes.',
+          maintenance: true,
+        };
+      }
+    }
+  })
+
   .get('/', () => ({
     service: 'O Mestre Afiliado API',
     version: '1.0.0',
@@ -194,8 +225,13 @@ const app = new Elysia()
     return purgeDlq();
   })
 
-  // ─── Warm source group cache ─────────────────────────────────────────
-  .get('/api/internal/warm-cache', async () => {
+  // ─── Cache warming + flag invalidation no startup ────────────────────
+  .onStart(async () => {
+    // Assina canal de invalidação de flags (propagação imediata de toggles)
+    initFlagInvalidation();
+
+    // Carrega todos os sourceGroups do PostgreSQL para o Redis
+    // para evitar que mensagens sejam ignoradas após restart
     await warmSourceGroupCache();
     return { success: true };
   })

@@ -118,6 +118,18 @@
         "drizzle-kit": "catalog:",
       },
     },
+    "packages/feature-flags": {
+      "name": "@omestre/feature-flags",
+      "version": "0.1.0",
+      "dependencies": {
+        "@omestre/db": "workspace:*",
+        "ioredis": "^5.4.1",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5",
+      },
+    },
     "packages/shared": {
       "name": "@omestre/shared",
       "version": "1.0.0",
@@ -307,6 +319,8 @@
     "@omestre/db": ["@omestre/db@workspace:packages/db"],
 
     "@omestre/dispatcher": ["@omestre/dispatcher@workspace:apps/dispatcher"],
+
+    "@omestre/feature-flags": ["@omestre/feature-flags@workspace:packages/feature-flags"],
 
     "@omestre/ingestor": ["@omestre/ingestor@workspace:apps/ingestor"],
 

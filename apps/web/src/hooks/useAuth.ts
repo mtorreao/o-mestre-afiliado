@@ -5,6 +5,7 @@
  * - Token JWT no localStorage
  * - Login, Register, Logout
  * - Estado do usuário logado
+ * - isAdmin para feature flags
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -13,6 +14,7 @@ interface User {
   id: number;
   email: string;
   name: string;
+  isAdmin?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -61,7 +63,12 @@ export function useAuth() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    const data = await res.json() as { success: boolean; token?: string; user?: User; error?: string };
+    const data = (await res.json()) as {
+      success: boolean;
+      token?: string;
+      user?: User;
+      error?: string;
+    };
 
     if (!data.success || !data.token) {
       throw new Error(data.error || 'Falha no login');
@@ -78,7 +85,12 @@ export function useAuth() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password }),
     });
-    const data = await res.json() as { success: boolean; token?: string; user?: User; error?: string };
+    const data = (await res.json()) as {
+      success: boolean;
+      token?: string;
+      user?: User;
+      error?: string;
+    };
 
     if (!data.success || !data.token) {
       throw new Error(data.error || 'Falha no registro');
@@ -99,6 +111,7 @@ export function useAuth() {
     token: state.token,
     loading: state.loading,
     isAuthenticated: !!state.user,
+    isAdmin: !!state.user?.isAdmin,
     login,
     register,
     logout,

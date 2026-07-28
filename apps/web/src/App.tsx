@@ -24,6 +24,8 @@ import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { MirrorsPage } from './pages/MirrorsPage.tsx';
 import { MirrorFormPage } from './pages/MirrorFormPage.tsx';
+import { FeatureFlagsPage } from './pages/FeatureFlagsPage.tsx';
+import { MaintenancePage } from './pages/MaintenancePage.tsx';
 import { AppShellLayout } from './components/layout/AppShell.tsx';
 import { ToastProvider } from './components/ui/index.ts';
 import { ThemeToggle } from './components/ui/ThemeToggle.tsx';
@@ -100,7 +102,7 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
 // ─── Main App ────────────────────────────────────────────
 
 function App() {
-  const { user, token, login, register, logout, isAuthenticated } = useAuth();
+  const { user, token, login, register, logout, isAuthenticated, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   return (
@@ -146,6 +148,7 @@ function App() {
               <ToastProvider>
                 <AppShellLayout
                   userName={user?.name ?? ''}
+                  isAdmin={isAdmin}
                   onLogout={() => {
                     logout();
                     navigate('/login');
@@ -169,7 +172,11 @@ function App() {
             path="mirror-form/:id"
             element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
           />
+          <Route path="feature-flags" element={<FeatureFlagsPage />} />
         </Route>
+
+        {/* Manutenção (sem AppShell) */}
+        <Route path="/maintenance" element={<MaintenancePage />} />
 
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
