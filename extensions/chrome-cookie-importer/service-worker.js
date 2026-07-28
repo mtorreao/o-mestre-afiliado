@@ -7,6 +7,8 @@ importScripts('lib/log-sink.js');
 
 const DEFAULT_API_URL = 'https://dev.omestreafiliado.com.br';
 const SESSION_ALARM = 'session-health-reminder';
+const SW_VERSION = chrome.runtime.getManifest().version;
+const HAS_API_KEY = Boolean(globalThis.__EXT_LOGS_API_KEY__);
 
 const log = globalThis.extLog;
 const sink = globalThis.extLogSink;
@@ -212,8 +214,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-const SW_VERSION = chrome.runtime.getManifest().version;
-log.info('service-worker.boot', { version: SW_VERSION, hasApiKey: Boolean(API_KEY) });
+log.info('service-worker.boot', { version: SW_VERSION, hasApiKey: HAS_API_KEY });
 sink.init().catch(() => {});
 updateBadge();
 verifyAuthToken();
