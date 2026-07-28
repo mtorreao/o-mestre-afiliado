@@ -28,31 +28,28 @@ async function init() {
     'sessionState',
     'authToken',
     'authState',
-    'authDebugEnabled',
-    'logsUploadLastSentAt',
-    'logsUploadLastError',
-    'logsUploadBuffer',
-    'logsUploadLastBatchSize',
   ]);
   $('apiUrl').value = saved.apiUrl || DEFAULT_API_URL;
   authToken = saved.authToken || '';
   authState = saved.authState || null;
 
-  const debugToggle = $('debugLogsToggle');
-  if (debugToggle) debugToggle.checked = saved.authDebugEnabled === true;
+  // Pede ao SW o estado atual — pode ser mais novo que o storage (SW já rodou
+  // verify-auth em background). Evita race condition de mostrar "Não logado"
+  // na primeira abertura do popup.
+  try {
+    const fresh = await chrome.runtime.sendMessage({ action: 'get-auth-state' });
+    if (fresh?.authState) authState = fresh.authState;
+    if (fresh?.authToken !== undefined) authToken = fresh.authToken;
+  } catch {
+    /* SW não respondeu — fica com o que tinha no storage */
+  }
 
   log.info('popup.init', {
     apiUrl: $('apiUrl').value,
     hasToken: Boolean(authToken),
     authStatus: authState?.status || null,
-    logDebugEnabled: log.isEnabled(),
-  });
-
-  renderLogsUploadStatus({
-    lastSentAt: saved.logsUploadLastSentAt || null,
-    lastError: saved.logsUploadLastError || null,
-    bufferSize: Array.isArray(saved.logsUploadBuffer) ? saved.logsUploadBuffer.length : 0,
-    lastBatchSize: saved.logsUploadLastBatchSize || null,
+    authEmail: authState?.email || null,
+    authReason: authState?.reason || null,
   });
 
   await updateMLStatus();
@@ -64,57 +61,17 @@ async function init() {
   setupEvents();
 }
 
-/** Renderiza o status do sink de logs (último envio, buffer, erro). */
-function renderLogsUploadStatus(s) {
-  const el = $('logsUploadStatus');
-  const btn = $('flushLogsBtn');
-  if (!el) return;
-  const parts = [];
-  if (s.lastSentAt) {
-    const ago = Math.round((Date.now() - new Date(s.lastSentAt).getTime()) / 1000);
-    const label =
-      ago < 60
-        ? `há ${ago}s`
-        : ago < 3600
-          ? `há ${Math.round(ago / 60)}min`
-          : `há ${Math.round(ago / 3600)}h`;
-    parts.push(`📤 Último envio: ${label} (${s.lastBatchSize ?? '?'} logs)`);
-  } else {
-    parts.push('📤 Envio ativo. Aguardando primeiro batch…');
-  }
-  if (s.bufferSize > 0) parts.push(`Buffer: ${s.bufferSize}`);
-  if (s.lastError) parts.push(`❌ Último erro: ${s.lastError}`);
-  el.textContent = parts.join(' · ');
-  el.style.color = s.lastError ? '#fca5a5' : '#86efac';
-  if (btn) btn.style.display = s.bufferSize > 0 ? 'block' : 'none';
-}
-
-async function refreshAuth() {
-  log.info('popup.refreshAuth.click');
-  let res;
-  try {
-    res = await chrome.runtime.sendMessage({ type: 'check-auth' });
-    log.info('popup.refreshAuth.response', { valid: res?.valid });
-  } catch (err) {
-    log.error('popup.refreshAuth.failed', { error: String(err) });
-    throw err;
-  }
-  const saved = await chrome.storage.local.get(['authToken', 'authState']);
-  authToken = saved.authToken || '';
-  authState = saved.authState || null;
-  renderAuthState();
-  return res;
-}
-
 function renderAuthState() {
   const el = $('authState');
   const badge = $('sessionBadge');
   const relogin = $('reloginHint');
   if (!authState || authState.status === 'missing') {
-    el.textContent = '🔴 Não logado';
-    el.className = 'session-state expired';
-    if (badge) badge.textContent = '🔴';
-    if (relogin) relogin.style.display = 'block';
+    // Estado inicial — SW ainda não verificou. Não mostrar "Não logado"
+    // (parece erro mas é só "ainda não checou").
+    el.textContent = '🟡 Verificando...';
+    el.className = 'session-state neutral';
+    if (badge) badge.textContent = '🟡';
+    if (relogin) relogin.style.display = 'none';
     return;
   }
   if (authState.status === 'pending') {
@@ -140,7 +97,7 @@ function renderAuthState() {
   }
   // valid
   const who = authState.name || authState.email || 'usuário';
-  el.textContent = `🟢 Logado · ${who}`;
+  el.textContent = `🟢 ${who}`;
   el.className = 'session-state valid';
   if (badge) badge.textContent = '🟢';
   if (relogin) relogin.style.display = 'none';
@@ -174,49 +131,18 @@ function setupTabs() {
 
 function setupEvents() {
   $('importBtn').addEventListener('click', importCookies);
-  $('validateBtn').addEventListener('click', validateSession);
   $('magaluTestBtn').addEventListener('click', testMagaluOneLink);
   $('magaluSyncBtn').addEventListener('click', syncMagaluCookies);
-  $('refreshAuthBtn').addEventListener('click', async () => {
-    $('authState').textContent = '🟡 Verificando...';
-    await refreshAuth();
-  });
-  const debugToggle = $('debugLogsToggle');
-  if (debugToggle) {
-    debugToggle.addEventListener('change', async () => {
-      const enabled = debugToggle.checked;
-      await chrome.storage.local.set({ authDebugEnabled: enabled });
-      log.info('popup.debug-toggle.changed', { enabled });
-    });
-  }
-  const flushBtn = $('flushLogsBtn');
-  if (flushBtn) {
-    flushBtn.addEventListener('click', async () => {
-      flushBtn.disabled = true;
-      flushBtn.textContent = '⏳ Enviando...';
-      try {
-        const res = await chrome.runtime.sendMessage({ type: 'flush-logs-now' });
-        log.info('popup.flush-clicked', { ok: res?.success });
-      } catch (err) {
-        log.error('popup.flush-clicked.failed', { error: String(err) });
-      } finally {
-        setTimeout(() => {
-          flushBtn.disabled = false;
-          flushBtn.textContent = '🚀 Enviar agora';
-        }, 1500);
-      }
-    });
-  }
   $('optionsLink').addEventListener('click', (e) => {
     e.preventDefault();
     chrome.runtime.openOptionsPage();
   });
 
   // Auto-update: re-renderiza quando o SW grava novo authState/authToken.
-  // Resolve o problema de abrir o popup antes do SW terminar o verify-auth —
-  // antes era preciso fechar e abrir de novo (ou clicar "Verificar login").
+  // Resolve o problema de abrir o popup antes do SW terminar o verify-auth.
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
+    log.info('popup.storage.changed', { keys: Object.keys(changes) });
     if (changes.authState) {
       authState = changes.authState.newValue || null;
       log.info('popup.storage.authState.changed', { status: authState?.status });
@@ -227,32 +153,6 @@ function setupEvents() {
     }
     if (changes.sessionState) {
       renderSessionState(changes.sessionState.newValue);
-    }
-    // Re-render do status do sink quando buffer/lastSent mudarem
-    const sinkKeys = [
-      'logsUploadLastSentAt',
-      'logsUploadLastError',
-      'logsUploadBuffer',
-      'logsUploadLastBatchSize',
-    ];
-    if (sinkKeys.some((k) => k in changes)) {
-      chrome.storage.local.get(
-        [
-          'logsUploadLastSentAt',
-          'logsUploadLastError',
-          'logsUploadBuffer',
-          'logsUploadLastBatchSize',
-        ],
-        (saved) => {
-          renderLogsUploadStatus({
-            lastSentAt: saved.logsUploadLastSentAt || null,
-            lastError: saved.logsUploadLastError || null,
-            bufferSize: Array.isArray(saved.logsUploadBuffer) ? saved.logsUploadBuffer.length : 0,
-            lastBatchSize: saved.logsUploadLastBatchSize || null,
-            hasApiKey: Boolean(saved.logsUploadApiKey),
-          });
-        },
-      );
     }
   });
 }
@@ -281,9 +181,7 @@ async function loadAffiliates(sessionState) {
 }
 
 function setActionState() {
-  const has = Boolean(selectedUserId);
-  $('importBtn').disabled = !has;
-  $('validateBtn').disabled = !has;
+  $('importBtn').disabled = !Boolean(selectedUserId);
 }
 
 function renderSessionState(state) {
@@ -334,42 +232,15 @@ async function importCookies() {
       showStatus('sessionStatus', `Erro: ${data.error}`, 'error');
       return;
     }
-    await validateSession();
-  } catch (err) {
-    showStatus('sessionStatus', `Erro: ${err.message}`, 'error');
-  }
-}
-
-async function validateSession() {
-  if (!selectedUserId) return;
-  const apiUrl = normalizeApiUrl($('apiUrl').value);
-  if (!apiUrl) return;
-  $('validateBtn').disabled = true;
-  showStatus('sessionStatus', 'Validando...', 'loading');
-  try {
-    const res = await fetch(
-      `${apiUrl}/api/ml/affiliates/${encodeURIComponent(selectedUserId)}/validate-cookies`,
-      { method: 'POST', headers: authHeaders() },
-    );
-    const data = await res.json();
-    const state = {
-      mlUserId: selectedUserId,
-      status: data.valid ? 'valid' : 'expired',
-      melitat: data.melitat || null,
-      checkedAt: new Date().toISOString(),
-    };
-    await chrome.storage.local.set({ sessionState: state });
-    await chrome.runtime.sendMessage({ type: 'set-session-state', state });
-    renderSessionState(state);
     showStatus(
       'sessionStatus',
-      data.valid
-        ? `✅ Válida${data.melitat ? ' · ' + data.melitat : ''}`
-        : `❌ ${data.error || 'Inválida'}`,
-      data.valid ? 'success' : 'error',
+      `✅ ${meta.count} cookies salvos. Use "Testar OneLink" para validar a sessão.`,
+      'success',
     );
   } catch (err) {
     showStatus('sessionStatus', `Erro: ${err.message}`, 'error');
+  } finally {
+    $('importBtn').disabled = false;
   }
 }
 

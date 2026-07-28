@@ -125,6 +125,15 @@ async function verifyAuthToken() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.action === 'get-auth-state') {
+    chrome.storage.local
+      .get(['authToken', 'authState'])
+      .then((data) =>
+        sendResponse({ authToken: data.authToken || '', authState: data.authState || null }),
+      )
+      .catch((err) => sendResponse({ authToken: '', authState: null }));
+    return true;
+  }
   if (message?.type === 'set-auth-token') {
     const token = message.token;
     const isValid = typeof token === 'string' && token.length > 0;

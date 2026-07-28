@@ -43,9 +43,6 @@ button.small { width:auto; padding:5px 10px; font-size:11px; }
 .log-entry .status-badge { display:inline-block; padding:1px 5px; border-radius:4px; font-size:10px; }
 .status-badge.sent { background:#14532d; color:#86efac; }
 .status-badge.error { background:#7f1d1d; color:#fca5a5; }
-.opt-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
-.opt-row input[type=checkbox] { width:auto; margin:0; }
-.opt-row label { margin:0; }
 .ml-badge { background:#1e293b; color:#64748b; font-size:10px; padding:2px 6px; border-radius:10px; }
 .ml-status { font-size:11px; }
 a { color:#818cf8; }
@@ -62,20 +59,6 @@ a { color:#818cf8; }
   <div id="reloginHint" style="display:none;font-size:11px;color:#fca5a5;margin-bottom:8px">
     Abra <a href="https://dev.omestreafiliado.com.br" target="_blank">o painel</a> e faça login. A extensão sincroniza o token automaticamente.
   </div>
-  <div style="text-align:right;margin-bottom:8px">
-    <button id="refreshAuthBtn" class="small" style="width:auto">🔄 Verificar login</button>
-  </div>
-
-  <div class="opt-row" style="margin-bottom:6px">
-    <input type="checkbox" id="debugLogsToggle">
-    <label for="debugLogsToggle">🔧 Logs de debug (console do service worker)</label>
-  </div>
-  <div style="font-size:10px;color:#94a3b8;margin-bottom:10px" id="logsUploadStatus">
-    Envio de logs para a API: configurando…
-  </div>
-  <button id="flushLogsBtn" class="small" style="width:auto;margin-bottom:10px;display:none">
-    🚀 Enviar agora
-  </button>
 
   <div class="tab-bar">
     <div class="tab active" data-tab="session">🔑 Sessão</div>
@@ -87,7 +70,6 @@ a { color:#818cf8; }
     <select id="affiliateSelect"><option>— Carregando... —</option></select>
     <div id="sessionState" class="session-state neutral">Sessão ainda não validada</div>
     <button id="importBtn" disabled>📥 Sincronizar cookies</button>
-    <button id="validateBtn" style="margin-top:4px" class="secondary" disabled>🔎 Validar sessão</button>
     <div class="status" id="sessionStatus"></div>
 
     <div style="border-top:1px solid #1e293b;margin:12px 0 8px"></div>
@@ -100,7 +82,9 @@ a { color:#818cf8; }
     <a id="optionsLink" href="#" style="display:block;text-align:center;margin-top:10px;font-size:11px;color:#6366f1">⚙️ Abrir configurações</a>
   </div>
 </div>
+<script src="lib/log-sink.config.js"></script>
 <script src="lib/log.js"></script>
+<script src="lib/log-sink.js"></script>
 <script type="module" src="popup.js"></script>
 </body>
 </html>
