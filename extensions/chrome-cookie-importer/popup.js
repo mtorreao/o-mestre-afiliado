@@ -13,6 +13,7 @@ import {
 } from './lib/pure.js';
 
 const $ = (id) => document.getElementById(id);
+const log = globalThis.extLog;
 
 let affiliates = [];
 let selectedUserId = null;
@@ -27,10 +28,21 @@ async function init() {
     'sessionState',
     'authToken',
     'authState',
+    'authDebugEnabled',
   ]);
   $('apiUrl').value = saved.apiUrl || DEFAULT_API_URL;
   authToken = saved.authToken || '';
   authState = saved.authState || null;
+
+  const debugToggle = $('debugLogsToggle');
+  if (debugToggle) debugToggle.checked = saved.authDebugEnabled === true;
+
+  log.info('popup.init', {
+    apiUrl: $('apiUrl').value,
+    hasToken: Boolean(authToken),
+    authStatus: authState?.status || null,
+    logDebugEnabled: log.isEnabled(),
+  });
 
   await updateMLStatus();
   renderAuthState();
@@ -42,7 +54,15 @@ async function init() {
 }
 
 async function refreshAuth() {
-  const res = await chrome.runtime.sendMessage({ type: 'check-auth' });
+  log.info('popup.refreshAuth.click');
+  let res;
+  try {
+    res = await chrome.runtime.sendMessage({ type: 'check-auth' });
+    log.info('popup.refreshAuth.response', { valid: res?.valid });
+  } catch (err) {
+    log.error('popup.refreshAuth.failed', { error: String(err) });
+    throw err;
+  }
   const saved = await chrome.storage.local.get(['authToken', 'authState']);
   authToken = saved.authToken || '';
   authState = saved.authState || null;
@@ -125,6 +145,14 @@ function setupEvents() {
     $('authState').textContent = '🟡 Verificando...';
     await refreshAuth();
   });
+  const debugToggle = $('debugLogsToggle');
+  if (debugToggle) {
+    debugToggle.addEventListener('change', async () => {
+      const enabled = debugToggle.checked;
+      await chrome.storage.local.set({ authDebugEnabled: enabled });
+      log.info('popup.debug-toggle.changed', { enabled });
+    });
+  }
   $('optionsLink').addEventListener('click', (e) => {
     e.preventDefault();
     chrome.runtime.openOptionsPage();

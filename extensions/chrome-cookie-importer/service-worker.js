@@ -1,5 +1,11 @@
+// MV3 service workers suportam importScripts para carregar scripts clássicos
+// do mesmo diretório. Carrega o logger antes do código principal.
+importScripts('lib/log.js');
+
 const DEFAULT_API_URL = 'https://dev.omestreafiliado.com.br';
 const SESSION_ALARM = 'session-health-reminder';
+
+const log = globalThis.extLog;
 
 chrome.runtime.onInstalled.addListener(async () => {
   const saved = await chrome.storage.local.get(['apiUrl', 'sessionReminderEnabled']);
@@ -7,6 +13,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (saved.sessionReminderEnabled !== false) {
     await chrome.alarms.create(SESSION_ALARM, { periodInMinutes: 60 });
   }
+  log.info('service-worker.installed', { apiUrl: saved.apiUrl || DEFAULT_API_URL });
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -14,6 +21,7 @@ chrome.runtime.onStartup.addListener(async () => {
   if (saved.sessionReminderEnabled !== false) {
     await chrome.alarms.create(SESSION_ALARM, { periodInMinutes: 60 });
   }
+  log.info('service-worker.startup');
   await updateBadge();
   await verifyAuthToken();
 });
@@ -52,16 +60,28 @@ async function updateBadge() {
 /** Verifica o JWT atual contra /api/auth/me e persiste o authState. */
 async function verifyAuthToken() {
   const { apiUrl, authToken } = await chrome.storage.local.get(['apiUrl', 'authToken']);
-  if (!apiUrl || !authToken) {
-    await chrome.storage.local.set({ authState: { status: 'missing' } });
+
+  if (!apiUrl) {
+    log.warn('verify-auth.apiUrl.missing');
+    await chrome.storage.local.set({ authState: { status: 'missing', reason: 'no-api-url' } });
+    await updateBadge();
+    return { valid: false };
+  }
+  if (!authToken) {
+    log.warn('verify-auth.token.missing', { apiUrl });
+    await chrome.storage.local.set({ authState: { status: 'missing', reason: 'no-auth-token' } });
     await updateBadge();
     return { valid: false };
   }
 
+  const url = `${apiUrl}/api/auth/me`;
+  log.info('verify-auth.fetch.start', { url, tokenLength: authToken.length });
+
   try {
-    const res = await fetch(`${apiUrl}/api/auth/me`, {
+    const res = await fetch(url, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
+    log.info('verify-auth.fetch.response', { status: res.status, ok: res.ok });
     const data = await res.json().catch(() => null);
     if (res.ok && data?.success && data?.user) {
       const authState = {
@@ -73,14 +93,17 @@ async function verifyAuthToken() {
       };
       await chrome.storage.local.set({ authState });
       await updateBadge();
+      log.info('verify-auth.success', { userId: authState.userId, email: authState.email });
       return { valid: true, user: data.user };
     }
+    log.warn('verify-auth.invalid', { status: res.status, data });
     await chrome.storage.local.set({
       authState: { status: 'expired', checkedAt: new Date().toISOString() },
     });
     await updateBadge();
     return { valid: false };
-  } catch {
+  } catch (err) {
+    log.error('verify-auth.network.error', { error: String(err), url });
     await chrome.storage.local.set({
       authState: { status: 'error', checkedAt: new Date().toISOString() },
     });
@@ -89,17 +112,27 @@ async function verifyAuthToken() {
   }
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'set-auth-token') {
     const token = message.token;
     const isValid = typeof token === 'string' && token.length > 0;
+    log.info('message.set-auth-token.received', {
+      hasToken: isValid,
+      tokenLength: isValid ? token.length : 0,
+      tabUrl: sender?.tab?.url,
+      tabId: sender?.tab?.id,
+    });
     chrome.storage.local
       .set({
         authToken: isValid ? token : '',
         authState: { status: isValid ? 'pending' : 'missing' },
       })
       .then(() => (isValid ? verifyAuthToken() : updateBadge()))
-      .then(() => sendResponse({ success: true }));
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => {
+        log.error('message.set-auth-token.storage.error', { error: String(err) });
+        sendResponse({ success: false, error: String(err) });
+      });
     return true;
   }
 
@@ -111,6 +144,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === 'check-auth') {
+    log.info('message.check-auth.received');
     verifyAuthToken().then((result) => sendResponse(result));
     return true;
   }
@@ -126,5 +160,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
+log.info('service-worker.boot');
 updateBadge();
 verifyAuthToken();

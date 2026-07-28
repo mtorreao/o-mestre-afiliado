@@ -66,6 +66,11 @@ a { color:#818cf8; }
     <button id="refreshAuthBtn" class="small" style="width:auto">🔄 Verificar login</button>
   </div>
 
+  <div class="opt-row" style="margin-bottom:10px">
+    <input type="checkbox" id="debugLogsToggle">
+    <label for="debugLogsToggle">🔧 Logs de debug (console do service worker)</label>
+  </div>
+
   <div class="tab-bar">
     <div class="tab active" data-tab="session">🔑 Sessão</div>
   </div>
@@ -89,6 +94,7 @@ a { color:#818cf8; }
     <a id="optionsLink" href="#" style="display:block;text-align:center;margin-top:10px;font-size:11px;color:#6366f1">⚙️ Abrir configurações</a>
   </div>
 </div>
+<script src="lib/log.js"></script>
 <script type="module" src="popup.js"></script>
 </body>
 </html>

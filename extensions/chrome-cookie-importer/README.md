@@ -17,7 +17,43 @@ Extensão Manifest V3 para sincronizar e validar a sessão do Mercado Livre usad
 - oferece página de opções;
 - agenda lembretes locais para sessões marcadas como expiradas;
 - redige valores sensíveis em mensagens de erro;
-- testa e sincroniza cookies do Magazine Você (Magalu OneLink).
+- testa e sincroniza cookies do Magazine Você (Magalu OneLink);
+- logger estruturado opcional (`extLog`) para diagnóstico de fluxo de auth.
+
+## Debug de login
+
+A extensão tem um logger opcional que escreve em JSON estruturado no console
+do service worker (mesmo padrão dos workers do projeto). Use para entender
+por que o login não está sendo detectado.
+
+1. Abra o popup da extensão
+2. Marque **🔧 Logs de debug (console do service worker)**
+3. Vá em `chrome://extensions/` → clique em **Service worker** (link azul) da extensão
+4. Recarregue a aba do painel (`https://dev.omestreafiliado.com.br`)
+5. Clique **🔄 Verificar login** no popup
+
+Eventos emitidos (filtrar por `[extensão]` no console do service worker):
+
+| Evento                            | Quando                                   |
+| --------------------------------- | ---------------------------------------- |
+| `service-worker.boot`             | SW inicializou                           |
+| `service-worker.installed`        | `onInstalled` (primeira vez)             |
+| `service-worker.startup`          | `onStartup` (Chrome iniciou)             |
+| `auth-sync.loaded`                | Content script rodou na página do painel |
+| `auth-sync.token.found`           | Leu token do `localStorage`              |
+| `auth-sync.token.absent`          | Não encontrou token                      |
+| `auth-sync.message.ack`           | SW confirmou recebimento                 |
+| `message.set-auth-token.received` | SW recebeu o token do content script     |
+| `verify-auth.fetch.start`         | SW vai chamar `/api/auth/me`             |
+| `verify-auth.fetch.response`      | Resposta HTTP chegou                     |
+| `verify-auth.success`             | Token válido, auth gravado               |
+| `verify-auth.invalid`             | Token expirado/inválido                  |
+| `verify-auth.network.error`       | Falha de rede                            |
+| `popup.init`                      | Popup abriu                              |
+| `popup.refreshAuth.click`         | Botão "Verificar login" clicado          |
+| `popup.debug-toggle.changed`      | Toggle de debug mudou                    |
+
+Os eventos `info` aparecem com debug desligado; `debug` requer o toggle ativo.
 
 ## Instalação manual
 
