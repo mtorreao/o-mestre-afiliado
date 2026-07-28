@@ -86,6 +86,11 @@
     userEmail: null,
   };
   let timer = null;
+  // Mutex: garante apenas 1 flush em vôo. Sem isso, múltiplas
+  // origens (timer + sink + onSuspend + onMessage) competem pelo
+  // mesmo buffer no chrome.storage.local e corrompem o estado.
+  let flushRunning = false;
+  let flushQueued = false;
 
   function uuid() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -207,6 +212,25 @@
     }
   }
 
+  /** Envelopa flush() com mutex. Se já há flush em vôo, agenda 1 retry. */
+  async function flushGuarded() {
+    if (flushRunning) {
+      flushQueued = true;
+      return;
+    }
+    flushRunning = true;
+    try {
+      await flush();
+    } finally {
+      flushRunning = false;
+      if (flushQueued) {
+        flushQueued = false;
+        // Dispara o retry sem esperar o próximo tick.
+        flushGuarded().catch(() => {});
+      }
+    }
+  }
+
   async function flush() {
     if (!API_KEY) return;
     const rawBuffer = await loadBuffer();
@@ -291,7 +315,7 @@
 
   function startTimer() {
     if (timer) clearInterval(timer);
-    timer = setInterval(flush, FLUSH_INTERVAL_MS);
+    timer = setInterval(flushGuarded, FLUSH_INTERVAL_MS);
   }
 
   function stopTimer() {
@@ -320,7 +344,7 @@
       await saveBuffer(trimmed);
 
       if (trimmed.length >= MAX_BUFFER) {
-        flush().catch(() => {});
+        flushGuarded().catch(() => {});
       }
     } catch (err) {
       // console.error direto — NAO volta pro sink.
@@ -330,16 +354,27 @@
 
   /** Flush imediato (botão "Enviar agora" do popup). */
   async function flushNow() {
-    return flush();
+    return flushGuarded();
   }
 
   async function init() {
     await loadState();
     if (API_KEY) {
+      // Limpa buffer legado de versoes bugadas (1.6.21 e anteriores)
+      // que podiam persistir 200 entradas stuck. Aplica o sanitize
+      // ANTES de qualquer flush.
+      const raw = await loadBuffer();
+      const clean = sanitizeBuffer(raw, MAX_PERSISTED);
+      if (clean.length !== raw.length || clean.length > MAX_BATCH_SIZE) {
+        // Se sobrou buffer grande OU tinha entradas logs-sink.*,
+        // força reset e deixa o servidor receber um batch novo
+        // (chunks respeitam MAX_BATCH_SIZE).
+        await chrome.storage.local.set({ [STORAGE_KEYS.buffer]: clean });
+      }
       startTimer();
       log.info('logs-sink.started', { sessionId: state.sessionId });
       // Flush imediato do que sobrou do último restart
-      flush().catch(() => {});
+      flushGuarded().catch(() => {});
     }
   }
 
@@ -356,7 +391,7 @@
   // Tenta flushar antes do SW ser desligado.
   if (typeof chrome !== 'undefined' && chrome.runtime?.onSuspend) {
     chrome.runtime.onSuspend.addListener(() => {
-      flush().catch(() => {});
+      flushGuarded().catch(() => {});
     });
   }
 

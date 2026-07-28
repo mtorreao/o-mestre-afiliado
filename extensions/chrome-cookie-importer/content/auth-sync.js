@@ -38,36 +38,49 @@
   }
 
   // Sincroniza o token com o SW. Retorna true se mudou (para log).
+  // `silent=true` suprime logs de polling sem mudança — evita encher
+  // o buffer do sink com 6 entradas/min inuteis.
   let lastSentToken = null;
-  function syncToken(reason) {
+  function syncToken(reason, silent = false) {
     const token = readToken();
-    if (token === lastSentToken) return false;
+    if (token === lastSentToken) {
+      // Nada mudou — no-op silencioso.
+      return false;
+    }
     lastSentToken = token;
     if (!token) {
-      log.info('auth-sync.token.absent', { reason });
+      if (!silent) log.info('auth-sync.token.absent', { reason });
       // Avisa o SW para limpar o estado (não envia token vazio).
       chrome.runtime
         .sendMessage({ type: 'set-auth-token', token: '' })
-        .then((response) =>
+        .then((response) => {
+          if (!silent) {
+            log.info('auth-sync.message.ack', {
+              ok: Boolean(response?.success),
+              reason,
+              cleared: true,
+            });
+          }
+        })
+        .catch((err) => {
+          if (!silent) log.error('auth-sync.message.failed', { error: String(err), reason });
+        });
+      return true;
+    }
+    if (!silent) log.info('auth-sync.token.found', { length: token.length, reason });
+    chrome.runtime
+      .sendMessage({ type: 'set-auth-token', token })
+      .then((response) => {
+        if (!silent) {
           log.info('auth-sync.message.ack', {
             ok: Boolean(response?.success),
             reason,
-            cleared: true,
-          }),
-        )
-        .catch((err) => log.error('auth-sync.message.failed', { error: String(err), reason }));
-      return true;
-    }
-    log.info('auth-sync.token.found', { length: token.length, reason });
-    chrome.runtime
-      .sendMessage({ type: 'set-auth-token', token })
-      .then((response) =>
-        log.info('auth-sync.message.ack', {
-          ok: Boolean(response?.success),
-          reason,
-        }),
-      )
-      .catch((err) => log.error('auth-sync.message.failed', { error: String(err), reason }));
+          });
+        }
+      })
+      .catch((err) => {
+        if (!silent) log.error('auth-sync.message.failed', { error: String(err), reason });
+      });
     return true;
   }
 
@@ -90,10 +103,12 @@
 
   // 3. Polling fallback — em SPAs o localStorage pode mudar via
   //    setItem sem disparar storage event na mesma aba.
+  // ANTES: 10s com log em CADA tick — gerava 6 logs/min so de polling
+  // e enchia o buffer. Agora: 30s e SEM log se nada mudou.
   let pollingTimer = null;
   function startPolling() {
     if (pollingTimer) return;
-    pollingTimer = setInterval(() => syncToken('poll'), 10000);
+    pollingTimer = setInterval(() => syncToken('poll', /*silent*/ true), 30_000);
   }
   function stopPolling() {
     if (pollingTimer) {
