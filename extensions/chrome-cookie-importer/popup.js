@@ -23,29 +23,38 @@ let authState = null; // { status: 'valid'|'expired'|'missing'|'pending'|'error'
 void init();
 
 async function init() {
+  log.info('popup.init.start', {
+    hasGlobalLog: Boolean(globalThis.extLog),
+    hasGlobalSink: Boolean(globalThis.extLogSink),
+  });
   const saved = await chrome.storage.local.get([
     'apiUrl',
     'sessionState',
     'authToken',
     'authState',
   ]);
-  $('apiUrl').value = saved.apiUrl || DEFAULT_API_URL;
+  log.info('popup.init.after-storage-get', { keys: Object.keys(saved) });
+  console.log('[DEBUG] popup.init.after-storage-get OK');
+  const apiUrlEl = $('apiUrl');
+  if (apiUrlEl) apiUrlEl.value = saved.apiUrl || DEFAULT_API_URL;
+  else log.debug('popup.init.no-apiUrl-element');
   authToken = saved.authToken || '';
   authState = saved.authState || null;
 
-  // Pede ao SW o estado atual — pode ser mais novo que o storage (SW já rodou
-  // verify-auth em background). Evita race condition de mostrar "Não logado"
-  // na primeira abertura do popup.
+  log.info('popup.init.before-send-message');
+  console.log('[DEBUG] before-send-message');
   try {
     const fresh = await chrome.runtime.sendMessage({ action: 'get-auth-state' });
+    log.info('popup.init.after-send-message', { fresh });
     if (fresh?.authState) authState = fresh.authState;
     if (fresh?.authToken !== undefined) authToken = fresh.authToken;
-  } catch {
+  } catch (e) {
+    log.warn('popup.init.send-message-failed', { error: String(e) });
     /* SW não respondeu — fica com o que tinha no storage */
   }
 
   log.info('popup.init', {
-    apiUrl: $('apiUrl').value,
+    apiUrl: $('apiUrl')?.value || DEFAULT_API_URL,
     hasToken: Boolean(authToken),
     authStatus: authState?.status || null,
     authEmail: authState?.email || null,
@@ -62,6 +71,10 @@ async function init() {
 }
 
 function renderAuthState() {
+  log.debug('renderAuthState.start', {
+    hasAuthState: Boolean(authState),
+    status: authState?.status,
+  });
   const el = $('authState');
   const badge = $('sessionBadge');
   const relogin = $('reloginHint');
@@ -158,7 +171,8 @@ function setupEvents() {
 }
 
 async function loadAffiliates(sessionState) {
-  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  const apiUrlEl = $('apiUrl');
+  const apiUrl = normalizeApiUrl(apiUrlEl?.value);
   if (!apiUrl) return;
   try {
     const res = await fetch(`${apiUrl}/api/ml/affiliates`, { headers: authHeaders() });
@@ -207,7 +221,7 @@ function showStatus(id, msg, type) {
 
 async function importCookies() {
   if (!selectedUserId) return;
-  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  const apiUrl = normalizeApiUrl($('apiUrl')?.value);
   if (!apiUrl) return showStatus('sessionStatus', 'URL da API inválida', 'error');
 
   $('importBtn').disabled = true;
@@ -290,7 +304,7 @@ async function testMagaluOneLink() {
  * para a API para persistência (magalu_affiliates.session_cookies).
  */
 async function syncMagaluCookies() {
-  const apiUrl = normalizeApiUrl($('apiUrl').value);
+  const apiUrl = normalizeApiUrl($('apiUrl')?.value);
   if (!apiUrl) return showStatus('magaluStatus', 'URL da API inválida', 'error');
 
   const btn = $('magaluSyncBtn');

@@ -119,14 +119,52 @@ def main():
             site.reload(wait_until="networkidle", timeout=20000)
             time.sleep(8)  # aguardar content script enviar pro SW
 
-            if console_msgs:
-                print(f"   Console msgs ({len(console_msgs)}):")
-                for m in console_msgs[:20]:
+            # Abre o popup e captura erros JS
+            print("\n[3b] Abrindo popup.html para testar renderAuthState...")
+            popup_page = context.new_page()
+            popup_errors = []
+            popup_console = []
+            popup_page.on("pageerror", lambda err: popup_errors.append(f"PAGEERROR: {err}"))
+            popup_page.on("crash", lambda: popup_errors.append("PAGE CRASHED"))
+            popup_page.on("console", lambda msg: popup_console.append(f"[{msg.type}] {msg.text[:300]}"))
+            popup_page.goto(f"chrome-extension://copiajjdplbcgddokgjlmkepkajcjadf/popup.html")
+            time.sleep(10)
+            # Verifica se o popup crashou
+            try:
+                crashed = popup_page.evaluate("() => 1+1")
+            except Exception as e:
+                crashed = f"CRASHED: {e}"
+            print(f"   popup alive check: {crashed}")
+
+            if popup_console:
+                print(f"   Popup console ({len(popup_console)}):")
+                for m in popup_console[:15]:
                     print(f"     - {m}")
-            if page_errors:
-                print(f"   ❌ Page errors ({len(page_errors)}):")
-                for e in page_errors[:10]:
+            if popup_errors:
+                print(f"   ❌ Popup errors ({len(popup_errors)}):")
+                for e in popup_errors[:10]:
                     print(f"     - {e}")
+
+            # Verifica o texto atual do badge
+            auth_text = popup_page.evaluate("() => document.getElementById('authState')?.textContent")
+            auth_class = popup_page.evaluate("() => document.getElementById('authState')?.className")
+            print(f"   ✓ authState text: {auth_text!r}")
+            print(f"   ✓ authState class: {auth_class!r}")
+
+            # Tenta forçar renderAuthState manualmente
+            print("\n[3c] Verificando estado do popup apos init...")
+            forced = popup_page.evaluate("""
+                () => {
+                    return {
+                        authText: document.getElementById('authState')?.textContent,
+                        authClass: document.getElementById('authState')?.className,
+                        mlText: document.getElementById('mlStatus')?.textContent,
+                        // Tenta acessar authState via window (vai ser undefined pq e modulo)
+                        windowAuthState: typeof window.authState,
+                    };
+                }
+            """)
+            print(f"   Estado do popup: {forced}")
 
             # 4. Ler storage da extensão via mensagem get-auth-state
             print("\n[4] Verificando storage da extensão...")
