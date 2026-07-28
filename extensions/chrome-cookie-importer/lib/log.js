@@ -70,11 +70,53 @@
     else console.log(line);
   }
 
+  let inSink = false; // evita loop infinito quando sink loga algo
+
   const api = {
-    debug: (event, data) => emit('debug', event, data),
-    info: (event, data) => emit('info', event, data),
-    warn: (event, data) => emit('warn', event, data),
-    error: (event, data) => emit('error', event, data),
+    debug: (event, data) => {
+      emit('debug', event, data);
+      if (!inSink) {
+        inSink = true;
+        try {
+          extLogSink?.sink?.('debug', event, data);
+        } finally {
+          inSink = false;
+        }
+      }
+    },
+    info: (event, data) => {
+      emit('info', event, data);
+      if (!inSink) {
+        inSink = true;
+        try {
+          extLogSink?.sink?.('info', event, data);
+        } finally {
+          inSink = false;
+        }
+      }
+    },
+    warn: (event, data) => {
+      emit('warn', event, data);
+      if (!inSink) {
+        inSink = true;
+        try {
+          extLogSink?.sink?.('warn', event, data);
+        } finally {
+          inSink = false;
+        }
+      }
+    },
+    error: (event, data) => {
+      emit('error', event, data);
+      if (!inSink) {
+        inSink = true;
+        try {
+          extLogSink?.sink?.('error', event, data);
+        } finally {
+          inSink = false;
+        }
+      }
+    },
     isEnabled: () => cachedThreshold <= LEVELS.debug,
   };
 

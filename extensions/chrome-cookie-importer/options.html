@@ -1,32 +1,47 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <title>O Mestre Afiliado — Opções</title>
-  <style>
-    body { margin: 0; padding: 32px; background: #0f172a; color: #e2e8f0; font: 14px system-ui, sans-serif; }
-    main { max-width: 560px; margin: auto; }
-    h1 { font-size: 22px; }
-    p { color: #94a3b8; line-height: 1.5; }
-    label { display: block; margin: 20px 0 6px; color: #cbd5e1; }
-    input[type=url] { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #334155; border-radius: 8px; background: #1e293b; color: #e2e8f0; }
-    .check { display: flex; gap: 8px; align-items: center; margin: 18px 0; }
-    button { padding: 10px 16px; border: 0; border-radius: 8px; background: #6366f1; color: white; font-weight: 600; cursor: pointer; }
-    .status { margin-top: 16px; padding: 10px; border-radius: 8px; display: none; }
-    .status.success { display: block; background: #14532d; color: #bbf7d0; }
-    .status.error { display: block; background: #7f1d1d; color: #fecaca; }
-  </style>
+<meta charset="utf-8">
+<title>O Mestre Afiliado — Opções</title>
+<style>
+  body { margin: 0; padding: 32px; background: #0f172a; color: #e2e8f0; font: 14px system-ui, sans-serif; }
+  main { max-width: 560px; margin: auto; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 16px; margin: 24px 0 8px; }
+  p { color: #94a3b8; line-height: 1.5; }
+  code { background: #1e293b; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+  hr { border: none; border-top: 1px solid #334155; margin: 24px 0; }
+  label { display: block; margin: 20px 0 6px; color: #cbd5e1; }
+  input[type=url], input[type=password] { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #334155; border-radius: 8px; background: #1e293b; color: #e2e8f0; font-family: monospace; }
+  .check { display: flex; gap: 8px; align-items: center; margin: 18px 0; }
+  button { padding: 10px 16px; border: 0; border-radius: 8px; background: #6366f1; color: white; font-weight: 600; cursor: pointer; }
+  .status { margin-top: 16px; padding: 10px; border-radius: 8px; display: none; }
+  .status.success { display: block; background: #14532d; color: #bbf7d0; }
+  .status.error { display: block; background: #7f1d1d; color: #fecaca; }
+</style>
 </head>
 <body>
-  <main>
-    <h1>O Mestre Afiliado</h1>
-    <p>Configure o ambiente da API. Cookies de sessão nunca são armazenados nesta página.</p>
-    <label for="apiUrl">URL da API</label>
-    <input id="apiUrl" type="url" placeholder="https://dev.omestreafiliado.com.br">
-    <label class="check"><input id="sessionReminderEnabled" type="checkbox"> Lembrar quando uma sessão estiver marcada como expirada</label>
-    <button id="saveBtn">Salvar configurações</button>
-    <div id="status" class="status"></div>
-  </main>
-  <script type="module" src="options.js"></script>
+<main>
+  <h1>O Mestre Afiliado</h1>
+  <p>Configure o ambiente da API. Cookies de sessão nunca são armazenados nesta página.</p>
+  <label for="apiUrl">URL da API</label>
+  <input id="apiUrl" type="url" placeholder="https://dev.omestreafiliado.com.br">
+  <label class="check"><input id="sessionReminderEnabled" type="checkbox"> Lembrar quando uma sessão estiver marcada como expirada</label>
+
+  <hr>
+
+  <h2>Envio de logs para a API</h2>
+  <p>
+    A extensão pode enviar logs estruturados para diagnóstico remoto. Cole a API
+    key configurada no servidor (env <code>EXTENSION_LOGS_API_KEY</code>). Se vazia,
+    o envio fica desativado. Gere uma com <code>openssl rand -hex 32</code>.
+  </p>
+  <label for="logsApiKey">API key (opcional)</label>
+  <input id="logsApiKey" type="password" placeholder="Cole a API key aqui">
+
+  <button id="saveBtn">Salvar configurações</button>
+  <div id="status" class="status"></div>
+</main>
+<script type="module" src="options.js"></script>
 </body>
 </html>

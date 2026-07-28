@@ -18,7 +18,55 @@ Extensão Manifest V3 para sincronizar e validar a sessão do Mercado Livre usad
 - agenda lembretes locais para sessões marcadas como expiradas;
 - redige valores sensíveis em mensagens de erro;
 - testa e sincroniza cookies do Magazine Você (Magalu OneLink);
-- logger estruturado opcional (`extLog`) para diagnóstico de fluxo de auth.
+- logger estruturado opcional (`extLog`) para diagnóstico de fluxo de auth;
+- sink opcional que envia logs para `POST /api/extension/logs` (auth via API key dedicada).
+
+## Envio de logs para a API
+
+A extensão pode enviar logs estruturados para diagnóstico remoto. Auth via
+API key dedicada (escopo apenas inserir — não dá pra ler nada).
+
+### Configuração
+
+1. **Servidor**: gere uma API key e configure no `.env`:
+
+   ```bash
+   EXTENSION_LOGS_API_KEY=$(openssl rand -hex 32)
+   ```
+
+   Se vazia, o endpoint rejeita todas as requisições (fail-closed).
+
+2. **Migration**: aplique a tabela `extension_logs`:
+
+   ```bash
+   bun run db:migrate   # aplica 0017_add_extension_logs.sql
+   ```
+
+3. **Extensão**: abra `chrome://extensions/` → O Mestre Afiliado → **Configurações**
+   → cole a mesma key em **API key (opcional)** → **Salvar**.
+
+4. **Popup**: marque **📤 Enviar logs para a API**. Pronto.
+
+### Como funciona
+
+- SW mantém buffer em memória + persiste em `chrome.storage.local` (sobrevive
+  a restart do service worker).
+- Flush automático a cada 10s OU quando buffer passa de 20 entries.
+- Batch máximo: 100 entries (limite do servidor).
+- Rate limit: 5 requests / 10s por sessionId.
+- Botão **🚀 Enviar agora** no popup força flush imediato.
+- Status visível no popup: "Último envio: há 30s (12 logs) · Buffer: 8".
+
+### Endpoints
+
+- `POST /api/extension/logs` — recebe batch. Auth via header
+  `X-Extension-Logs-Key`. Apenas inserir. Não há GET público.
+
+### Privacidade
+
+- O token JWT **nunca** é enviado — apenas `userEmail` (se logado) e `tabUrl`.
+- Eventos sensíveis passam por redação antes do envio.
+- API key fica em `chrome.storage.local` (criptografado pelo Chrome no SO).
 
 ## Debug de login
 

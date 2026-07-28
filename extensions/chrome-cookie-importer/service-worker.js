@@ -1,11 +1,13 @@
 // MV3 service workers suportam importScripts para carregar scripts clássicos
 // do mesmo diretório. Carrega o logger antes do código principal.
 importScripts('lib/log.js');
+importScripts('lib/log-sink.js');
 
 const DEFAULT_API_URL = 'https://dev.omestreafiliado.com.br';
 const SESSION_ALARM = 'session-health-reminder';
 
 const log = globalThis.extLog;
+const sink = globalThis.extLogSink;
 
 chrome.runtime.onInstalled.addListener(async () => {
   const saved = await chrome.storage.local.get(['apiUrl', 'sessionReminderEnabled']);
@@ -25,6 +27,13 @@ chrome.runtime.onStartup.addListener(async () => {
   await updateBadge();
   await verifyAuthToken();
 });
+
+/** Persiste o userEmail do authState no storage pro log-sink usar. */
+async function syncAuthEmailForSink() {
+  const { authState } = await chrome.storage.local.get('authState');
+  const email = authState?.status === 'valid' ? authState.email : null;
+  await chrome.storage.local.set({ logsUploadUserEmail: email || null });
+}
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== SESSION_ALARM) return;
@@ -92,6 +101,7 @@ async function verifyAuthToken() {
         checkedAt: new Date().toISOString(),
       };
       await chrome.storage.local.set({ authState });
+      await syncAuthEmailForSink();
       await updateBadge();
       log.info('verify-auth.success', { userId: authState.userId, email: authState.email });
       return { valid: true, user: data.user };
@@ -157,9 +167,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === 'flush-logs-now') {
+    log.info('message.flush-logs-now.received');
+    sink
+      .flushNow()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: String(err) }));
+    return true;
+  }
+
+  if (message?.type === 'get-logs-status') {
+    chrome.storage.local.get(
+      [
+        'logsUploadEnabled',
+        'logsUploadLastSentAt',
+        'logsUploadLastError',
+        'logsUploadBuffer',
+        'logsUploadLastBatchSize',
+      ],
+      (saved) => {
+        sendResponse({
+          enabled: saved.logsUploadEnabled === true,
+          lastSentAt: saved.logsUploadLastSentAt || null,
+          lastError: saved.logsUploadLastError || null,
+          bufferSize: Array.isArray(saved.logsUploadBuffer) ? saved.logsUploadBuffer.length : 0,
+          lastBatchSize: saved.logsUploadLastBatchSize || null,
+        });
+      },
+    );
+    return true;
+  }
+
   return false;
 });
 
 log.info('service-worker.boot');
+sink.init().catch(() => {});
 updateBadge();
 verifyAuthToken();
