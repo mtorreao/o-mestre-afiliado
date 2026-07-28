@@ -21,7 +21,8 @@
 
   const SERVICE = 'chrome-cookie-importer';
   const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
-  const DEFAULT_LEVEL = LEVELS.debug; // padrão: ver tudo
+  // Default: info. Para ver debug em dev, setar authLogLevel='debug' no storage.
+  const DEFAULT_LEVEL = LEVELS.info;
 
   let cachedThreshold = DEFAULT_LEVEL;
   let configLoaded = false;

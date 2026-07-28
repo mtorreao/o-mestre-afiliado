@@ -37,12 +37,8 @@ async function init() {
   console.log('[DEBUG] popup.init.after-storage-get OK');
   const apiUrlEl = $('apiUrl');
   if (apiUrlEl) apiUrlEl.value = saved.apiUrl || DEFAULT_API_URL;
-  else log.debug('popup.init.no-apiUrl-element');
   authToken = saved.authToken || '';
   authState = saved.authState || null;
-
-  log.info('popup.init.before-send-message');
-  console.log('[DEBUG] before-send-message');
   try {
     const fresh = await chrome.runtime.sendMessage({ action: 'get-auth-state' });
     log.info('popup.init.after-send-message', { fresh });

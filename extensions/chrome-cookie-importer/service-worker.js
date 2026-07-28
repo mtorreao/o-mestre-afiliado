@@ -33,8 +33,6 @@ chrome.storage.local.get(['apiUrl'], (saved) => {
   if (!saved.apiUrl) {
     chrome.storage.local.set({ apiUrl: DEFAULT_API_URL });
     log.info('sw.top-level.apiUrl.default-set', { apiUrl: DEFAULT_API_URL });
-  } else {
-    log.debug('sw.top-level.apiUrl.exists', { apiUrl: saved.apiUrl });
   }
 });
 
@@ -97,12 +95,7 @@ async function updateBadge() {
 
 /** Verifica o JWT atual contra /api/auth/me e persiste o authState. */
 async function verifyAuthToken() {
-  log.debug('verify-auth.start');
   const { apiUrl, authToken } = await chrome.storage.local.get(['apiUrl', 'authToken']);
-  log.debug('verify-auth.storage.read', {
-    hasApiUrl: Boolean(apiUrl),
-    tokenLength: authToken?.length || 0,
-  });
 
   if (!apiUrl) {
     log.warn('verify-auth.apiUrl.missing');
@@ -157,11 +150,6 @@ async function verifyAuthToken() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  log.debug('message.received', {
-    action: message?.action,
-    type: message?.type,
-    senderTabId: sender?.tab?.id,
-  });
   if (message?.action === 'get-auth-state') {
     globalThis.extLog?.info?.('message.get-auth-state.received', {
       senderTabId: sender?.tab?.id,
