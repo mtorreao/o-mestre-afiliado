@@ -19,6 +19,8 @@ import {
 export type ReflectedOffer = InferSelectModel<typeof reflectedOffers>;
 
 export interface MirrorLogFilters {
+  /** Restringe aos logs do afiliado informado (isolamento multi-tenant). */
+  affiliateId?: number;
   sourceGroupJid?: string;
   targetGroupJid?: string;
   status?: 'sent' | 'failed' | 'blocked';
@@ -75,6 +77,11 @@ export class MirrorLogRepository {
 
     // Monta condições de filtro
     const conditions: ReturnType<typeof eq>[] = [];
+
+    // Isolamento multi-tenant: restringe aos logs do afiliado do usuário.
+    if (filters.affiliateId !== undefined) {
+      conditions.push(eq(reflectedOffers.affiliateId, filters.affiliateId));
+    }
 
     if (filters.sourceGroupJid) {
       conditions.push(eq(reflectedOffers.sourceGroupJid, filters.sourceGroupJid));
@@ -212,36 +219,42 @@ export class MirrorLogRepository {
 
   /**
    * Lista JIDs de grupos de origem disponíveis nos logs (para filtros).
+   * Opcionalmente restrito ao afiliado (isolamento multi-tenant).
    */
-  async listSourceGroupJids(): Promise<string[]> {
+  async listSourceGroupJids(affiliateId?: number): Promise<string[]> {
     const db = getDb();
     const rows = await db
       .select({ jid: reflectedOffers.sourceGroupJid })
       .from(reflectedOffers)
+      .where(affiliateId !== undefined ? eq(reflectedOffers.affiliateId, affiliateId) : undefined)
       .groupBy(reflectedOffers.sourceGroupJid);
     return rows.map((r) => r.jid);
   }
 
   /**
    * Lista JIDs de grupos de destino disponíveis nos logs (para filtros).
+   * Opcionalmente restrito ao afiliado (isolamento multi-tenant).
    */
-  async listTargetGroupJids(): Promise<string[]> {
+  async listTargetGroupJids(affiliateId?: number): Promise<string[]> {
     const db = getDb();
     const rows = await db
       .select({ jid: reflectedOffers.targetGroupJid })
       .from(reflectedOffers)
+      .where(affiliateId !== undefined ? eq(reflectedOffers.affiliateId, affiliateId) : undefined)
       .groupBy(reflectedOffers.targetGroupJid);
     return rows.map((r) => r.jid);
   }
 
   /**
    * Lista marketplaces distintos nos logs.
+   * Opcionalmente restrito ao afiliado (isolamento multi-tenant).
    */
-  async listMarketplaces(): Promise<string[]> {
+  async listMarketplaces(affiliateId?: number): Promise<string[]> {
     const db = getDb();
     const rows = await db
       .select({ marketplace: reflectedOffers.marketplace })
       .from(reflectedOffers)
+      .where(affiliateId !== undefined ? eq(reflectedOffers.affiliateId, affiliateId) : undefined)
       .groupBy(reflectedOffers.marketplace);
     return rows.map((r) => r.marketplace);
   }

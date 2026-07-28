@@ -215,6 +215,34 @@ describe('MirrorLogRepository', () => {
       expect(r.total).toBe(0);
     });
 
+    it('aplica filtro affiliateId (isolamento multi-tenant)', async () => {
+      let capturedWhere: unknown;
+      let callIdx = 0;
+      mock.module('../db.ts', () => ({
+        getDb: () =>
+          fakeDb({
+            select: () => {
+              callIdx++;
+              return {
+                from: () => ({
+                  where: (w: unknown) => {
+                    capturedWhere = w;
+                    return makeChain(callIdx === 1 ? [{ total: 4 }] : []);
+                  },
+                  orderBy: () => makeChain(callIdx === 1 ? [{ total: 4 }] : []),
+                  limit: () => makeChain([]),
+                  offset: () => makeChain([]),
+                }),
+              };
+            },
+          }),
+      }));
+      const { MirrorLogRepository: MR } = await import('./mirrorLog.repository.ts');
+      const r = await new MR().list({ affiliateId: 42 });
+      expect(r.total).toBe(4);
+      expect(capturedWhere).toBeDefined();
+    });
+
     it('retorna dados paginados', async () => {
       const fakeRows = [
         {
