@@ -27,6 +27,25 @@ async function init() {
     hasGlobalLog: Boolean(globalThis.extLog),
     hasGlobalSink: Boolean(globalThis.extLogSink),
   });
+
+  // Abre um port com o SW pra detectar abertura. O SW aproveita
+  // pra disparar verifyAuthToken() imediato (sem esperar polling).
+  // O port fica vivo enquanto o popup existir; cleanup automático
+  // quando o usuário fecha.
+  try {
+    const port = chrome.runtime.connect({ name: 'popup' });
+    port.postMessage({ type: 'opened' });
+    window.addEventListener('beforeunload', () => {
+      try {
+        port.disconnect();
+      } catch {
+        /* popup já fechando */
+      }
+    });
+  } catch (e) {
+    log.warn('popup.init.connect.failed', { error: String(e) });
+  }
+
   const saved = await chrome.storage.local.get([
     'apiUrl',
     'sessionState',

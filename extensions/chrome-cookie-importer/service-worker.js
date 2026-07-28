@@ -76,6 +76,34 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
+// ─── Popup opened ─────────────────────────────────────────────────────
+// Quando o popup abre, ele conecta via chrome.runtime.connect({ name: 'popup' }).
+// Aproveitamos pra disparar verifyAuthToken() imediato — sem esperar
+// o content script polling (que é de 30s). O polling continua
+// importante pra detectar login/logout em outras abas quando o
+// popup NÃO está aberto.
+//
+// O port fica aberto enquanto o popup existir; quando o popup fecha,
+// o SW recebe onDisconnect e limpa.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'popup') return;
+  log.info('popup.opened', { sender: port.sender?.tab?.id || 'unknown' });
+
+  // Dispara verify imediatamente (não bloqueia o port).
+  verifyAuthToken().catch((err) => log.error('popup.opened.verify.failed', { error: String(err) }));
+
+  port.onMessage.addListener((msg) => {
+    // Mensagens futuras — popup pode pedir algo. Por ora no-op.
+    if (msg?.type === 'ping') {
+      port.postMessage({ type: 'pong', at: Date.now() });
+    }
+  });
+
+  port.onDisconnect.addListener(() => {
+    log.debug('popup.closed');
+  });
+});
+
 async function updateBadge() {
   const { sessionState, authState } = await chrome.storage.local.get(['sessionState', 'authState']);
   const parts = [];
