@@ -68,6 +68,12 @@ describe('extractShopeeItemId', () => {
     );
   });
 
+  it('extrai itemId do formato /opaanlp/SHOPID/ITEMID (novo short link)', () => {
+    expect(extractShopeeItemId('https://shopee.com.br/opaanlp/946161700/23091599945')).toBe(
+      '23091599945',
+    );
+  });
+
   it('retorna null quando não há itemId', () => {
     expect(extractShopeeItemId('https://shopee.com.br/alguma-pagina')).toBeNull();
   });
@@ -89,6 +95,12 @@ describe('extractShopeeShopId', () => {
   it('extrai shopId do formato /product/SHOPID/ITEMID', () => {
     expect(extractShopeeShopId('https://shopee.com.br/product/1500679968/58256271370')).toBe(
       '1500679968',
+    );
+  });
+
+  it('extrai shopId do formato /opaanlp/SHOPID/ITEMID (novo short link)', () => {
+    expect(extractShopeeShopId('https://shopee.com.br/opaanlp/946161700/23091599945')).toBe(
+      '946161700',
     );
   });
 

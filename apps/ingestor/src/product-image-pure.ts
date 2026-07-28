@@ -127,25 +127,31 @@ export function extractAnyProductImage(html: string, baseUrl: string): string | 
 
 /**
  * Extrai o itemId (número do item na Shopee) de uma URL.
- * Suporta tanto o formato -i.SHOPID.ITEMID quanto /product/SHOPID/ITEMID.
+ * Suporta os formatos -i.SHOPID.ITEMID, /product/SHOPID/ITEMID e
+ * /opaanlp/SHOPID/ITEMID (novo formato de short link da Shopee).
  */
 export function extractShopeeItemId(url: string): string | null {
   const m = url.match(/-i\.(\d+)\.(\d+)/i);
   if (m?.[2]) return m[2];
   const productMatch = url.match(/\/product\/(\d+)\/(\d+)/i);
   if (productMatch?.[2]) return productMatch[2];
+  const opaanlpMatch = url.match(/\/opaanlp\/(\d+)\/(\d+)/i);
+  if (opaanlpMatch?.[2]) return opaanlpMatch[2];
   return null;
 }
 
 /**
  * Extrai o shopId (vendedor) de uma URL Shopee.
- * Suporta tanto o formato -i.SHOPID.ITEMID quanto /product/SHOPID/ITEMID.
+ * Suporta os formatos -i.SHOPID.ITEMID, /product/SHOPID/ITEMID e
+ * /opaanlp/SHOPID/ITEMID (novo formato de short link da Shopee).
  */
 export function extractShopeeShopId(url: string): string | null {
   const m = url.match(/-i\.(\d+)\.(\d+)/i);
   if (m?.[1]) return m[1];
   const productMatch = url.match(/\/product\/(\d+)\/(\d+)/i);
   if (productMatch?.[1]) return productMatch[1];
+  const opaanlpMatch = url.match(/\/opaanlp\/(\d+)\/(\d+)/i);
+  if (opaanlpMatch?.[1]) return opaanlpMatch[1];
   return null;
 }
 

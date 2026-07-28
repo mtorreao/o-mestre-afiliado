@@ -67,6 +67,9 @@ export function extractShopeeItemIdFromUrl(url: string): number | null {
   // Tenta formato /product/{shopid}/{itemid}
   const productMatch = url.match(/\/product\/(\d+)\/(\d+)/i);
   if (productMatch?.[2]) return parseInt(productMatch[2], 10);
+  // Novo formato de short link: /opaanlp/{shopid}/{itemid}
+  const opaanlpMatch = url.match(/\/opaanlp\/(\d+)\/(\d+)/i);
+  if (opaanlpMatch?.[2]) return parseInt(opaanlpMatch[2], 10);
   return null;
 }
 
@@ -74,6 +77,9 @@ export function extractShopeeItemIdFromUrl(url: string): number | null {
 export function extractShopeeShopIdFromUrl(url: string): number | null {
   const m = url.match(/-i\.(\d+)\.(\d+)/i);
   if (m?.[1]) return parseInt(m[1], 10);
+  // Novo formato de short link: /opaanlp/{shopid}/{itemid}
+  const opaanlpMatch = url.match(/\/opaanlp\/(\d+)\/(\d+)/i);
+  if (opaanlpMatch?.[1]) return parseInt(opaanlpMatch[1], 10);
   return null;
 }
 

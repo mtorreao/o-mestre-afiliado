@@ -44,6 +44,22 @@ describe('extractShopeeItemIdFromUrl', () => {
     });
   });
 
+  describe('formato /opaanlp/{shopid}/{itemid} (novo short link)', () => {
+    it('extrai itemId do formato opaanlp', () => {
+      expect(
+        _testExtractShopeeItemIdFromUrl('https://shopee.com.br/opaanlp/946161700/23091599945'),
+      ).toBe(23091599945);
+    });
+
+    it('extrai itemId do formato opaanlp mesmo com query string', () => {
+      expect(
+        _testExtractShopeeItemIdFromUrl(
+          'https://shopee.com.br/opaanlp/1242044379/22092998564?__mobile__=1&exp_group=rollout',
+        ),
+      ).toBe(22092998564);
+    });
+  });
+
   describe('retorna null', () => {
     it('URL sem padrão -i. nem /product/', () => {
       expect(_testExtractShopeeItemIdFromUrl('https://shopee.com.br/Capinha-iPhone')).toBeNull();
