@@ -34,26 +34,31 @@ por que o login não está sendo detectado.
 
 Eventos emitidos (filtrar por `[extensão]` no console do service worker):
 
-| Evento                            | Quando                                   |
-| --------------------------------- | ---------------------------------------- |
-| `service-worker.boot`             | SW inicializou                           |
-| `service-worker.installed`        | `onInstalled` (primeira vez)             |
-| `service-worker.startup`          | `onStartup` (Chrome iniciou)             |
-| `auth-sync.loaded`                | Content script rodou na página do painel |
-| `auth-sync.token.found`           | Leu token do `localStorage`              |
-| `auth-sync.token.absent`          | Não encontrou token                      |
-| `auth-sync.message.ack`           | SW confirmou recebimento                 |
-| `message.set-auth-token.received` | SW recebeu o token do content script     |
-| `verify-auth.fetch.start`         | SW vai chamar `/api/auth/me`             |
-| `verify-auth.fetch.response`      | Resposta HTTP chegou                     |
-| `verify-auth.success`             | Token válido, auth gravado               |
-| `verify-auth.invalid`             | Token expirado/inválido                  |
-| `verify-auth.network.error`       | Falha de rede                            |
-| `popup.init`                      | Popup abriu                              |
-| `popup.refreshAuth.click`         | Botão "Verificar login" clicado          |
-| `popup.debug-toggle.changed`      | Toggle de debug mudou                    |
+| Evento                            | Quando                                        |
+| --------------------------------- | --------------------------------------------- |
+| `service-worker.boot`             | SW inicializou                                |
+| `service-worker.installed`        | `onInstalled` (primeira vez)                  |
+| `service-worker.startup`          | `onStartup` (Chrome iniciou)                  |
+| `auth-sync.loaded`                | Content script rodou na página do painel      |
+| `auth-sync.token.found`           | Leu token do `localStorage`                   |
+| `auth-sync.token.absent`          | Não encontrou token                           |
+| `auth-sync.message.ack`           | SW confirmou recebimento                      |
+| `message.set-auth-token.received` | SW recebeu o token do content script          |
+| `verify-auth.fetch.start`         | SW vai chamar `/api/auth/me`                  |
+| `verify-auth.fetch.response`      | Resposta HTTP chegou                          |
+| `verify-auth.success`             | Token válido, auth gravado                    |
+| `verify-auth.invalid`             | Token expirado/inválido                       |
+| `verify-auth.network.error`       | Falha de rede                                 |
+| `popup.init`                      | Popup abriu                                   |
+| `popup.refreshAuth.click`         | Botão "Verificar login" clicado               |
+| `popup.storage.authState.changed` | Storage detectou novo authState (auto-update) |
+| `popup.debug-toggle.changed`      | Toggle de debug mudou                         |
 
 Os eventos `info` aparecem com debug desligado; `debug` requer o toggle ativo.
+
+A partir da v1.6.0 o popup escuta `chrome.storage.onChanged` e re-renderiza
+automaticamente quando o SW grava novo `authState`/`sessionState` — abrir o
+popup antes do SW terminar a validação não exige mais fechar e abrir de novo.
 
 ## Instalação manual
 

@@ -19,10 +19,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import {
-  createTestUser,
-  authGet,
-} from './helpers.ts';
+import { createTestUser, authGet } from './helpers.ts';
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 
@@ -32,7 +29,7 @@ test.describe('WhatsApp Groups - Auth', () => {
   test('GET /api/whatsapp/groups deve retornar 401 sem token', async () => {
     const res = await fetch(`${API}/api/whatsapp/groups`);
     expect(res.status).toBe(401);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 });
@@ -78,7 +75,7 @@ test.describe('Webhook Evolution API', () => {
     // Webhook global não valida apikey porque a Evolution API
     // não envia o header em global webhooks (apenas em chamadas REST diretas)
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(true);
   });
 
@@ -96,7 +93,7 @@ test.describe('Webhook Evolution API', () => {
       }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(true);
   });
 
@@ -209,7 +206,7 @@ test.describe('Webhook Evolution API', () => {
       }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(true);
   });
 });

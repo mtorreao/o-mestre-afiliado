@@ -9,14 +9,7 @@
  *   - Edge cases: URL inválida, sem tracking ID, amzn.to, promozone, tag errada
  */
 import { test, expect } from '@playwright/test';
-import {
-  createTestUser,
-  authGet,
-  authPost,
-  authPut,
-  authPatch,
-  authDelete,
-} from './helpers.ts';
+import { createTestUser, authGet, authPost, authPut, authPatch, authDelete } from './helpers.ts';
 
 const VALID_TAG = 'meusite-20';
 const VALID_TAG_2 = 'meusite-tg-20';
@@ -52,11 +45,11 @@ test.describe('Amazon multi-tracking ID — CRUD', () => {
 
   test('POST tracking-id sem afiliado prévio cria afiliado automaticamente', async () => {
     const { token } = await createTestUser();
-    const res = await authPost(
-      '/api/amazon/affiliate/tracking-ids',
-      token,
-      { tag: VALID_TAG, label: 'Site principal', region: 'BR' },
-    );
+    const res = await authPost('/api/amazon/affiliate/tracking-ids', token, {
+      tag: VALID_TAG,
+      label: 'Site principal',
+      region: 'BR',
+    });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true });
     expect((res.body as any).trackingIds).toHaveLength(1);
@@ -71,11 +64,7 @@ test.describe('Amazon multi-tracking ID — CRUD', () => {
 
   test('POST tracking-id rejeita tag vazia', async () => {
     const { token } = await createTestUser();
-    const res = await authPost(
-      '/api/amazon/affiliate/tracking-ids',
-      token,
-      { tag: '' },
-    );
+    const res = await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: '' });
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({
       success: false,
@@ -87,11 +76,7 @@ test.describe('Amazon multi-tracking ID — CRUD', () => {
     const { token } = await createTestUser();
     // Seed com 100 (não testável em tempo razoável; mockamos via DB direto seria overkill)
     // Apenas validamos que adicionar 1 funciona, e verificamos a regra via teste do repo)
-    const res = await authPost(
-      '/api/amazon/affiliate/tracking-ids',
-      token,
-      { tag: VALID_TAG },
-    );
+    const res = await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: VALID_TAG });
     expect(res.status).toBe(200);
   });
 

@@ -77,12 +77,8 @@ test.describe('Mirrors API — CRUD', () => {
   test('2. POST /api/mirrors — criar espelhamento com dados válidos', async () => {
     const { status, body } = await authPost<MirrorResponse>('/api/mirrors', token, {
       name: 'Ofertas Diárias',
-      sourceGroups: [
-        { jid: 'source-group-1@g.us', name: 'Grupo Origem' },
-      ],
-      targetGroups: [
-        { jid: 'target-group-1@g.us', name: 'Grupo Destino' },
-      ],
+      sourceGroups: [{ jid: 'source-group-1@g.us', name: 'Grupo Origem' }],
+      targetGroups: [{ jid: 'target-group-1@g.us', name: 'Grupo Destino' }],
       // messageTemplate: '{texto_original}', // feature desativada temporariamente
     });
     expect(status).toBe(200);
@@ -152,7 +148,7 @@ test.describe('Mirrors API — CRUD', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(404);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
     expect(body.error).toContain('não encontrado');
   });
@@ -209,7 +205,7 @@ test.describe('Mirrors API — CRUD', () => {
       body: JSON.stringify({ status: 'inactive' }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(true);
     expect((body.mirror as Record<string, unknown>).status).toBe('inactive');
   });
@@ -224,7 +220,7 @@ test.describe('Mirrors API — CRUD', () => {
       body: JSON.stringify({ status: 'active' }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(true);
     expect((body.mirror as Record<string, unknown>).status).toBe('active');
   });
@@ -239,7 +235,7 @@ test.describe('Mirrors API — CRUD', () => {
       body: JSON.stringify({ status: 'invalid-status' }),
     });
     expect(res.status).toBe(400);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 
@@ -251,7 +247,7 @@ test.describe('Mirrors API — CRUD', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(true);
   });
 
@@ -268,7 +264,7 @@ test.describe('Mirrors API — CRUD', () => {
   test('17. GET /api/mirrors — sem token retorna 401', async () => {
     const res = await fetch(`${API}/api/mirrors`);
     expect(res.status).toBe(401);
-    const body = await res.json() as Record<string, unknown>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.success).toBe(false);
     expect(body.error).toContain('Não autenticado');
   });

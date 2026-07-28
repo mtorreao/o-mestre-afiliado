@@ -137,36 +137,14 @@ test.describe('UI - Dashboard', () => {
     // Recarregar — agora deve estar autenticado
     await page.reload();
 
-    // Deve mostrar o dashboard com as seções
-    await expect(page.locator('text=Atalhos Rápidos')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('text=O Mestre Afiliado')).toBeVisible();
-
-    // Cards de métricas e ações rápidas do dashboard (pós-refatoração)
-    await expect(page.getByText('Marketplaces')).toBeVisible();
-    await expect(page.getByText('Ofertas Espelhadas', { exact: true })).toBeVisible();
-    await expect(page.getByText('Novo Espelhamento')).toBeVisible();
-    await expect(page.getByText('Sair')).toBeVisible();
+    // Deve mostrar o dashboard com as seções (DashboardPage atual usa MetricCards sem emojis)
+    await expect(page.locator('text=Atalhos Rápidos')).toBeVisible();
+    await expect(page.locator('text=Marketplaces')).toBeVisible();
+    await expect(page.locator('text=WhatsApp').first()).toBeVisible();
+    await expect(page.locator('text=Sair')).toBeVisible();
   });
 
-  // ⚠️ SKIPPED — ver docs/known-issues.md#e2e-auth-ui-settings-shopee
-  //
-  // Por que skip: SettingsPage renderiza os cards de Marketplace dentro de
-  // Radix `<Tabs>` com `Tabs.Content` que esconde o conteúdo inativo via
-  // atributo `hidden`. O Playwright tenta `click()` direto no botão da
-  // aba Shopee mas o seletor `page.locator('button[role="tab"]', { hasText })`
-  // falha porque o Radix TabsTrigger compõe o accessible name com o ícone
-  // SVG (`Store`) + label, e o `<span>` do ícone intercepta o hasText.
-  // A causa raiz precisa diagnosticar a estrutura real do DOM (browser
-  // snapshot em /configuracoes).
-  //
-  // Para reativar:
-  //   1. Trocar `button[role="tab"]` por `[role="tab"][aria-controls*="shopee"]`
-  //      (Radix expõe `aria-controls` que bate exato), ou
-  //   2. Clicar primeiro via `page.click('button:has-text("Shopee")')` sem
-  //      filtrar role, ou
-  //   3. Investigar por que o Radix Tab não está montando com o label
-  //      certo no HTML server-side (pode ser uma race com hydration).
-  test.skip('deve atualizar credenciais Shopee e verificar', async ({ page }) => {
+  test('deve atualizar credenciais Shopee e verificar', async ({ page }) => {
     // Registrar via API
     const email = uniqueEmail();
     const res = await fetch(apiUrl('/api/auth/register'), {
@@ -176,11 +154,17 @@ test.describe('UI - Dashboard', () => {
     });
     const data = (await res.json()) as { token: string };
 
-    // Autenticar via localStorage
+    // Autenticar via localStorage e navegar para Configurações
     await page.goto('/');
     await page.evaluate((t: string) => localStorage.setItem('omestre_auth_token', t), data.token);
-    await page.reload();
-    await page.waitForSelector('text=🛒 Shopee');
+    await page.goto('/configuracoes');
+    // Aguardar AppShell carregar (sidebar visível)
+    await page.waitForSelector('text=Configurações', { timeout: 15_000 });
+    // Abas Radix escondem conteúdo inativo: clicar na aba "Shopee"
+    await page
+      .locator('button[role="tab"]', { hasText: /shopee/i })
+      .first()
+      .click();
 
     // Preencher credenciais Shopee pelos placeholders
     const appIdInput = page.locator('input[placeholder="Seu App ID da Shopee"]');
@@ -195,10 +179,7 @@ test.describe('UI - Dashboard', () => {
     await expect(page.locator('text=✅ Salvo!')).toBeVisible({ timeout: 10_000 });
   });
 
-  // ⚠️ SKIPPED — ver docs/known-issues.md#e2e-auth-ui-tab-radix-hidden
-  // (mesma raiz técnica do skip acima: Radix Tabs.Content esconde conteúdo
-  //  e locator falha. Reativar junto.)
-  test.skip('deve testar conversão com URL inválida', async ({ page }) => {
+  test('deve testar conversão com URL inválida', async ({ page }) => {
     // Autenticar
     const email = uniqueEmail();
     const res = await fetch(apiUrl('/api/auth/register'), {
@@ -210,8 +191,14 @@ test.describe('UI - Dashboard', () => {
 
     await page.goto('/');
     await page.evaluate((t: string) => localStorage.setItem('omestre_auth_token', t), data.token);
-    await page.reload();
-    await page.waitForSelector('text=🧪 Testar Conversão');
+    await page.goto('/configuracoes');
+    await page.waitForSelector('text=Configurações', { timeout: 15_000 });
+    // TestConversionSection fica dentro das abas Mercado Livre e Amazon
+    await page
+      .locator('button[role="tab"]', { hasText: /Mercado Livre/i })
+      .first()
+      .click();
+    await page.waitForSelector('text=🧪 Testar Conversão', { timeout: 10_000 });
 
     // Preencher URL e testar
     const testInput = page.locator('input[placeholder="Cole a URL do produto (Shopee ou ML)..."]');

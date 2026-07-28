@@ -157,6 +157,24 @@ function setupEvents() {
     e.preventDefault();
     chrome.runtime.openOptionsPage();
   });
+
+  // Auto-update: re-renderiza quando o SW grava novo authState/authToken.
+  // Resolve o problema de abrir o popup antes do SW terminar o verify-auth —
+  // antes era preciso fechar e abrir de novo (ou clicar "Verificar login").
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes.authState) {
+      authState = changes.authState.newValue || null;
+      log.info('popup.storage.authState.changed', { status: authState?.status });
+      renderAuthState();
+    }
+    if (changes.authToken) {
+      authToken = changes.authToken.newValue || '';
+    }
+    if (changes.sessionState) {
+      renderSessionState(changes.sessionState.newValue);
+    }
+  });
 }
 
 async function loadAffiliates(sessionState) {
