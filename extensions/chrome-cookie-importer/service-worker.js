@@ -5,11 +5,10 @@ importScripts('lib/log-sink.config.js');
 importScripts('lib/log.js');
 importScripts('lib/log-sink.js');
 
-// Bootstrap log — primeira coisa que o SW faz. Deve aparecer no DB
-// logo apos cada reload. Se voce nao ve 'service-worker.bootstrap'
-// nos logs remotos, o SW NAO foi reiniciado (cache do Chrome).
+// DIAGNOSTICO 1.6.7-UNIQUE-TOKEN-XXX: log no top-level do SW.
+// Se voce nao ve este evento exato no DB, o SW NAO foi reiniciado.
 try {
-  globalThis.extLog?.info?.('service-worker.bootstrap', {
+  globalThis.extLog?.info?.('sw.boot.unique.token.v1.6.7', {
     swVersion: chrome.runtime.getManifest().version,
     hasApiKey: Boolean(globalThis.__EXT_LOGS_API_KEY__),
     sinkLoaded: Boolean(globalThis.extLogSink),
@@ -25,6 +24,19 @@ const HAS_API_KEY = Boolean(globalThis.__EXT_LOGS_API_KEY__);
 
 const log = globalThis.extLog;
 const sink = globalThis.extLogSink;
+
+// Sincroniza apiUrl com default ANTES de qualquer listener. Garante que
+// verifyAuthToken() no boot ja encontre a URL mesmo em instalacao fresca.
+// chrome.storage.local.get com callback API — sync, nao bloqueia top-level,
+// mas garante que `apiUrl` esteja setado antes do `verifyAuthToken()` rodar.
+chrome.storage.local.get(['apiUrl'], (saved) => {
+  if (!saved.apiUrl) {
+    chrome.storage.local.set({ apiUrl: DEFAULT_API_URL });
+    log.info('sw.top-level.apiUrl.default-set', { apiUrl: DEFAULT_API_URL });
+  } else {
+    log.debug('sw.top-level.apiUrl.exists', { apiUrl: saved.apiUrl });
+  }
+});
 
 chrome.runtime.onInstalled.addListener(async () => {
   const saved = await chrome.storage.local.get(['apiUrl', 'sessionReminderEnabled']);
