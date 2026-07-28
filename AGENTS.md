@@ -206,6 +206,90 @@ Os mesmos guards rodam em `.github/workflows/ci.yml` (typecheck + build + pretti
 
 ---
 
+## 📝 Spec-Driven Development
+
+> **Regra:** toda feature nova nasce como especificação técnica em `docs/plans/<feature>.md`
+> **antes** de qualquer linha de código. A doc fica junto ao código enquanto a feature
+> está em construção e migra para `docs/specs/<feature>.md` quando entra em produção.
+>
+> **Sem pontas soltas na documentação.** Uma spec é "pronta" quando outro agente consegue
+> implementá-la só lendo o doc, sem precisar abrir PR anterior, Slack ou chamada.
+
+### Quando a regra se aplica
+
+| Tipo de mudança                                                                    | Spec obrigatória? | Onde fica a doc enquanto não vira código             |
+| ---------------------------------------------------------------------------------- | ----------------- | ---------------------------------------------------- |
+| **Feature nova** (nova rota, novo marketplace, novo painel, novo worker)           | ✅ **Sim**        | `docs/plans/<feature>.md`                            |
+| **Refactor** com mudança de contrato público (DB schema, API, package)             | ✅ Sim (curta)    | `docs/plans/<feature>.md` ou seção da spec existente |
+| Bugfix, chore, perf local, ajuste de CSS, refactor interno sem mudança de contrato | ❌ Não            | Changelog + descrição no commit bastam               |
+
+**Heurística para decidir:** _"alguém implementando isso do zero, sem contexto prévio, consegue fazer só com o que está escrito no doc?"_ Se a resposta é não, falta spec.
+
+### Ciclo de vida de uma spec
+
+```text
+1. CRIAR   → docs/plans/<feature>.md          (criada antes do primeiro commit de código)
+2. AJUSTAR → ... (atualizada in-loco conforme decisões surgem na implementação)
+3. FINALIZAR → renomear/mover para docs/specs/<feature>.md
+              + adicionar entrada em docs/roadmap.md (seção "Entregue")
+              + atualizar docs/README.md (índice de specs)
+              + marcar phases pendentes como "entregues" no topo do próprio arquivo
+4. REATIVAR (se fase pendente) → voltar para docs/plans/ com nota "rev Y, fase X ainda falta"
+```
+
+O arquivo pode ser renomeado via `git mv` no mesmo PR que entrega a feature — o histórico preserva a origem.
+
+### Anatomia de uma spec completa (sem pontas soltas)
+
+Cada `docs/plans/<feature>.md` deve cobrir, **sem deixar nada em aberto**:
+
+1. **Contexto e objetivo** — por que essa feature existe, qual problema resolve, qual o critério de sucesso mensurável.
+2. **Estado atual observado** — o que já existe no código (com caminhos: `apps/api/src/foo.ts`, `packages/db/src/schema/bar.ts`) e o que falta. Sem essa seção, é impossível saber se a spec é trabalho novo ou complemento.
+3. **Modelo de dados** — schema Drizzle, migrations (com nome `00XX_*.sql`), índices, constraints. Sem SQL concreto, é palpite.
+4. **Contratos de API** — método, rota, body, response, auth, erros. Tabela ou bloco de código, não prosa.
+5. **Fluxo de dados / sequência** — diagrama ASCII ou lista numerada de chamadas. Sem isso, o "como" fica ambíguo.
+6. **Lógica pura isolada** — se houver decisão de negócio, listar a função pura (`*-pure.ts`) que vai conter cada regra, com assinatura TypeScript.
+7. **Pontos de integração** — quais arquivos existentes vão mudar (caminho exato), quais arquivos novos, quais dependências (`package.json`).
+8. **Testes** — unit (caminho do `*.test.ts` + casos obrigatórios) e E2E (caminho do `*.spec.ts` + casos obrigatórios). Sem essa seção, a cobertura vira chute.
+9. **Critérios de aceite** — checklist binário (✓/✗) verificável: typecheck 0 erros, `test:unit` verde, `bun run test:e2e` verde, build OK, rota nova coberta, UI verificada visualmente.
+10. **Commits sugeridos** — lista ordenada com `<type>(<scope>): <subject>`. Quando há 5+ commits, quebrar em PRs menores é melhor que um PR gigante.
+11. **Riscos e mitigações** — pelo menos um risco concreto (não genérico) com mitigação específica.
+
+> **Regra do "sem duplo entendimento":** se duas pessoas lendo a spec podem razoavelmente
+> implementar coisas diferentes, a spec está vaga. Reescreva antes de codar.
+
+### Specs grandes — faseamento e splitting
+
+- **>500 linhas OU multi-app**: dividir em fases numeradas na própria spec (`### Fase 1 — …`, `### Fase 2 — …`) com critério de aceite por fase. Cada fase vira 1 PR.
+- **>1500 linhas OU multi-domínio sem coesão**: dividir em `docs/plans/<feature>-fase-N.md` ou múltiplas specs, com índice em `docs/plans/<feature>-index.md`. Evitar doc monolítica que ninguém lê inteira.
+
+### Anti-patterns — pontas soltas a evitar
+
+| ❌ Evite                                                                             | ✅ Prefira                                                                                    |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| "Ver issue #123 para detalhes"                                                       | Citar o achado técnico concreto inline (ex: "migration `0017_add_magalu_affiliates.sql`")     |
+| "Implementar depois" ou "TODO: ver com owner"                                        | Não escrever a parte — se não há decisão, a spec não está pronta, **não implemente ainda**    |
+| "Seguir padrão de X" sem dizer qual padrão                                           | Linkar arquivo concreto: `mesmo padrão de apps/api/src/modules/affiliate/affiliate.routes.ts` |
+| "Fácil de testar" ou "trivial"                                                       | Listar os casos de teste concretos: caminho do `*.test.ts`, input, output esperado            |
+| Lista de bullets sem ordem de execução                                               | Numerar como fases ou passos sequenciais com dependências explícitas                          |
+| Decisão escondida no meio do texto                                                   | Box de "Decisões de arquitetura" no topo, com racional e alternativa descartada               |
+| Status desatualizado ("Pronto para implementar") quando na verdade está implementado | Atualizar `docs/roadmap.md` + mover arquivo para `docs/specs/` no PR que entrega              |
+
+### Onde mora a verdade
+
+| Pergunta                                      | Resposta                                                 |
+| --------------------------------------------- | -------------------------------------------------------- |
+| "O que está implementado hoje?"               | `docs/roadmap.md` (seção "Entregue") + `docs/specs/*.md` |
+| "O que está planejado e em que ordem?"        | `docs/roadmap.md` (seção "Planejado por impacto")        |
+| "Como essa feature funciona em detalhe?"      | Spec correspondente em `docs/specs/`                     |
+| "Como ela vai funcionar quando implementada?" | Plano correspondente em `docs/plans/`                    |
+| "Por que essa decisão foi tomada?"            | Caixa "Decisões de arquitetura" no topo da spec          |
+
+Se você alterou uma feature implementada, **edite a spec correspondente no mesmo PR** —
+a spec é a fonte da verdade do que está no código, não um snapshot do momento em que foi escrita.
+
+---
+
 ## 🧪 Comandos
 
 | Comando                                                                  | Descrição                                                                                                           |
