@@ -212,7 +212,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-log.info('service-worker.boot');
+const SW_VERSION = chrome.runtime.getManifest().version;
+log.info('service-worker.boot', { version: SW_VERSION, hasApiKey: Boolean(API_KEY) });
 sink.init().catch(() => {});
 updateBadge();
 verifyAuthToken();

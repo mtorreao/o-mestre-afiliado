@@ -2,6 +2,12 @@
 
 Extensão Manifest V3 para sincronizar e validar a sessão do Mercado Livre usada pelo O Mestre Afiliado.
 
+## Versão
+
+A versão fica em `manifest.json` e é bumpada a cada mudança relevante. Validar
+via log remoto: `service-worker.boot` mostra `{ version: '1.6.0' }` no payload
+do evento. Cada reload da extensão gera um novo `service-worker.boot`.
+
 ## Funcionalidades implementadas
 
 - detecta se a aba ativa está em um domínio Mercado Livre;

@@ -32,7 +32,11 @@
   const MAX_BUFFER = 20;
   const MAX_PERSISTED = 200; // limite em chrome.storage.local
   const ENDPOINT_DEFAULT = 'https://dev.omestreafiliado.com.br/api/extension/logs';
-  const EXTENSION_VERSION = '1.6.0';
+  // Lê do manifest em runtime — sempre bate com a versão real.
+  const EXTENSION_VERSION =
+    typeof chrome !== 'undefined' && chrome.runtime
+      ? chrome.runtime.getManifest().version
+      : 'unknown';
 
   const log = globalThis.extLog;
   // API key injetada pelo build via lib/log-sink.config.js (carregado antes).
@@ -107,7 +111,7 @@
       extensionVersion: EXTENSION_VERSION,
       chromeVersion:
         typeof chrome !== 'undefined' && chrome.runtime
-          ? chrome.runtime.getManifest().version_name || null
+          ? chrome.runtime.getManifest().version || null
           : null,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
     };
