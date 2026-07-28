@@ -8,12 +8,17 @@ importScripts('lib/log-sink.js');
 // Bootstrap log — primeira coisa que o SW faz. Deve aparecer no DB
 // logo após cada reload. Se voce nao ve 'service-worker.bootstrap'
 // nos logs remotos, o SW nao foi reiniciado.
-globalThis.extLog?.info?.('service-worker.bootstrap', {
-  swVersion: chrome.runtime.getManifest().version,
-  manifestVersion: chrome.runtime.getManifest().version,
-  hasApiKey: Boolean(globalThis.__EXT_LOGS_API_KEY__),
-  sinkLoaded: Boolean(globalThis.extLogSink),
-});
+try {
+  globalThis.extLog?.info?.('service-worker.bootstrap', {
+    swVersion: chrome.runtime.getManifest().version,
+    manifestVersion: chrome.runtime.getManifest().version,
+    hasApiKey: Boolean(globalThis.__EXT_LOGS_API_KEY__),
+    sinkLoaded: Boolean(globalThis.extLogSink),
+  });
+} catch (e) {
+  // Se isso falhar, o SW nao inicializou corretamente
+  globalThis.console?.error?.('[OMA-SW] bootstrap failed:', e);
+}
 
 const DEFAULT_API_URL = 'https://dev.omestreafiliado.com.br';
 const SESSION_ALARM = 'session-health-reminder';
@@ -138,6 +143,10 @@ async function verifyAuthToken() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.action === 'get-auth-state') {
+    globalThis.extLog?.info?.('message.get-auth-state.received', {
+      senderTabId: sender?.tab?.id,
+      senderUrl: sender?.tab?.url,
+    });
     chrome.storage.local
       .get(['authToken', 'authState'])
       .then((data) =>
