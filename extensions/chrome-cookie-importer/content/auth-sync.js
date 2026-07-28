@@ -15,8 +15,6 @@
 (function () {
   'use strict';
 
-  // DIAGNOSTICO 1.6.11: primeiro log no content script. Se nao aparece
-  // no DB, o content script NAO esta sendo injetado pelo manifest.
   if (globalThis.extLog?.info) {
     globalThis.extLog.info('auth-sync.script-loaded', {
       origin: location.origin,
@@ -39,22 +37,74 @@
     }
   }
 
-  log.info('auth-sync.loaded', { origin: location.origin, href: location.href });
-
-  const token = readToken();
-  if (!token) {
-    log.warn('auth-sync.token.absent', { key: STORAGE_KEY });
-    return;
+  // Sincroniza o token com o SW. Retorna true se mudou (para log).
+  let lastSentToken = null;
+  function syncToken(reason) {
+    const token = readToken();
+    if (token === lastSentToken) return false;
+    lastSentToken = token;
+    if (!token) {
+      log.info('auth-sync.token.absent', { reason });
+      // Avisa o SW para limpar o estado (não envia token vazio).
+      chrome.runtime
+        .sendMessage({ type: 'set-auth-token', token: '' })
+        .then((response) =>
+          log.info('auth-sync.message.ack', {
+            ok: Boolean(response?.success),
+            reason,
+            cleared: true,
+          }),
+        )
+        .catch((err) => log.error('auth-sync.message.failed', { error: String(err), reason }));
+      return true;
+    }
+    log.info('auth-sync.token.found', { length: token.length, reason });
+    chrome.runtime
+      .sendMessage({ type: 'set-auth-token', token })
+      .then((response) =>
+        log.info('auth-sync.message.ack', {
+          ok: Boolean(response?.success),
+          reason,
+        }),
+      )
+      .catch((err) => log.error('auth-sync.message.failed', { error: String(err), reason }));
+    return true;
   }
 
-  log.info('auth-sync.token.found', { length: token.length });
+  log.info('auth-sync.loaded', { origin: location.origin, href: location.href });
 
-  chrome.runtime
-    .sendMessage({ type: 'set-auth-token', token })
-    .then((response) => {
-      log.info('auth-sync.message.ack', { ok: Boolean(response?.success) });
-    })
-    .catch((err) => {
-      log.error('auth-sync.message.failed', { error: String(err) });
-    });
+  // Sync inicial
+  syncToken('initial');
+
+  // 1. Storage event — dispara quando OUTRA aba do mesmo origin muda o
+  //    localStorage (ex: aba do painel faz logout, aba atual detecta).
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY) syncToken('storage-event');
+  });
+
+  // 2. Custom event — o web app pode disparar apos login/logout.
+  //    Ex: window.dispatchEvent(new CustomEvent('omestre:auth-changed'))
+  window.addEventListener('omestre:auth-changed', () => {
+    syncToken('custom-event');
+  });
+
+  // 3. Polling fallback — em SPAs o localStorage pode mudar via
+  //    setItem sem disparar storage event na mesma aba.
+  let pollingTimer = null;
+  function startPolling() {
+    if (pollingTimer) return;
+    pollingTimer = setInterval(() => syncToken('poll'), 2000);
+  }
+  function stopPolling() {
+    if (pollingTimer) {
+      clearInterval(pollingTimer);
+      pollingTimer = null;
+    }
+  }
+  startPolling();
+  // Para polling quando a aba sai de foco (economia)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopPolling();
+    else startPolling();
+  });
 })();
