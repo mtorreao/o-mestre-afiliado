@@ -15,6 +15,17 @@
 (function () {
   'use strict';
 
+  // DIAGNOSTICO 1.6.11: primeiro log no content script. Se nao aparece
+  // no DB, o content script NAO esta sendo injetado pelo manifest.
+  if (globalThis.extLog?.info) {
+    globalThis.extLog.info('auth-sync.script-loaded', {
+      origin: location.origin,
+      href: location.href,
+      hasExtLog: Boolean(globalThis.extLog),
+      hasExtLogSink: Boolean(globalThis.extLogSink),
+    });
+  }
+
   const STORAGE_KEY = 'omestre_auth_token';
   const log = globalThis.extLog;
 
