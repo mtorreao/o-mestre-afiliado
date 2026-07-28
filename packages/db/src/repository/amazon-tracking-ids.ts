@@ -7,10 +7,9 @@
  * sem conexão ao PostgreSQL.
  *
  * Mantém as regras de negócio:
- *  - Limite de 100 tracking IDs (Amazon Associates).
- *  - Primeiro ID vira `isDefault` automaticamente.
- *  - Ao remover o default, o primeiro `active` restante é promovido.
- *  - Ao marcar `isDefault: true` num ID, os demais são desmarcados.
+ *  - Apenas 1 tracking ID por integração (decisão de produto atual).
+ *  - O único ID é sempre ativo e default.
+ *  - Remover o ID deixa a integração sem credencial.
  */
 import type { AmazonAffiliate, AmazonTrackingIdInput } from './amazonAffiliates.repository.ts';
 import type { AmazonTrackingId } from '../schema/index.ts';
@@ -20,7 +19,7 @@ import { detectRegion } from './amazonAffiliates.repository.ts';
 // de tracking ID da Amazon neste módulo.
 export { detectRegion };
 
-export const MAX_TRACKING_IDS = 100;
+export const MAX_TRACKING_IDS = 1;
 
 /**
  * Constrói um TrackingId a partir do input, derivando região e default.
@@ -55,9 +54,7 @@ export function addTrackingIdPure(
 ): AmazonTrackingId[] {
   const base = current ?? [];
   if (base.length >= MAX_TRACKING_IDS) {
-    throw new Error(
-      `Limite de ${MAX_TRACKING_IDS} tracking IDs por afiliado excedido (regra Amazon Associates)`,
-    );
+    throw new Error('A integração Amazon aceita apenas 1 Tracking ID');
   }
   return [...base, buildTrackingId(input, base, now)];
 }
@@ -142,7 +139,6 @@ export function getActiveTrackingIdPure(
 export function toAmazonSummary(affiliate: AmazonAffiliate): {
   id: number;
   userId: number;
-  nickname: string | null;
   trackingIds: AmazonTrackingId[];
   activeTrackingCount: number;
   active: boolean;
@@ -153,7 +149,6 @@ export function toAmazonSummary(affiliate: AmazonAffiliate): {
   return {
     id: affiliate.id,
     userId: affiliate.userId,
-    nickname: affiliate.nickname,
     trackingIds: ids,
     activeTrackingCount: ids.filter((t) => t.active).length,
     active: affiliate.active,

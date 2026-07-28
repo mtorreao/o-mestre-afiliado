@@ -24,7 +24,6 @@ export type NewAmazonAffiliate = InferInsertModel<typeof amazonAffiliates>;
 export interface AmazonAffiliateSummary {
   id: number;
   userId: number;
-  nickname: string | null;
   trackingIds: AmazonTrackingId[];
   activeTrackingCount: number;
   active: boolean;
@@ -36,7 +35,6 @@ export interface AmazonAffiliateSummary {
  * Dados para criar um afiliado Amazon (PUT /api/amazon/affiliates).
  */
 export interface AmazonAffiliateUpsertData {
-  nickname?: string | null;
   trackingIds?: AmazonTrackingId[];
   active?: boolean;
 }
@@ -118,7 +116,6 @@ export class AmazonAffiliateRepository {
 
     if (existing) {
       const updateData: Record<string, unknown> = {};
-      if (data.nickname !== undefined) updateData.nickname = data.nickname;
       if (data.trackingIds !== undefined) updateData.trackingIds = data.trackingIds;
       if (data.active !== undefined) updateData.active = data.active;
 
@@ -136,7 +133,6 @@ export class AmazonAffiliateRepository {
       .insert(amazonAffiliates)
       .values({
         userId,
-        nickname: data.nickname ?? null,
         trackingIds: data.trackingIds ?? [],
         active: data.active ?? true,
       })

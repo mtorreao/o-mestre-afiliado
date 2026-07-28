@@ -3,7 +3,7 @@
  *
  * Endpoints expostos:
  *   GET    /api/amazon/affiliate              — Dados do afiliado do usuário logado
- *   PUT    /api/amazon/affiliate              — Cria/atualiza afiliado (nickname, active)
+ *   PUT    /api/amazon/affiliate              — Cria/ativa integração
  *   DELETE /api/amazon/affiliate              — Remove afiliado
  *
  *   GET    /api/amazon/affiliate/tracking-ids — Lista tracking IDs do afiliado
@@ -44,7 +44,6 @@ export const amazonRoutes = new Elysia()
       configured: true,
       affiliate: {
         id: affiliate.id,
-        nickname: affiliate.nickname,
         trackingIds: affiliate.trackingIds,
         activeTrackingCount: (affiliate.trackingIds ?? []).filter((t) => t.active).length,
         active: affiliate.active,
@@ -62,24 +61,18 @@ export const amazonRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const { nickname, active } = body as {
-      nickname?: string | null;
-      active?: boolean;
-    };
-
+    const { active } = body as { active?: boolean };
     const existing = await amazonRepo.findByUserId(auth.userId);
     const updated = await amazonRepo.upsert(auth.userId, {
-      nickname: nickname ?? existing?.nickname ?? null,
       active: active ?? existing?.active ?? true,
       trackingIds: existing?.trackingIds ?? [],
     });
 
     return {
       success: true,
-      message: 'Afiliado Amazon atualizado',
+      message: 'Integração Amazon atualizada',
       affiliate: {
         id: updated.id,
-        nickname: updated.nickname,
         trackingIds: updated.trackingIds,
         activeTrackingCount: (updated.trackingIds ?? []).filter((t) => t.active).length,
         active: updated.active,
@@ -132,13 +125,7 @@ export const amazonRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const { tag, label, region, active, isDefault } = body as {
-      tag?: string;
-      label?: string;
-      region?: 'BR' | 'US' | 'CA' | 'MX' | 'UK' | 'DE' | 'FR' | 'IT' | 'ES' | 'JP' | 'AU' | 'OTHER';
-      active?: boolean;
-      isDefault?: boolean;
-    };
+    const { tag } = body as { tag?: string };
 
     if (!tag || tag.trim() === '') {
       set.status = 400;
@@ -149,7 +136,6 @@ export const amazonRoutes = new Elysia()
     const existing = await amazonRepo.findByUserId(auth.userId);
     if (!existing) {
       await amazonRepo.upsert(auth.userId, {
-        nickname: null,
         active: true,
         trackingIds: [],
       });
@@ -158,10 +144,6 @@ export const amazonRoutes = new Elysia()
     try {
       const updated = await amazonRepo.addTrackingId(auth.userId, {
         tag: tag.trim(),
-        label: label?.trim() || undefined,
-        region: region ?? undefined,
-        active: active ?? true,
-        isDefault: isDefault ?? undefined,
       });
 
       if (!updated) {
@@ -182,67 +164,61 @@ export const amazonRoutes = new Elysia()
   })
 
   // ─── PATCH /api/amazon/affiliate/tracking-ids/:tag ───────────────────
-  .patch(
-    '/api/amazon/affiliate/tracking-ids/:tag',
-    async ({ jwt, request, set, params, body }) => {
-      const auth = await getAuthUser(jwt, request.headers);
-      if (!auth) {
-        set.status = 401;
-        return { success: false, error: 'Não autenticado' };
-      }
+  .patch('/api/amazon/affiliate/tracking-ids/:tag', async ({ jwt, request, set, params, body }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
 
-      const { tag } = params as { tag: string };
-      const { label, region, active, isDefault } = body as {
-        label?: string | null;
-        region?: 'BR' | 'US' | 'CA' | 'MX' | 'UK' | 'DE' | 'FR' | 'IT' | 'ES' | 'JP' | 'AU' | 'OTHER';
-        active?: boolean;
-        isDefault?: boolean;
-      };
+    const { tag } = params as { tag: string };
+    const { label, region, active, isDefault } = body as {
+      label?: string | null;
+      region?: 'BR' | 'US' | 'CA' | 'MX' | 'UK' | 'DE' | 'FR' | 'IT' | 'ES' | 'JP' | 'AU' | 'OTHER';
+      active?: boolean;
+      isDefault?: boolean;
+    };
 
-      const updated = await amazonRepo.updateTrackingId(auth.userId, decodeURIComponent(tag), {
-        label: label ?? undefined,
-        region: region ?? undefined,
-        active: active ?? undefined,
-        isDefault: isDefault ?? undefined,
-      });
+    const updated = await amazonRepo.updateTrackingId(auth.userId, decodeURIComponent(tag), {
+      label: label ?? undefined,
+      region: region ?? undefined,
+      active: active ?? undefined,
+      isDefault: isDefault ?? undefined,
+    });
 
-      if (!updated) {
-        set.status = 404;
-        return { success: false, error: 'Tracking ID não encontrado' };
-      }
+    if (!updated) {
+      set.status = 404;
+      return { success: false, error: 'Tracking ID não encontrado' };
+    }
 
-      return {
-        success: true,
-        message: 'Tracking ID atualizado',
-        trackingIds: updated.trackingIds,
-      };
-    },
-  )
+    return {
+      success: true,
+      message: 'Tracking ID atualizado',
+      trackingIds: updated.trackingIds,
+    };
+  })
 
   // ─── DELETE /api/amazon/affiliate/tracking-ids/:tag ──────────────────
-  .delete(
-    '/api/amazon/affiliate/tracking-ids/:tag',
-    async ({ jwt, request, set, params }) => {
-      const auth = await getAuthUser(jwt, request.headers);
-      if (!auth) {
-        set.status = 401;
-        return { success: false, error: 'Não autenticado' };
-      }
+  .delete('/api/amazon/affiliate/tracking-ids/:tag', async ({ jwt, request, set, params }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
 
-      const { tag } = params as { tag: string };
-      const updated = await amazonRepo.removeTrackingId(auth.userId, decodeURIComponent(tag));
-      if (!updated) {
-        set.status = 404;
-        return { success: false, error: 'Tracking ID não encontrado' };
-      }
+    const { tag } = params as { tag: string };
+    const updated = await amazonRepo.removeTrackingId(auth.userId, decodeURIComponent(tag));
+    if (!updated) {
+      set.status = 404;
+      return { success: false, error: 'Tracking ID não encontrado' };
+    }
 
-      return {
-        success: true,
-        message: 'Tracking ID removido',
-        trackingIds: updated.trackingIds,
-      };
-    },
-  )
+    return {
+      success: true,
+      message: 'Tracking ID removido',
+      trackingIds: updated.trackingIds,
+    };
+  })
 
   // ─── POST /api/amazon/convert ─────────────────────────────────────
   .post(
@@ -285,11 +261,9 @@ export const amazonRoutes = new Elysia()
         };
       }
 
-      const result = await convertAmazonUrlWithAffiliate(
-        url,
-        affiliate.trackingIds ?? [],
-        { preferredTag: preferredTag ?? null },
-      );
+      const result = await convertAmazonUrlWithAffiliate(url, affiliate.trackingIds ?? [], {
+        preferredTag: preferredTag ?? null,
+      });
 
       // Touch (atualiza lastUsedAt) em caso de sucesso
       if (result.success) {

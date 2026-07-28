@@ -95,34 +95,28 @@ describe('addTrackingIdPure', () => {
     expect(out[0]!.isDefault).toBe(true);
   });
 
-  it('não marca default em IDs seguintes', () => {
-    const out = addTrackingIdPure([tid('a-20', { isDefault: true })], { tag: 'b-20' }, () => 'now');
-    expect(out).toHaveLength(2);
+  it('o único ID é default', () => {
+    const out = addTrackingIdPure([], { tag: 'a-20' }, () => 'now');
     expect(out[0]!.isDefault).toBe(true);
-    expect(out[1]!.isDefault).toBe(false);
   });
 
-  it('não muta o array original', () => {
-    const original = [tid('a-20')];
-    addTrackingIdPure(original, { tag: 'b-20' }, () => 'now');
-    expect(original).toHaveLength(1);
+  it('não muta o array original ao adicionar o primeiro ID', () => {
+    const original: AmazonTrackingId[] = [];
+    addTrackingIdPure(original, { tag: 'a-20' }, () => 'now');
+    expect(original).toHaveLength(0);
   });
 
-  it('lança erro ao exceder MAX_TRACKING_IDS', () => {
-    const full: AmazonTrackingId[] = Array.from({ length: MAX_TRACKING_IDS }, (_, i) =>
-      tid(`id${i}-20`),
-    );
-    expect(() => addTrackingIdPure(full, { tag: 'extra-20' }, () => 'now')).toThrow(
-      /Limite de 100/,
+  it('rejeita um segundo tracking ID', () => {
+    const existing = [tid('principal-20', { isDefault: true })];
+
+    expect(() => addTrackingIdPure(existing, { tag: 'extra-20' }, () => 'now')).toThrow(
+      'A integração Amazon aceita apenas 1 Tracking ID',
     );
   });
 
-  it('aceita exatamente MAX_TRACKING_IDS sem erro', () => {
-    const full: AmazonTrackingId[] = Array.from({ length: MAX_TRACKING_IDS - 1 }, (_, i) =>
-      tid(`id${i}-20`),
-    );
-    const out = addTrackingIdPure(full, { tag: 'last-20' }, () => 'now');
-    expect(out).toHaveLength(MAX_TRACKING_IDS);
+  it('aceita o primeiro tracking ID', () => {
+    const out = addTrackingIdPure([], { tag: 'principal-20' }, () => 'now');
+    expect(out).toHaveLength(1);
   });
 });
 
@@ -257,7 +251,6 @@ describe('toAmazonSummary', () => {
   const affiliate = {
     id: 1,
     userId: 99,
-    nickname: 'Matheus',
     trackingIds: [tid('a-20', { active: true }), tid('b-20', { active: false })],
     active: true,
     connectedAt: new Date('2024-01-01'),
@@ -273,7 +266,6 @@ describe('toAmazonSummary', () => {
     const s = toAmazonSummary(affiliate);
     expect(s.id).toBe(1);
     expect(s.userId).toBe(99);
-    expect(s.nickname).toBe('Matheus');
     expect(s.active).toBe(true);
     expect(s.trackingIds).toHaveLength(2);
   });

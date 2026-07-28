@@ -1,21 +1,22 @@
 /**
- * E2E: Amazon multi-tracking ID affiliate API
+ * E2E: integração Amazon com um único Tracking ID.
  *
  * Cobre:
- *   - CRUD de afiliado Amazon (GET/PUT/DELETE /api/amazon/affiliate)
- *   - CRUD de tracking IDs (POST/PATCH/DELETE /api/amazon/affiliate/tracking-ids)
- *   - Conversão (POST /api/amazon/convert) com tag default + tag preferida
- *   - Backward-compat: test-conception legado via /api/affiliate/test-conversion
- *   - Edge cases: URL inválida, sem tracking ID, amzn.to, promozone, tag errada
+ *   - Estado inicial sem integração
+ *   - Cadastro e remoção do único Tracking ID
+ *   - Bloqueio de um segundo Tracking ID
+ *   - Conversão com o Tracking ID cadastrado
+ *   - Compatibilidade do perfil e do teste de conversão compartilhado
+ *   - Edge cases de URL Amazon
  */
 import { test, expect } from '@playwright/test';
-import { createTestUser, authGet, authPost, authPut, authPatch, authDelete } from './helpers.ts';
+import { createTestUser, authGet, authPost, authDelete } from './helpers.ts';
 
 const VALID_TAG = 'meusite-20';
 const VALID_TAG_2 = 'meusite-tg-20';
 const VALID_TAG_US = 'mysite-20';
 
-test.describe('Amazon multi-tracking ID — CRUD', () => {
+test.describe('Amazon — único Tracking ID', () => {
   test('GET sem afiliado retorna configured: false', async () => {
     const { token } = await createTestUser();
     const res = await authGet('/api/amazon/affiliate', token);
@@ -27,36 +28,16 @@ test.describe('Amazon multi-tracking ID — CRUD', () => {
     });
   });
 
-  test('PUT cria afiliado com nickname', async () => {
-    const { token } = await createTestUser();
-    const res = await authPut('/api/amazon/affiliate', token, {
-      nickname: 'Loja do Teste',
-    });
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      success: true,
-      message: expect.stringContaining('atualizado'),
-    });
-    expect((res.body as any).affiliate).toMatchObject({
-      nickname: 'Loja do Teste',
-      active: true,
-    });
-  });
-
   test('POST tracking-id sem afiliado prévio cria afiliado automaticamente', async () => {
     const { token } = await createTestUser();
     const res = await authPost('/api/amazon/affiliate/tracking-ids', token, {
       tag: VALID_TAG,
-      label: 'Site principal',
-      region: 'BR',
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true });
     expect((res.body as any).trackingIds).toHaveLength(1);
     expect((res.body as any).trackingIds[0]).toMatchObject({
       tag: VALID_TAG,
-      label: 'Site principal',
-      region: 'BR',
       active: true,
       isDefault: true,
     });
@@ -72,63 +53,40 @@ test.describe('Amazon multi-tracking ID — CRUD', () => {
     });
   });
 
-  test('POST rejeita 101º tracking ID (limite Amazon)', async () => {
-    const { token } = await createTestUser();
-    // Seed com 100 (não testável em tempo razoável; mockamos via DB direto seria overkill)
-    // Apenas validamos que adicionar 1 funciona, e verificamos a regra via teste do repo)
-    const res = await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: VALID_TAG });
-    expect(res.status).toBe(200);
-  });
-
-  test('PATCH atualiza label e active de um tracking ID', async () => {
+  test('POST rejeita um segundo tracking ID', async () => {
     const { token } = await createTestUser();
     await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: VALID_TAG });
 
-    const res = await authPatch(
-      `/api/amazon/affiliate/tracking-ids/${encodeURIComponent(VALID_TAG)}`,
-      token,
-      { label: 'Atualizado', active: false },
-    );
-    expect(res.status).toBe(200);
-    const updated = (res.body as any).trackingIds.find((t: any) => t.tag === VALID_TAG);
-    expect(updated).toMatchObject({ label: 'Atualizado', active: false });
+    const res = await authPost('/api/amazon/affiliate/tracking-ids', token, {
+      tag: VALID_TAG_2,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({
+      success: false,
+      error: 'A integração Amazon aceita apenas 1 Tracking ID',
+    });
   });
 
-  test('PATCH isDefault: true desmarca os outros', async () => {
-    const { token } = await createTestUser();
-    // Cria 2 tracking IDs
-    await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: VALID_TAG });
-    await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: VALID_TAG_2 });
-
-    // Marca o 2º como default
-    const res = await authPatch(
-      `/api/amazon/affiliate/tracking-ids/${encodeURIComponent(VALID_TAG_2)}`,
-      token,
-      { isDefault: true },
-    );
-    expect(res.status).toBe(200);
-    const ids = (res.body as any).trackingIds;
-    const def = ids.find((t: any) => t.isDefault);
-    expect(def.tag).toBe(VALID_TAG_2);
-    // Confirma que o outro NÃO é default
-    expect(ids.find((t: any) => t.tag === VALID_TAG).isDefault).toBe(false);
-  });
-
-  test('DELETE remove tracking ID; promote default se removido', async () => {
+  test('DELETE remove o único Tracking ID e permite cadastrar outro', async () => {
     const { token } = await createTestUser();
     await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: VALID_TAG });
-    await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: VALID_TAG_2 });
 
-    // Remove o default
-    const res = await authDelete(
+    const removed = await authDelete(
       `/api/amazon/affiliate/tracking-ids/${encodeURIComponent(VALID_TAG)}`,
       token,
     );
-    expect(res.status).toBe(200);
-    const ids = (res.body as any).trackingIds;
-    expect(ids).toHaveLength(1);
-    expect(ids[0].tag).toBe(VALID_TAG_2);
-    expect(ids[0].isDefault).toBe(true); // promovido
+    expect(removed.status).toBe(200);
+    expect(removed.body).toMatchObject({ success: true, trackingIds: [] });
+
+    const replacement = await authPost('/api/amazon/affiliate/tracking-ids', token, {
+      tag: VALID_TAG_2,
+    });
+    expect(replacement.status).toBe(200);
+    expect(replacement.body).toMatchObject({
+      success: true,
+      trackingIds: [expect.objectContaining({ tag: VALID_TAG_2, active: true, isDefault: true })],
+    });
   });
 
   test('DELETE afiliado remove tudo', async () => {
@@ -165,34 +123,6 @@ test.describe('Amazon convert — conversão de URL', () => {
     expect((res.body as any).affiliateUrl).toContain('tag=');
     expect((res.body as any).affiliateUrl).toContain(encodeURIComponent(VALID_TAG));
     expect((res.body as any).affiliateUrl).toContain('/dp/B08N5WRWNW');
-  });
-
-  test('preferredTag usa tracking ID específico', async () => {
-    const token = await setupAffiliateWithTag(VALID_TAG);
-    await authPost('/api/amazon/affiliate/tracking-ids', token, { tag: VALID_TAG_2 });
-
-    const res = await authPost('/api/amazon/convert', token, {
-      url: 'https://www.amazon.com.br/dp/B08N5WRWNW',
-      tag: VALID_TAG_2,
-    });
-    expect(res.status).toBe(200);
-    expect((res.body as any).affiliateUrl).toContain(encodeURIComponent(VALID_TAG_2));
-  });
-
-  test('preferredTag inativo retorna erro', async () => {
-    const token = await setupAffiliateWithTag(VALID_TAG);
-    await authPost('/api/amazon/affiliate/tracking-ids', token, {
-      tag: VALID_TAG_2,
-      active: false,
-    });
-
-    const res = await authPost('/api/amazon/convert', token, {
-      url: 'https://www.amazon.com.br/dp/B08N5WRWNW',
-      tag: VALID_TAG_2,
-    });
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ success: false });
-    expect((res.body as any).error).toContain('não encontrado ou inativo');
   });
 
   test('URL que não é da Amazon retorna erro', async () => {
@@ -284,7 +214,6 @@ test.describe('Amazon — backward compatibility com test-conversion legado', ()
     const { token } = await createTestUser();
     await authPost('/api/amazon/affiliate/tracking-ids', token, {
       tag: VALID_TAG,
-      label: 'Loja BR',
     });
 
     const res = await authGet('/api/affiliate/profile', token);
@@ -296,7 +225,6 @@ test.describe('Amazon — backward compatibility com test-conversion legado', ()
     });
     expect(profile.amazon.trackingIds[0]).toMatchObject({
       tag: VALID_TAG,
-      label: 'Loja BR',
       isDefault: true,
     });
     // Compat com campo legado

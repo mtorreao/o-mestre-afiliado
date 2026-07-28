@@ -30,7 +30,6 @@ interface AmazonTrackingId {
 interface AmazonAffiliateInfo {
   connected: true;
   id: number;
-  nickname: string | null;
   trackingIds: AmazonTrackingId[];
   activeTrackingCount: number;
   active: boolean;

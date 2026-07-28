@@ -50,7 +50,6 @@ describe('AmazonAffiliateRepository', () => {
     const row = {
       id: 1,
       userId: 99,
-      nickname: 'n',
       trackingIds: [],
       active: true,
       connectedAt: new Date(),
@@ -78,7 +77,6 @@ describe('AmazonAffiliateRepository', () => {
     const row = {
       id: 1,
       userId: 99,
-      nickname: 'n',
       trackingIds: [{ tag: 'a-20', region: 'BR', active: true, isDefault: true, createdAt: '' }],
       active: true,
       connectedAt: new Date(),
@@ -128,7 +126,6 @@ describe('AmazonAffiliateRepository', () => {
     const existing = {
       id: 1,
       userId: 99,
-      nickname: 'old',
       trackingIds: [],
     } as unknown as AmazonAffiliate;
     let updated = false;
@@ -145,7 +142,7 @@ describe('AmazonAffiliateRepository', () => {
       }),
     }));
     const { AmazonAffiliateRepository: R } = await import('./amazonAffiliates.repository.ts');
-    const r = await new R().upsert(99, { nickname: 'new', trackingIds: [] });
+    const r = await new R().upsert(99, { trackingIds: [] });
     expect(updated).toBe(true);
     expect(r).toBeDefined();
   });
@@ -165,7 +162,7 @@ describe('AmazonAffiliateRepository', () => {
       }),
     }));
     const { AmazonAffiliateRepository: R } = await import('./amazonAffiliates.repository.ts');
-    await new R().upsert(99, { nickname: 'new', trackingIds: [] });
+    await new R().upsert(99, { trackingIds: [] });
     expect(inserted).toBe(true);
   });
 

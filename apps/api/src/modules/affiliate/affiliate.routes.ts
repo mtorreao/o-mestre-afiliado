@@ -67,7 +67,7 @@ export const affiliateRoutes = new Elysia()
     const amazonInfo = amazonAffiliate
       ? {
           connected: true,
-          nickname: amazonAffiliate.nickname,
+          id: amazonAffiliate.id,
           active: amazonAffiliate.active,
           trackingIds: amazonAffiliate.trackingIds ?? [],
           activeTrackingCount: (amazonAffiliate.trackingIds ?? []).filter((t) => t.active).length,
