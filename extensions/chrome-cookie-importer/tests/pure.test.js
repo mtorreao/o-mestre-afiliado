@@ -20,7 +20,7 @@ import {
   sanitizeBuffer,
   shouldAllowFlush,
   shouldDropEvent,
-} from '../lib/log-sink-pure.js';
+} from './load-pure.cjs';
 
 describe('extension pure helpers', () => {
   test('normalizes a valid API URL and rejects credentials/query data', () => {
