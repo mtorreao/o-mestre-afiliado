@@ -3,6 +3,7 @@
 // Ordem: log-sink.config.js (gerado pelo build) → log.js → log-sink.js
 importScripts('lib/log-sink.config.js');
 importScripts('lib/log.js');
+importScripts('lib/log-sink-pure.js');
 importScripts('lib/log-sink.js');
 
 // DIAGNOSTICO 1.6.7-UNIQUE-TOKEN-XXX: log no top-level do SW.

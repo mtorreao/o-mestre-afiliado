@@ -7,7 +7,12 @@
  *   - timer periódico a cada FLUSH_INTERVAL_MS (10s)
  *   - shutdown do SW (chrome.runtime.onSuspend)
  *
- * Erros de rede → descarta batch + log local. NUNCA bloqueia a extensão.
+ * Erros de rede → mantém buffer e tenta de novo após backoff
+ * exponencial. NUNCA bloqueia a extensão.
+ *
+ * Anti-loop: warns do próprio sink NÃO voltam pra fila (ver
+ * lib/log-sink-pure.js → shouldDropEvent). Flush também envia em
+ * chunks de MAX_BATCH_SIZE pra respeitar o limite do servidor.
  *
  * API key vem de globalThis.__EXT_LOGS_API_KEY__ (injetada por
  * lib/log-sink.config.js, gerado por scripts/build-extension-config.ts).
@@ -20,17 +25,45 @@
 (function () {
   'use strict';
 
+  // Logica pura (testavel sem chrome.* / fetch). Carregada via
+  // importScripts antes deste arquivo no service worker, ou
+  // <script> no content script / popup.
+  // Acesso defensivo — em testes (sem chrome) ainda funciona.
+  const pure = globalThis.extLogSinkPure;
+  if (!pure) {
+    // Falha de carregamento — sink fica inerte mas nao quebra a extensao.
+    globalThis.extLog?.error?.('logs-sink.pure.missing');
+    globalThis.extLogSink = {
+      init: async () => {},
+      sink: async () => {},
+      flushNow: async () => {},
+    };
+    return;
+  }
+  const {
+    MAX_BATCH_SIZE,
+    MAX_BUFFER,
+    MAX_PERSISTED,
+    BACKOFF_MIN_MS,
+    BACKOFF_MAX_MS,
+    chunkBatch,
+    sanitizeBuffer,
+    shouldAllowFlush,
+    classifyFlushResponse,
+    shouldDropEvent,
+  } = pure;
+
   const STORAGE_KEYS = {
     sessionId: 'logsUploadSessionId',
     buffer: 'logsUploadBuffer',
     lastSentAt: 'logsUploadLastSentAt',
     lastError: 'logsUploadLastError',
     lastBatchSize: 'logsUploadLastBatchSize',
+    lastFailedAt: 'logsUploadLastFailedAt',
+    flushAttempt: 'logsUploadFlushAttempt',
   };
 
   const FLUSH_INTERVAL_MS = 10_000;
-  const MAX_BUFFER = 20;
-  const MAX_PERSISTED = 200; // limite em chrome.storage.local
   const ENDPOINT_DEFAULT = 'https://dev.omestreafiliado.com.br/api/extension/logs';
   // Lê do manifest em runtime — sempre bate com a versão real.
   const EXTENSION_VERSION =
@@ -97,8 +130,41 @@
   }
 
   async function saveBuffer(buffer) {
-    const trimmed = buffer.slice(-MAX_PERSISTED);
-    await chrome.storage.local.set({ [STORAGE_KEYS.buffer]: trimmed });
+    const sanitized = sanitizeBuffer(buffer, MAX_PERSISTED);
+    await chrome.storage.local.set({ [STORAGE_KEYS.buffer]: sanitized });
+    return sanitized;
+  }
+
+  /** Carrega estado de backoff (lastFailedAt, attempt). */
+  async function loadBackoffState() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([STORAGE_KEYS.lastFailedAt, STORAGE_KEYS.flushAttempt], (saved) => {
+        resolve({
+          lastFailedAt:
+            typeof saved[STORAGE_KEYS.lastFailedAt] === 'number'
+              ? saved[STORAGE_KEYS.lastFailedAt]
+              : null,
+          attempt:
+            typeof saved[STORAGE_KEYS.flushAttempt] === 'number'
+              ? saved[STORAGE_KEYS.flushAttempt]
+              : 0,
+        });
+      });
+    });
+  }
+
+  async function clearBackoffState() {
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.lastFailedAt]: null,
+      [STORAGE_KEYS.flushAttempt]: 0,
+    });
+  }
+
+  async function recordFlushFailure(attempt) {
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.lastFailedAt]: Date.now(),
+      [STORAGE_KEYS.flushAttempt]: attempt,
+    });
   }
 
   function buildEntry(level, event, data) {
@@ -117,13 +183,11 @@
     };
   }
 
-  async function flush() {
-    if (!API_KEY) return;
-    const buffer = await loadBuffer();
-    if (buffer.length === 0) return;
-
-    const endpoint = (state.apiUrl || ENDPOINT_DEFAULT).replace(/\/+$/, '') + '/api/extension/logs';
-
+  /**
+   * Envia um único chunk ao servidor. Retorna classificação do resultado.
+   * Nunca lança — todos os erros são convertidos em { ok: false }.
+   */
+  async function flushChunk(endpoint, chunk) {
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -131,29 +195,98 @@
           'Content-Type': 'application/json',
           'X-Extension-Logs-Key': API_KEY,
         },
-        body: JSON.stringify(buffer),
+        body: JSON.stringify(chunk),
       });
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '');
-        log.warn('logs-sink.flush.failed', { status: res.status, body: errBody.slice(0, 200) });
-        await chrome.storage.local.set({
-          [STORAGE_KEYS.lastError]: `HTTP ${res.status}`,
-        });
-        return;
+      if (res.ok) {
+        return { ok: true, drained: true, retryable: false, status: res.status };
       }
+      const errBody = await res.text().catch(() => '');
+      return { ...classifyFlushResponse(res.status, errBody), status: res.status, body: errBody };
+    } catch (err) {
+      return { ok: false, drained: false, retryable: true, error: String(err) };
+    }
+  }
+
+  async function flush() {
+    if (!API_KEY) return;
+    const rawBuffer = await loadBuffer();
+    if (rawBuffer.length === 0) return;
+
+    // Aplica dedup + trim antes de tudo (defesa contra entradas
+    // logs-sink.* que possam ter vazado).
+    const buffer = sanitizeBuffer(rawBuffer, MAX_PERSISTED);
+    if (buffer.length !== rawBuffer.length) {
+      await chrome.storage.local.set({ [STORAGE_KEYS.buffer]: buffer });
+    }
+    if (buffer.length === 0) return;
+
+    // Backoff — se ultima flush falhou, respeita o intervalo.
+    const backoffState = await loadBackoffState();
+    const decision = shouldAllowFlush({
+      lastFailedAt: backoffState.lastFailedAt,
+      attempt: backoffState.attempt,
+    });
+    if (!decision.allowed) {
+      // Ainda em cooldown. Timer periódico vai tentar de novo depois.
+      return;
+    }
+
+    const endpoint = (state.apiUrl || ENDPOINT_DEFAULT).replace(/\/+$/, '') + '/api/extension/logs';
+
+    // CHUNKING — servidor rejeita batches > MAX_BATCH_SIZE.
+    const chunks = chunkBatch(buffer, MAX_BATCH_SIZE);
+    let totalSent = 0;
+    let attempt = backoffState.attempt || 0;
+    let allOk = true;
+
+    for (let i = 0; i < chunks.length; i++) {
+      const result = await flushChunk(endpoint, chunks[i]);
+      if (result.ok) {
+        totalSent += chunks[i].length;
+        // Limpa state de backoff no primeiro sucesso.
+        if (attempt > 0) await clearBackoffState();
+        attempt = 0;
+        continue;
+      }
+      allOk = false;
+      // Erro de estrutura (4xx não-rate-limit): drena o chunk pra
+      // evitar retry infinito. O caller vai manter o que sobrou.
+      const drained = result.drained ? chunks[i].length : 0;
+      totalSent += drained;
+      // Rate limit / 5xx → para e tenta de novo no próximo tick.
+      if (!result.drained) break;
+      if (result.rateLimited) break;
+    }
+
+    // Re-salva buffer removendo o que foi consumido com sucesso.
+    if (totalSent > 0) {
+      const remaining = buffer.slice(totalSent);
+      await chrome.storage.local.set({ [STORAGE_KEYS.buffer]: remaining });
+    }
+
+    if (allOk) {
       await chrome.storage.local.set({
-        [STORAGE_KEYS.buffer]: [],
         [STORAGE_KEYS.lastSentAt]: new Date().toISOString(),
         [STORAGE_KEYS.lastError]: null,
-        [STORAGE_KEYS.lastBatchSize]: buffer.length,
+        [STORAGE_KEYS.lastBatchSize]: totalSent,
       });
-      log.info('logs-sink.flush.ok', { count: buffer.length });
-    } catch (err) {
-      log.warn('logs-sink.flush.network-error', { error: String(err) });
-      await chrome.storage.local.set({
-        [STORAGE_KEYS.lastError]: String(err).slice(0, 200),
-      });
+      // console.info direto (NÃO extLog — esses logs NAO voltam pro
+      // sink, por isso não há risco de loop).
+      console.info('[extensão] logs-sink.flush.ok', { count: totalSent });
+      return;
     }
+
+    // Falhou em algum chunk — incrementa attempt e grava estado.
+    attempt += 1;
+    await recordFlushFailure(attempt);
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.lastError]: 'HTTP ou network (ver logs-sink)',
+    });
+    // console.warn direto (mesma razão: NAO volta pro sink).
+    console.warn('[extensão] logs-sink.flush.failed', {
+      attempt,
+      nextRetryIn: 'ver computeBackoffMs',
+    });
   }
 
   function startTimer() {
@@ -175,6 +308,9 @@
   async function sink(level, event, data) {
     if (!API_KEY) return;
 
+    // Anti-loop: NUNCA persistir eventos do proprio sink.
+    if (shouldDropEvent(event)) return;
+
     try {
       await ensureSessionId();
       const entry = buildEntry(level, event, data);
@@ -187,11 +323,8 @@
         flush().catch(() => {});
       }
     } catch (err) {
-      try {
-        log.warn('logs-sink.append.failed', { error: String(err) });
-      } catch {
-        /* swallow */
-      }
+      // console.error direto — NAO volta pro sink.
+      console.error('[extensão] logs-sink.append.failed', String(err));
     }
   }
 
