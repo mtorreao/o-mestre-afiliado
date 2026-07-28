@@ -1,6 +1,6 @@
 # Plano de Testes E2E — Nova Arquitetura do Worker (Ingestor + Dispatcher)
 
-> Complementa `docs/planos/arquitetura-worker.md`. Cobre a suíte E2E
+> Complementa [`docs/specs/arquitetura-worker.md`](../specs/arquitetura-worker.md). Cobre a suíte E2E
 > (Playwright) para a arquitetura de 2 filas / 2 processadores que
 > substituiu o `apps/worker` monolítico por `apps/ingestor`,
 > `apps/dispatcher` e `packages/worker-common`.

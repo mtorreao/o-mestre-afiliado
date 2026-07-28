@@ -1,5 +1,11 @@
 # Plano: Feature Flags (admin-only) + Modo Manutenção
 
+> **Status:** Fases 1–4 (fundação admin + DB + package + API) e Fase 6 (UI `FeatureFlagsPage` + `MaintenancePage`) **entregues**. Fases 5 (kill switch ingestor) e 7 (E2E dedicado) ainda pendentes. Ver [`docs/plans/roadmap.md`](../plans/roadmap.md) para o status operacional.
+>
+> **Este arquivo é a fonte de detalhe das Fases pendentes** (5 + 7). Para o que já foi entregue, ver o resumo do item 8 em [`docs/plans/roadmap.md`](../plans/roadmap.md#-entregue-com-link-para-spec).
+
+---
+
 > **Objetivo:** sistema simples de feature flags para dar segurança na liberação em produção — com destaque para (1) um **modo manutenção** global e (2) um **kill switch do envio de mensagens via Evolution API**. Gestão exclusiva do **admin do sistema**, via tela dedicada no web app.
 >
 > **Escopo:** flags **booleanas e globais** (liga/desliga para o sistema inteiro). Sem targeting por usuário, sem porcentagem de rollout, sem A/B — YAGNI. Se um dia precisar, o modelo evolui sem quebrar.
@@ -13,7 +19,7 @@
 | O que existe                    | Onde                                            | Observação                                                                                                   |
 | ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Auth JWT `{userId, userEmail}`  | `apps/api/src/middleware/auth.ts`               | **Sem papel/role.** O conceito de admin ainda não existe no código.                                          |
-| Plano do admin (`is_admin`)     | `docs/planos/historico-precos.md` §5.5          | Já especifica `is_admin` + `ADMIN_EMAILS` + JWT. **Este plano reusa a mesma fundação** (prerequisito comum). |
+| Plano do admin (`is_admin`)     | `docs/plans/historico-precos.md` §5.5           | Já especifica `is_admin` + `ADMIN_EMAILS` + JWT. **Este plano reusa a mesma fundação** (prerequisito comum). |
 | Redis singleton (API)           | `apps/api/src/services/redis.ts`                | `cacheGet`/`cacheSet` com fallback silencioso.                                                               |
 | Redis nos workers               | `apps/ingestor`, `apps/dispatcher` (ioredis)    | Dispatcher já tem padrão de cache local 60s (`rate-limiter.ts:20`) — mesmo padrão serve para flags.          |
 | Loop do Dispatcher              | `apps/dispatcher/src/index.ts:149` (`mainLoop`) | Ponto ideal do kill switch: pausar ANTES do `XREADGROUP` → mensagens acumulam na Queue B, nada é perdido.    |
@@ -308,7 +314,7 @@ export function waitForFlagChange(timeoutMs: number): Promise<void> {
 
 ### 5.1 Fundação admin (prerequisito compartilhado — ver §9)
 
-Idêntica ao especificado em `docs/planos/historico-precos.md` §5.5.1:
+Idêntica ao especificado em `docs/plans/historico-precos.md` §5.5.1:
 
 1. Migration `ALTER TABLE omestre.users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;`
 2. `packages/db/src/schema/users.ts`: `isAdmin: boolean('is_admin').notNull().default(false)` (+ `toPublic` em `users.repository.ts`).

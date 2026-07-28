@@ -7,7 +7,7 @@ acima do teste, link para o trecho, motivo raiz e passos para reativar.
 > **Política:** nada entra aqui sem motivo documentado, workaround aplicado
 > no teste, ou caminho de reativação claro. Quando a causa raiz for
 > corrigida, remover o `test.skip`, deletar a entrada deste arquivo
-> e mover o contexto para um ADR em `docs/planos/` ou `docs/investigacoes/`.
+> e mover o contexto para um ADR em `docs/plans/` ou `docs/investigacoes/`.
 
 ---
 
