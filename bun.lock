@@ -23,6 +23,7 @@
         "@elysiajs/swagger": "^1.2.0",
         "@omestre/converters": "workspace:*",
         "@omestre/db": "workspace:*",
+        "@omestre/feature-flags": "workspace:*",
         "@omestre/shared": "workspace:*",
         "@omestre/worker-common": "workspace:*",
         "elysia": "catalog:",
@@ -37,6 +38,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@omestre/db": "workspace:*",
+        "@omestre/feature-flags": "workspace:*",
         "@omestre/shared": "workspace:*",
         "@omestre/worker-common": "workspace:*",
         "drizzle-orm": "catalog:",
