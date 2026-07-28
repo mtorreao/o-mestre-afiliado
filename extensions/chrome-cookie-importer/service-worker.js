@@ -6,17 +6,15 @@ importScripts('lib/log.js');
 importScripts('lib/log-sink.js');
 
 // Bootstrap log — primeira coisa que o SW faz. Deve aparecer no DB
-// logo após cada reload. Se voce nao ve 'service-worker.bootstrap'
-// nos logs remotos, o SW nao foi reiniciado.
+// logo apos cada reload. Se voce nao ve 'service-worker.bootstrap'
+// nos logs remotos, o SW NAO foi reiniciado (cache do Chrome).
 try {
   globalThis.extLog?.info?.('service-worker.bootstrap', {
     swVersion: chrome.runtime.getManifest().version,
-    manifestVersion: chrome.runtime.getManifest().version,
     hasApiKey: Boolean(globalThis.__EXT_LOGS_API_KEY__),
     sinkLoaded: Boolean(globalThis.extLogSink),
   });
 } catch (e) {
-  // Se isso falhar, o SW nao inicializou corretamente
   globalThis.console?.error?.('[OMA-SW] bootstrap failed:', e);
 }
 
