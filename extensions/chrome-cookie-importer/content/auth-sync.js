@@ -93,7 +93,7 @@
   let pollingTimer = null;
   function startPolling() {
     if (pollingTimer) return;
-    pollingTimer = setInterval(() => syncToken('poll'), 2000);
+    pollingTimer = setInterval(() => syncToken('poll'), 10000);
   }
   function stopPolling() {
     if (pollingTimer) {
