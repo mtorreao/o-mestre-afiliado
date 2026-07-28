@@ -117,6 +117,7 @@ function App() {
                 <LoginPage
                   onLogin={async (email, password) => {
                     await login(email, password);
+                    navigate('/');
                   }}
                   onSwitchToRegister={() => navigate('/register')}
                 />
