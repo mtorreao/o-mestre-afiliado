@@ -135,6 +135,7 @@ services:
       EVOLUTION_API_URL: http://evolution-api-e2e:8080
       EVOLUTION_API_KEY: e2e-evolution-api-key
       WEBHOOK_URL: http://api-e2e:5442/webhook/message
+      REDIS_URL: redis://redis-e2e:6379
       ML_CLIENT_ID: ''
       ML_CLIENT_SECRET: ''
       FRONTEND_URL: http://localhost:15441

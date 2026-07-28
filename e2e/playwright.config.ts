@@ -28,7 +28,7 @@ export default defineConfig({
     },
     {
       name: 'ui',
-      testMatch: '**/*.ui.spec.ts',
+      testMatch: ['**/*.ui.spec.ts', '**/zprobe.spec.ts'],
       use: {
         browserName: 'chromium',
         headless: true,
