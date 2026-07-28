@@ -79,7 +79,7 @@
       if (!inSink) {
         inSink = true;
         try {
-          extLogSink?.sink?.('debug', event, data);
+          globalThis.extLogSink?.sink?.('debug', event, data);
         } finally {
           inSink = false;
         }
@@ -90,7 +90,7 @@
       if (!inSink) {
         inSink = true;
         try {
-          extLogSink?.sink?.('info', event, data);
+          globalThis.extLogSink?.sink?.('info', event, data);
         } finally {
           inSink = false;
         }
@@ -101,7 +101,7 @@
       if (!inSink) {
         inSink = true;
         try {
-          extLogSink?.sink?.('warn', event, data);
+          globalThis.extLogSink?.sink?.('warn', event, data);
         } finally {
           inSink = false;
         }
@@ -112,7 +112,7 @@
       if (!inSink) {
         inSink = true;
         try {
-          extLogSink?.sink?.('error', event, data);
+          globalThis.extLogSink?.sink?.('error', event, data);
         } finally {
           inSink = false;
         }
