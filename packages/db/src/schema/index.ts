@@ -119,6 +119,7 @@ export type { AmazonTrackingId, AmazonRegion } from './amazonAffiliates.ts';
 
 // ─── Feature Flags ─────────────────────────────────────────
 export { featureFlags } from './featureFlags.ts';
+export { extensionLogs } from './extensionLogs.ts';
 
 // ─── Re-export dos schemas auxiliares ───────────────────────────────
 export { omestre } from './omestre.ts';

@@ -94,3 +94,5 @@ export type {
 
 export { FeatureFlagRepository } from './repository/featureFlags.repository.ts';
 export type { FeatureFlagRow, NewFeatureFlagRow } from './repository/featureFlags.repository.ts';
+export { ExtensionLogRepository } from './repository/extensionLogs.repository.ts';
+export type { InsertedLogRow } from './repository/extensionLogs.repository.ts';

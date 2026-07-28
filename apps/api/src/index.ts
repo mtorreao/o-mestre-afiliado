@@ -23,6 +23,7 @@ import { webhookRoutes } from './modules/webhook/webhook.routes.ts';
 import { mlRoutes } from './modules/ml/ml.routes.ts';
 import { amazonRoutes } from './modules/amazon/amazon.routes.ts';
 import { extensionRoutes } from './modules/extension/extension.routes.ts';
+import { extensionLogRoutes } from './modules/extension/extension-log.routes.ts';
 import { featureFlagsRoutes } from './modules/admin/feature-flags.routes.ts';
 import { isFeatureEnabled, initFlagInvalidation } from '@omestre/feature-flags';
 import { warmSourceGroupCache } from './services/group-cache.ts';
@@ -88,6 +89,7 @@ const app = new Elysia()
   .use(mlRoutes)
   .use(amazonRoutes)
   .use(extensionRoutes)
+  .use(extensionLogRoutes)
   .use(featureFlagsRoutes)
 
   // ─── Gate de manutenção (feature flag global) ────────────────────

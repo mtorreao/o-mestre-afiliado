@@ -23,6 +23,7 @@ const SCHEMA = {
   ML_CLIENT_ID: str('ML_CLIENT_ID', { default: '' }),
   ML_CLIENT_SECRET: str('ML_CLIENT_SECRET', { default: '' }),
   ML_REDIRECT_URI: str('ML_REDIRECT_URI', { default: 'http://localhost:5442/api/ml/callback' }),
+  EXTENSION_LOGS_API_KEY: str('EXTENSION_LOGS_API_KEY', { default: '' }),
 } as const;
 
 type Config = ReturnType<typeof loadConfig<typeof SCHEMA>>;

@@ -326,3 +326,7 @@ export const MIRROR_SEND_DEDUP_TTL = 3600;
 
 /** TTL do send-completed do Dispatcher (24 horas) */
 export const MIRROR_SEND_COMPLETED_TTL = 86400;
+
+// ─── Logs da extensão ──────────────────────────────────────────────────
+export { ALLOWED_LOG_LEVELS } from './extension-log.ts';
+export type { ExtensionLogLevel, ExtensionLogEntry } from './extension-log.ts';
