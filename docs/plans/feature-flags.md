@@ -563,3 +563,10 @@ Cada fase = commit próprio (conventional commits: `feat(db):`, `feat(api):`, `f
 3. **Dispatcher pausado por muito tempo** → Queue B cresce (maxlen do stream trunca em cenários extremos) e, ao reativar, rajada de envios limitada pelo rate limiter — comportamento desejado, mas vale monitorar o XLEN no worker-status durante manutenções longas.
 4. **Client no dispatcher usa conexão PG** — o dispatcher hoje já depende de `@omestre/db` (resolve mirrorId), então não há dependência nova. Confirmar na implementação que `getDb()` está inicializado no startup do dispatcher.
 5. **Auditoria**: por ora, `updated_by/updated_at` (última alteração) + log estruturado no stdout. Histórico completo de alterações (tabela de audit) fica de fora — YAGNI.
+
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

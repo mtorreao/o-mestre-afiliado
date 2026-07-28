@@ -536,3 +536,38 @@ Esse incremento resolve a dor atual, reduz risco de vazamento e prepara a extens
 ## Fontes e observações de pesquisa
 
 Foi iniciada uma pesquisa multi-fonte sobre extensões Chrome MV3, automação de afiliados, permissões, padrões de conversão e riscos de cookies. A documentação oficial de Chrome Extensions deve prevalecer sobre qualquer recomendação genérica, especialmente para permissões, `activeTab`, `optional_host_permissions`, service workers e publicação. A pesquisa também deve confirmar os termos vigentes dos marketplaces antes de qualquer distribuição externa.
+
+
+## Test plan
+### Coverage (Fases 0 + 1, já entregues)
+
+| Behavior | Unit | Integration | E2E | Manual |
+| -------- | ---- | ----------- | --- | ------ |
+| Service worker MV3 boot + lifecycle | — | — | — | ✅ `chrome://extensions/` → Reload + check DevTools console |
+| Popup simplified (greeting + 2 buttons) | — | — | — | ✅ click each button, observe |
+| URL validation of API host | ✅ `extensions/chrome-cookie-importer/lib/log-sink.config.js` (no — pure logic in `src/`) | — | — | ✅ try loading from disallowed origin |
+| `validate-cookies` sync | ✅ unit on cookie classification | ✅ extension ↔ API round-trip | — | ✅ manual: see `service-worker.boot` log + `data->>'version'` |
+| Pure helpers + redaction | ✅ unit on redactor + cookie filters | — | — | — |
+| `data->>'version'` log entry | — | — | — | ✅ check service-worker console |
+
+Fases 2–5 ainda **não entregues** — sem testes.
+
+### E2E test
+
+There is no automated E2E for the extension yet. Reference pattern in repo: `scripts/validate-extension.py` (Playwright + `headless=new` + CDP attach SW target + mock localStorage + read DOM popup.html). Future Fases 2–5 should reuse or replace this script.
+
+### Run commands
+
+- Manual: `bun run scripts/validate-extension.py` (validate current state — popup renders, auth refresh works)
+- Build: `bun run build:extension`
+- Manual load: `chrome://extensions/` → Developer mode → Load unpacked → `extensions/chrome-cookie-importer/`
+
+### Regression risk
+
+Extension regression surfaces silently (popup rendering, cookie API permissions). Always bump `manifest.json` version on every commit (convention enforced by AGENTS.md). Validate after each change by reloading and re-running `scripts/validate-extension.py`.
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

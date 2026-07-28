@@ -331,3 +331,39 @@ Já existe fallback (mirror → affiliate). Melhorar:
 
 📍 Grupo: {source_group}
 ```
+
+
+## Test plan
+### Coverage (Fases 1–4 entregues, Fase 5 E2E pendente)
+
+| Behavior (from §1.1 Novos placeholders) | Unit | Integration | E2E | Manual |
+| ---------------------------------------- | ---- | ----------- | --- | ------ |
+| `TemplateContext` + `buildTemplateContext` | ✅ unit on context builder | ✅ `parseConditionalTemplate` integration | ⏳ Fase 5 (E2E dedicated) | — |
+| `parseConditionalTemplate` — sintaxe técnica `{?}/{:}/{:/}` | ✅ unit on parser | ✅ preview API | ⏳ same | — |
+| `parseConditionalTemplate` — sintaxe humanizada `{se … senão … fim}` | ✅ unit on parser | ✅ preview API | ⏳ same | — |
+| `POST /api/affiliate/preview-template` | ✅ unit | ✅ via handler | ⏳ same | — |
+| `POST /api/affiliate/validate-template` | ✅ unit | ✅ via handler | ⏳ same | — |
+| Frontend: `PlaceholderPicker`, `TemplateEditor`, `TemplatePreview` | — | — | ⏳ same (manual screenshot today) | ✅ shipped in `MirrorFormPage` |
+
+### E2E test
+
+⏳ **Pending — Fase 5.** Plan in `docs/plans/template-mensagem.md` (or current `docs/specs/template-mensagem.md` open follow-up section). Required scenarios:
+1. Compose template with mixed placeholders + conditional + humanized → preview renders correctly
+2. Save template → reload page → template persists
+3. Validate template against real mirror data → returns expected resolved output
+
+### Run commands
+
+- Unit: `bun run test:unit`
+- E2E: `bun run test:e2e`
+- Coverage: `bun run test:coverage`
+
+### Regression risk
+
+Template parsing is a string DSL — small parser changes can silently break existing user templates. Add a fixture-based regression test (`fixtures/templates/*.txt` → expected resolved output) before any parser change lands.
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

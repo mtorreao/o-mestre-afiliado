@@ -1110,3 +1110,42 @@ Fase 5 — Docker Compose + limpeza
 | Rate limit                | Misturado com pipeline          | Isolado no Sender                                                   |
 | Dead Letter Queue         | Compartilhada                   | Compartilhada                                                       |
 | Observabilidade           | Uma porta (9092)                | Duas portas (9092 pipeline, 9093 sender) — UI unificada             |
+
+
+## Test plan
+### Coverage
+
+| Behavior (from §Arquitetura Proposta) | Unit | Integration | E2E | Manual |
+| ------------------------------------- | ---- | ----------- | --- | ------ |
+| Webhook → RawMessageEvent (Queue A)    | ✅ `apps/api/src/services/redis.test.ts` | — | ✅ `e2e/webhook-and-groups.api.spec.ts` | — |
+| Ingestor pipeline (extract → validate → convert → template) | ✅ `apps/ingestor/src/ingestor-pure.test.ts`, `link-converters-pure.test.ts`, `product-image-pure.test.ts` | ✅ `apps/ingestor/src/ingestor.test.ts` | ✅ `e2e/mirror-pipeline.api.spec.ts` (P1–P9) | — |
+| Fan-out 1 sourceGroup → N affiliates  | ✅ unit on `mirror:source-group:{jid}` cache key | ✅ integration w/ 2 mirrors in DB | ✅ same E2E | — |
+| Dedup webhook 30s / send 1h / completed 24h | ✅ unit on TTL + Redis SET NX | — | ✅ same E2E | — |
+| Image fetch w/ text fallback          | ✅ `product-image-pure.test.ts` (fallback branches) | — | ✅ P7 | — |
+| SendEvent → Dispatcher → Evolution    | ✅ `apps/dispatcher/src/rate-limiter.test.ts` | ✅ `dispatcher/index.ts` smoke | ✅ same E2E (P5–P6) | — |
+
+### E2E test
+
+- **Test file:** `e2e/mirror-pipeline.api.spec.ts`
+- **Framework:** Playwright; isolated dev stack on port 8225 (`bun run test:e2e`)
+- **Scenarios:**
+  1. Happy path: webhook upsert → ingestor → SendEvent → dispatcher → message delivered (P1–P5)
+  2. Error path: invalid marketplace → blocked at ingestor with reason recorded (P6)
+  3. Edge case: image fallback when Shopee/ML return no image (P7); fan-out 1:N (P8); dedup TTL (P9)
+- **Evidence:** `coverage/summary.md` (unit + adjusted coverage ≥ 80%); E2E pass count in `test-results/`
+
+### Run commands
+
+- Unit: `bun run test:unit`
+- E2E: `bun run test:e2e`
+- Coverage: `bun run test:coverage`
+
+### Regression risk
+
+Architecture-level regression breaks every downstream mirror spec. The 9 E2E tests in `mirror-pipeline.api.spec.ts` are the canary — any of them failing means a queue/consumer-group invariant drifted. Run on every PR that touches `apps/ingestor`, `apps/dispatcher`, or `packages/worker-common`.
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

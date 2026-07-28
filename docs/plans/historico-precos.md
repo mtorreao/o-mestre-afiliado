@@ -284,3 +284,10 @@ Webhook → Queue A (omestre:mirror:raw) → Ingestor (converte + envia) → Que
 - **Alerta de preço** ("produto X caiu pra Y") — usa o histórico.
 - **Gestão de admins via UI** (promover/rebaixar) — hoje é só `ADMIN_EMAILS` (env).
 - **Heartbeat diário** (Melhoria 4): subir `price_bucket` pra truncagem diária e inserir 1 snapshot/dia mesmo sem mudança de preço (mostrar "estável há N dias"). Opcional — o único índice de 1h já cobre dedup; se quiser heartbeat, trocar `date_trunc('hour')` por `date_trunc('day')` no `CatalogJob`.
+
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

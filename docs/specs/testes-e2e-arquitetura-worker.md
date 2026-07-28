@@ -259,3 +259,39 @@ com cache/DB, e o dispatcher→simulador não valida se o grupo existe.
 - `bun run test:e2e` completo: 131 passou; as falhas restantes (12) são 11 testes
   de UI **pré-existentes e fora do escopo** da refatoração do worker (auth.ui,
   mirrors.ui busca, whatsapp.ui card) + o P3 antes do isolamento de JID.
+
+
+## Test plan
+This spec **is** the test plan for the worker architecture. It exists to document the E2E coverage — not to add new tests. The Test plan below summarises what's already green and the contract it locks.
+
+### Coverage
+
+| Behavior | E2E file | Status |
+| -------- | -------- | ------ |
+| Pipeline end-to-end (Amazon, no secret creds) | `e2e/mirror-pipeline.api.spec.ts` (P1–P9) | ✅ green |
+| Worker status page API | `e2e/worker-status.api.spec.ts` (W1–W7 + requeue/remove/purge) | ✅ green |
+| Total E2E pass count when this spec landed | `bun run test:e2e` | ✅ 131 / 131 (12 unrelated UI failures out of scope) |
+
+### E2E test
+
+- **Test file:** `e2e/mirror-pipeline.api.spec.ts` + `e2e/worker-status.api.spec.ts`
+- **Framework:** Playwright; isolated dev stack on port 8225 (`bun run test:e2e`)
+- **Scenarios:**
+  1. Pipeline happy path + fan-out (P1–P5)
+  2. Image fallback (P7)
+  3. DLQ requeue / remove / purge API surface (W1–W7)
+
+### Run commands
+
+- E2E: `bun run test:e2e`
+- Coverage: `bun run test:coverage`
+
+### Regression risk
+
+This suite is the lock against architectural regressions. Any new ingestor/dispatcher feature must extend `mirror-pipeline.api.spec.ts` or add a sibling spec. Bumping the suite to cover new failure modes (e.g. Amazon-only failures, Magalu conversions) is the natural extension path.
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

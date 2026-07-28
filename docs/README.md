@@ -12,7 +12,9 @@
 | [`docs/roadmap.md`](./roadmap.md)           | Roadmap operacional: **topo = entregue** (com link para spec) + **final = planejado por impacto** (maior → menor).                  |
 | [`docs/specs/`](./specs/)                   | **Specs do que já foi implementado.** Fonte da verdade do que está no código hoje. Critério de aceite e decisões ficam registrados. |
 | [`docs/plans/`](./plans/)                   | Planos de features ainda não iniciadas: `feature-flags`, `historico-precos`, `magalu`, `melhorias-ml`.                              |
-| [`docs/investigacoes/`](./investigacoes/)   | Relatórios de investigação (`investigacao-mirror-2026-07-25`).                                                                      |
+| [`docs/investigacoes/`](./investigacoes/)   | _(removido em 2026-07-28 — migrado para `docs/lessons-learned/`)_                                                     |
+| [`docs/lessons-learned.md`](./lessons-learned.md) | Índice de lições aprendidas (retrospectives). Cada entrada vira um arquivo em [`docs/lessons-learned/`](./lessons-learned/). |
+| [`docs/lessons-learned/`](./lessons-learned/) | Lições aprendidas individuais (uma por arquivo). Caso inaugural: `2026-07-25-mirror-parou-de-entregar.md` (mirror bloqueado por commit com argumento técnico incorreto). |
 | [`docs/marketplaces/`](./marketplaces/)     | Referências de API de terceiros (`mercadolivre`, `shopee`, `amazon`) + PDFs de cadastro ML.                                         |
 | [`docs/evolution-api/`](./evolution-api/)   | Referência da Evolution API (WhatsApp).                                                                                             |
 | [`docs/known-issues.md`](./known-issues.md) | Índice de testes E2E desativados temporariamente com `test.skip` + motivo e reativação.                                             |

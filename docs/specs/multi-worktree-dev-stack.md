@@ -96,3 +96,38 @@ DEV_TUNNEL_MODE=quick bun run dev
 - `docker-compose.dev.yml` — parametrizado
 - `README.md`, `AGENTS.md`, `docs/README.md` — atualizados
 - Skill `project/omestre-afiliado` (Hermes) — atualizada
+
+
+## Test plan
+The dev-stack spec is infra/tooling; validation is "the script works as documented" rather than a runtime behavior. No E2E for `bun run dev` itself — but the produced stack (api/ingestor/dispatcher/web) is exercised by every other spec's E2E.
+
+### Coverage
+
+| Behavior (from §Solução entregue) | Unit | Integration | E2E | Manual |
+| --------------------------------- | ---- | ----------- | --- | ------ |
+| Slug + identity from branch       | ✅ `scripts/dev-pure.ts` (extracted logic) | — | — | ✅ smoke: `bun run scripts/dev.ts --dry-run` on 2 branches |
+| Deterministic port block          | ✅ unit on port-block allocator            | — | — | ✅ same |
+| Lockfile + persisted state        | ✅ unit on lockdir state machine           | — | — | ✅ crash-recovery in same branch |
+| Tunnel (named / quick / skip)     | — | — | — | ✅ documented in README; quick URL printed |
+| Cloudflare API CNAME create       | ✅ unit on DNS payload builder             | — | — | ✅ manual w/ real `CLOUDFLARE_API_TOKEN` |
+| Cleanup on Ctrl+C / lock PID dead | — | — | — | ✅ signal handling verified |
+
+### E2E test
+
+N/A — this is dev infrastructure. Downstream specs (`arquitetura-worker`, `worker-monitoring`, `testes-e2e-arquitetura-worker`) all rely on it running correctly, which is the strongest evidence.
+
+### Run commands
+
+- Manual: `bun run scripts/dev.ts --dry-run`
+- Downstream E2E: `bun run test:e2e` (assumes dev stack from this script)
+- Unit: `bun run test:unit`
+
+### Regression risk
+
+If port allocation regresses, two worktrees collide on the same Compose project. Lockfile regression → silent state corruption after Ctrl+C. Validate by running `bun run dev` in two branches simultaneously and confirming slug/ports/tunnel differ.
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

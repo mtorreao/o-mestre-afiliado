@@ -1,9 +1,37 @@
 # Investigação: Mirror parou de entregar ofertas — 2026-07-25
 
+> **Status:** open. Root cause identified; corrective action pending decision.
+
 **Autor:** Hermes Agent (sessão com Matheus Torreão, mtorreao1@gmail.com)
 **Data:** 2026-07-25
+**Severity:** high
+**Time lost:** ~6h (diagnostic) + ongoing blocked mirror since 2026-07-24 19:35
+**Status:** open — decisão de reverter `a45dfa0` ou justificar pendente com o usuário
 **Escopo:** Por que o espelhamento do mirror `id=1` (user_id=1, `Teste 321` → grupos `Promozone #156` + `Achadinhos Mari Parente 🛒🛍️🤑`) parou de entregar mensagens no grupo destino.
 **Método:** Diagnóstico read-only (logs Docker, Redis, Postgres, testes isolados com credenciais reais do user). Nenhuma correção foi aplicada — todas as decisões ficam pendentes com o usuário.
+
+## What we learned
+
+- `URLSearchParams.set()` **substitui** valores, não concatena. Argumento técnico do commit `a45dfa0` ("dois matt_word conflitantes") estava incorreto — testado e confirmado.
+- O endpoint interno do ML (`/affiliate-program/api/v2/affiliates/createLink`) **não está documentado**; hoje rejeita tudo (`URL not allowed in affiliates program`) mesmo para URLs canônicas. Pode ter mudado ou os cookies perderam escopo do Link Builder.
+- `resolveRedirectUrl()` em `apps/ingestor/src/resolve-redirect.ts` **não usa a API interna do Promozone** (`link-shortener-501307668672.southamerica-east1.run.app/resolve/{code}`). Como `go.promozone.ai` é SPA/JS redirect, o resolver atual retorna a própria URL do redirector — bug latente para fontes do Promozone.
+
+## Why it happened
+
+O commit `a45dfa0` removeu `generateViaUrlParams` como fallback em `convertMlForAffiliate` depois da skill `omestre-mirror-safety` §1.9a. A intenção da skill era correta, mas a remoção do fallback foi além do que o problema original exigia — uma interpretação equivocada da regra.
+
+## What we changed so it doesn't happen again
+
+- Investigação documentada como lição.
+- Lembrete explícito ao skill `omestre-mirror-safety`: **não remover fallback** sem E2E verde que prove a causa-raiz; argumentação técnica deve ser validada com teste isolado antes do commit.
+- (proposto) Spec ou regression test que cubra o fallback `URLSearchParams.set` vs `append` para matt_word.
+
+## Related
+
+- Spec: `docs/specs/arquitetura-worker.md`
+- Plan: `docs/plans/melhorias-ml.md` (itens relacionados a fallback ML)
+- Commit: `a45dfa0` (2026-07-24, Matheus)
+- Skills envolvidas: `omestre-mirror-safety` §1.9a/§1.9b, `omestre-mirror-diagnostics` §1/§6/§8/§13/§15
 
 ---
 
@@ -811,3 +839,11 @@ Os arquivos modificados `ingestor.ts`, `resolve-redirect.ts`, `WorkerStatusPage.
 - `omestre-mirror-diagnostics` §1, §6, §8, §13 — recipes para diagnosticar cada tipo de falha
 - `omestre-mirror-diagnostics` §15 — dedup atômico no consumer (Dispatcher OK, já tem `SET NX EX`)
 - `omestre-afiliado-overview` — visão geral do monorepo, Docker, comandos
+
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                                                       |
+| ---------- | ------- | ------------------------------------- | ------------------------------------------------------------ |
+| 2026-07-28 | 0.2.0   | Adopted lessons-learned template (added Severity, Time lost, Status, "What we learned" / "Why it happened" / "What we changed" / "Related" sections) | Migrated from `docs/investigacoes/` to `docs/lessons-learned/` per spec-driven bootstrap |
+| 2026-07-25 | 0.1.0   | Initial investigation                  | Diagnostic session for blocked mirror `id=1`                |

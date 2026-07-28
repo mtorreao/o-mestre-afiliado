@@ -428,3 +428,41 @@ Tudo o resto é nativo (Bun.password para hash, fetch para HTTP, crypto para ass
 | 8   | Frontend auth      | Hook + LoginPage + RegisterPage                                   |
 | 9   | Frontend dashboard | AffiliateDashboard + componentes                                  |
 | 10  | Testar tudo        | bun run build + fluxo completo                                    |
+
+
+## Test plan
+### Coverage
+
+| Behavior (from §Visão Geral) | Unit | Integration | E2E | Manual |
+| ---------------------------- | ---- | ----------- | --- | ------ |
+| Register + login + JWT issue | ✅ `apps/api/src/middleware/auth.test.ts` | — | ✅ `e2e/auth.api.spec.ts`, `e2e/auth.ui.spec.ts` | — |
+| Per-user credential store (Shopee, ML) | — | ✅ via Drizzle repo + `POST /api/affiliate/test-conversion` | ✅ same | — |
+| `mlUserId` linkage in `ml_affiliates` | — | ✅ migration `0014_add_amazon_affiliates.sql` chain | — | — |
+| Hook `useAuth` + Login/Register/Dashboard | — | — | ✅ `e2e/auth.ui.spec.ts` | ✅ manual screenshot |
+| `POST /api/affiliate/test-conversion` | ✅ `apps/api/src/modules/mirrors/__tests__/mirrors.routes.handlers.test.ts` | — | ✅ `e2e/mirrors.api.spec.ts` | — |
+
+### E2E test
+
+- **Test file:** `e2e/auth.api.spec.ts`, `e2e/auth.ui.spec.ts`
+- **Framework:** Playwright; isolated dev stack on port 8225
+- **Scenarios:**
+  1. Register → login → access protected route (auth.api)
+  2. UI: form validation, error states, redirect after login (auth.ui)
+  3. Per-user credential round-trip via test-conversion endpoint
+- **Evidence:** screenshots in `e2e/screenshots/auth/` (gitignored artefacts from Playwright)
+
+### Run commands
+
+- Unit: `bun run test:unit`
+- E2E: `bun run test:e2e`
+- Coverage: `bun run test:coverage`
+
+### Regression risk
+
+Auth regression = total product outage. The auth E2E is the canary; any change to `apps/api/src/middleware/auth.ts` or `apps/api/src/modules/auth/*` requires re-running the full E2E and confirming all protected routes still 200.
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

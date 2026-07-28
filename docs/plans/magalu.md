@@ -822,3 +822,10 @@ Fase 0 (Fundação admin)
   - `https://github.com/thiagoplb/affiliate_links` — Python toolkit com `MagaluAffiliateClient` (mesmo padrão).
 - **Cookie `mlparceiro`** — cookie interno do Magalu (não usado para afiliação).
 - **Rede parceira:** Sovrn Commerce (Magazine Luiza BR Affiliate Program) — referência externa.
+
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

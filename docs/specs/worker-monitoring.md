@@ -103,3 +103,44 @@ Resposta: `{ success, items[], total, totalFiltered, offset, limit }`.
 - Para novos counters Prometheus, adicionar label em `COUNTER_LABELS` / `STEP_LABELS`.
 - O limite de 100 itens carregados por página quando há filtro é intencional
   (evita trafegar a DLQ inteira). Paginação real além de 100 não foi implementada.
+
+
+## Test plan
+### Coverage
+
+| Behavior (from §Objetivo) | Unit | Integration | E2E | Manual |
+| ------------------------- | ---- | ----------- | --- | ------ |
+| 5 sections of `WorkerStatusPage` (Pipeline / Resumo / Ingestor / Dispatcher / DLQ) | ✅ `apps/web/src/lib/worker-counters.ts` (parseCounterKey, aggregateByLabel, rankedByLabel) | ✅ component-level via React | ✅ `e2e/worker-status.api.spec.ts` | ✅ manual: `bun run dev` → `/worker-status` |
+| Server-side DLQ filters (offset/limit/queue/reason/since) | ✅ `apps/api/src/services/worker-metrics-pure.test.ts` | ✅ `worker-metrics.ts` | ✅ same E2E (W1–W7 + requeue/remove/purge) | — |
+| Auto-refresh 30s + DLQ switch | — | — | ✅ same E2E | ✅ manual screenshot |
+| Copy JSON to clipboard | — | — | ✅ same E2E (button presence) | ✅ manual: Clipboard API path |
+| Pulsing badge on DLQ delta | — | — | ✅ same E2E (DOM check) | ✅ manual: visual confirmation |
+
+### E2E test
+
+- **Test file:** `e2e/worker-status.api.spec.ts`
+- **Framework:** Playwright; isolated dev stack on port 8225
+- **Scenarios:**
+  1. Aggregated status endpoint (`/api/worker/status`) returns Ingestor + Dispatcher snapshots (W1)
+  2. DLQ list with filters (offset/limit/queue/reason/since) → `total` + `totalFiltered` (W2–W5)
+  3. DLQ actions: requeue / remove / purge (W6–W7)
+- **Evidence:** Playwright trace in `test-results/worker-status/`; manual screenshot of the page under `screenshots/worker-status/` when shipping UI changes
+
+### Run commands
+
+- Unit: `bun run test:unit`
+- E2E: `bun run test:e2e`
+- Coverage: `bun run test:coverage`
+
+### Regression risk
+
+Most regressions here are visual (CSS / counter label drift). Run the dev stack and visually check `/worker-status` whenever:
+- A new Prometheus counter or label is added to ingestor/dispatcher (must be added to `COUNTER_LABELS` / `STEP_LABELS` / `LABEL_LABELS`).
+- A new `failureReason` is introduced (must map in `getFailureMeta`).
+- The DLQ schema or Redis key layout changes.
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |

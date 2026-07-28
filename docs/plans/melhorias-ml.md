@@ -92,3 +92,10 @@
 | **2**  | Feedback visual de cookies expirados + batch de URLs   |
 | **3**  | Extensão: auto-detect + refresh periódico              |
 | **4**  | Mensagens de erro + testes                             |
+
+
+## Revision history
+
+| Date       | Version | Change                                | Reason                           |
+| ---------- | ------- | ------------------------------------- | -------------------------------- |
+| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |
