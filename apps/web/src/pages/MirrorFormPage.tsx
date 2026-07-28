@@ -50,8 +50,10 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   const [sourceGroups, setSourceGroups] = useState<{ jid: string; name: string }[]>([]);
   const [targetGroups, setTargetGroups] = useState<{ jid: string; name: string }[]>([]);
   const [messageTemplate, setMessageTemplate] = useState('');
-  const [subRateMaxMsgs, setSubRateMaxMsgs] = useState<number | null>(null);
-  const [subRateWindowSec, setSubRateWindowSec] = useState<number | null>(null);
+  // Sub-rate limit desativado temporariamente — campos do form ocultados.
+  // Mantemos a tipagem MirrorData.subRateLimit* para não quebrar desserialização.
+  // const [subRateMaxMsgs, setSubRateMaxMsgs] = useState<number | null>(null);
+  // const [subRateWindowSec, setSubRateWindowSec] = useState<number | null>(null);
 
   // ─── UI state ───────────────────────────────────
   const [loading, setLoading] = useState(false);
@@ -74,7 +76,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
       const res = await fetch(`/api/mirrors/${mirrorId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json() as {
+      const data = (await res.json()) as {
         success: boolean;
         mirror?: MirrorData;
         error?: string;
@@ -84,8 +86,9 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         setSourceGroups(data.mirror.sourceGroups ?? []);
         setTargetGroups(data.mirror.targetGroups ?? []);
         setMessageTemplate(data.mirror.messageTemplate ?? '');
-        setSubRateMaxMsgs(data.mirror.subRateLimitMaxMsgs ?? null);
-        setSubRateWindowSec(data.mirror.subRateLimitWindowSec ?? null);
+        // Sub-rate limit desativado temporariamente.
+        // setSubRateMaxMsgs(data.mirror.subRateLimitMaxMsgs ?? null);
+        // setSubRateWindowSec(data.mirror.subRateLimitWindowSec ?? null);
       } else {
         setFetchError(data.error || 'Erro ao carregar espelhamento');
       }
@@ -146,8 +149,9 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
       sourceGroups,
       targetGroups,
       messageTemplate: messageTemplate.trim() || null,
-      subRateLimitMaxMsgs: subRateMaxMsgs ?? null,
-      subRateLimitWindowSec: subRateWindowSec ?? null,
+      // Sub-rate limit desativado temporariamente — não envia ao backend.
+      subRateLimitMaxMsgs: null,
+      subRateLimitWindowSec: null,
     };
 
     try {
@@ -158,12 +162,12 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         method,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json() as {
+      const data = (await res.json()) as {
         success: boolean;
         mirror?: MirrorData;
         error?: string;
@@ -189,10 +193,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   if (loading) {
     return (
       <PageLayout>
-        <PageHeader
-          title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'}
-          onBack={onBack}
-        />
+        <PageHeader title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'} onBack={onBack} />
         <div
           style={{
             display: 'flex',
@@ -215,10 +216,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   if (fetchError) {
     return (
       <PageLayout>
-        <PageHeader
-          title="Editar Espelhamento"
-          onBack={onBack}
-        />
+        <PageHeader title="Editar Espelhamento" onBack={onBack} />
         <Card>
           <div
             style={{
@@ -247,10 +245,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   if (success) {
     return (
       <PageLayout>
-        <PageHeader
-          title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'}
-          onBack={onBack}
-        />
+        <PageHeader title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'} onBack={onBack} />
         <div
           style={{
             display: 'flex',
@@ -275,7 +270,14 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           >
             ✅
           </div>
-          <p style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--color-success)', margin: 0 }}>
+          <p
+            style={{
+              fontSize: 'var(--text-base)',
+              fontWeight: 600,
+              color: 'var(--color-success)',
+              margin: 0,
+            }}
+          >
             Espelhamento {isEdit ? 'atualizado' : 'criado'} com sucesso!
           </p>
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', margin: 0 }}>
@@ -291,7 +293,11 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
     <PageLayout>
       <PageHeader
         title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'}
-        subtitle={isEdit ? 'Altere os campos desejados e salve' : 'Configure o espelhamento de ofertas entre grupos'}
+        subtitle={
+          isEdit
+            ? 'Altere os campos desejados e salve'
+            : 'Configure o espelhamento de ofertas entre grupos'
+        }
         onBack={onBack}
       />
 
@@ -314,30 +320,66 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         </Card>
 
         <Card title="🔗 Grupos de Origem" style={{ marginBottom: '1.5rem' }}>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: '0.75rem' }}>
+          <p
+            style={{
+              fontSize: 'var(--text-xs)',
+              color: 'var(--color-text-muted)',
+              marginTop: 0,
+              marginBottom: '0.75rem',
+            }}
+          >
             Selecione os grupos de onde as ofertas serão capturadas.
           </p>
-          <GroupOfferAutocomplete token={token} value={sourceGroups} onChange={(groups) => {
-            setSourceGroups(groups);
-            if (sourceError) setSourceError(null);
-          }} />
+          <GroupOfferAutocomplete
+            token={token}
+            value={sourceGroups}
+            onChange={(groups) => {
+              setSourceGroups(groups);
+              if (sourceError) setSourceError(null);
+            }}
+          />
           {sourceError && (
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-error)', marginTop: '0.4rem', marginBottom: 0 }}>
+            <p
+              style={{
+                fontSize: 'var(--text-xs)',
+                color: 'var(--color-error)',
+                marginTop: '0.4rem',
+                marginBottom: 0,
+              }}
+            >
               {sourceError}
             </p>
           )}
         </Card>
 
         <Card title="🎯 Grupos de Destino" style={{ marginBottom: '1.5rem' }}>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: '0.75rem' }}>
+          <p
+            style={{
+              fontSize: 'var(--text-xs)',
+              color: 'var(--color-text-muted)',
+              marginTop: 0,
+              marginBottom: '0.75rem',
+            }}
+          >
             Selecione os grupos para onde as ofertas serão espelhadas.
           </p>
-          <GroupDestAutocomplete token={token} value={targetGroups} onChange={(groups) => {
-            setTargetGroups(groups);
-            if (targetError) setTargetError(null);
-          }} />
+          <GroupDestAutocomplete
+            token={token}
+            value={targetGroups}
+            onChange={(groups) => {
+              setTargetGroups(groups);
+              if (targetError) setTargetError(null);
+            }}
+          />
           {targetError && (
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-error)', marginTop: '0.4rem', marginBottom: 0 }}>
+            <p
+              style={{
+                fontSize: 'var(--text-xs)',
+                color: 'var(--color-error)',
+                marginTop: '0.4rem',
+                marginBottom: 0,
+              }}
+            >
               {targetError}
             </p>
           )}
@@ -366,77 +408,79 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         </Card>
         ─────────────────────────────────────────────────────────────── */}
 
-        {/* ─── Rate Limit Info Banner ─────────────────────────────── */}
-        <Card
-          title="⚠️ Limites de Envio (Rate Limit)"
-          style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--color-warning)' }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: 'var(--text-sm)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-              <span style={{ color: 'var(--color-warning)', fontSize: '1.1rem', flexShrink: 0 }}>1</span>
-              <div>
-                <strong>Por instância WhatsApp:</strong>{' '}
-                Sua instância WhatsApp tem um limite de <strong>15 mensagens a cada 5 minutos</strong>.
-                Todos os espelhamentos ativos compartilham esse limite.
-                <span style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.2rem' }}>
-                  ⏱ Se exceder, as mensagens são enfileiradas automaticamente — nenhuma oferta é perdida, apenas atrasada.
-                </span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-              <span style={{ color: 'var(--color-primary)', fontSize: '1.1rem', flexShrink: 0 }}>2</span>
-              <div>
-                <strong>Por grupo de destino (sub-rate):</strong>{' '}
-                Abaixo você pode definir um limite específico para o(s) grupo(s) de destino
-                deste espelhamento. Útil para evitar flooding em grupos muito ativos.
-                <span style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.2rem' }}>
-                  💡 Configure abaixo. Deixe em branco para usar o valor padrão (5 msg / 5 min).
-                </span>
-              </div>
-            </div>
-          </div>
-        </Card>
+        {/* ─── Rate Limit Info Banner (DESATIVADO TEMPORARIAMENTE) ───────
+                <Card
+                  title="⚠️ Limites de Envio (Rate Limit)"
+                  style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--color-warning)' }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: 'var(--text-sm)' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                      <span style={{ color: 'var(--color-warning)', fontSize: '1.1rem', flexShrink: 0 }}>1</span>
+                      <div>
+                        <strong>Por instância WhatsApp:</strong>{' '}
+                        Sua instância WhatsApp tem um limite de <strong>15 mensagens a cada 5 minutos</strong>.
+                        Todos os espelhamentos ativos compartilham esse limite.
+                        <span style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.2rem' }}>
+                          ⏱ Se exceder, as mensagens são enfileiradas automaticamente — nenhuma oferta é perdida, apenas atrasada.
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                      <span style={{ color: 'var(--color-primary)', fontSize: '1.1rem', flexShrink: 0 }}>2</span>
+                      <div>
+                        <strong>Por grupo de destino (sub-rate):</strong>{' '}
+                        Abaixo você pode definir um limite específico para o(s) grupo(s) de destino
+                        deste espelhamento. Útil para evitar flooding em grupos muito ativos.
+                        <span style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.2rem' }}>
+                          💡 Configure abaixo. Deixe em branco para usar o valor padrão (5 msg / 5 min).
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+                ─────────────────────────────────────────────────────────────── */}
 
-        {/* ─── Sub-Rate Limit ─────────────────────────────────────── */}
-        <Card title="📊 Limite por Grupo de Destino" style={{ marginBottom: '1.5rem' }}>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: '0.75rem' }}>
-            Define quantas mensagens este espelhamento pode enviar para cada grupo de destino
-            em uma janela de tempo. Isso é independente do limite geral da instância.
-          </p>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 200px' }}>
-              <Input
-                label="Máx. mensagens por janela"
-                type="number"
-                placeholder="5"
-                value={subRateMaxMsgs === null ? '' : String(subRateMaxMsgs)}
-                onChange={(e) => {
-                  const val = (e.target as HTMLInputElement).value;
-                  setSubRateMaxMsgs(val === '' ? null : parseInt(val, 10));
-                }}
-                min={1}
-                max={100}
-                hint="Deixe em branco para usar o padrão (5)"
-              />
-            </div>
-            <div style={{ flex: '1 1 200px' }}>
-              <Input
-                label="Janela (segundos)"
-                type="number"
-                placeholder="300"
-                value={subRateWindowSec === null ? '' : String(subRateWindowSec)}
-                onChange={(e) => {
-                  const val = (e.target as HTMLInputElement).value;
-                  setSubRateWindowSec(val === '' ? null : parseInt(val, 10));
-                }}
-                min={10}
-                max={3600}
-                step={10}
-                hint="300s = 5 minutos. Mín: 10s, Máx: 3600s"
-              />
-            </div>
-          </div>
-        </Card>
+        {/* ─── Sub-Rate Limit (DESATIVADO TEMPORARIAMENTE) ──────────────────
+                <Card title="📊 Limite por Grupo de Destino" style={{ marginBottom: '1.5rem' }}>
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: '0.75rem' }}>
+                    Define quantas mensagens este espelhamento pode enviar para cada grupo de destino
+                    em uma janela de tempo. Isso é independente do limite geral da instância.
+                  </p>
+                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 200px' }}>
+                      <Input
+                        label="Máx. mensagens por janela"
+                        type="number"
+                        placeholder="5"
+                        value={subRateMaxMsgs === null ? '' : String(subRateMaxMsgs)}
+                        onChange={(e) => {
+                          const val = (e.target as HTMLInputElement).value;
+                          setSubRateMaxMsgs(val === '' ? null : parseInt(val, 10));
+                        }}
+                        min={1}
+                        max={100}
+                        hint="Deixe em branco para usar o padrão (5)"
+                      />
+                    </div>
+                    <div style={{ flex: '1 1 200px' }}>
+                      <Input
+                        label="Janela (segundos)"
+                        type="number"
+                        placeholder="300"
+                        value={subRateWindowSec === null ? '' : String(subRateWindowSec)}
+                        onChange={(e) => {
+                          const val = (e.target as HTMLInputElement).value;
+                          setSubRateWindowSec(val === '' ? null : parseInt(val, 10));
+                        }}
+                        min={10}
+                        max={3600}
+                        step={10}
+                        hint="300s = 5 minutos. Mín: 10s, Máx: 3600s"
+                      />
+                    </div>
+                  </div>
+                </Card>
+                ─────────────────────────────────────────────────────────────── */}
 
         {/* Submit Error */}
         {submitError && (

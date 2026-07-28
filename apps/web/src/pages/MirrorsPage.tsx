@@ -8,18 +8,17 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Badge, Dialog, FilterBar, Input, MobileFilterBar } from '../components/ui/index.ts';
+import {
+  Button,
+  Badge,
+  Dialog,
+  FilterBar,
+  Input,
+  MobileFilterBar,
+} from '../components/ui/index.ts';
 import { DataPage } from '../components/layout/DataPage.tsx';
 import { useToast } from '../components/ui/Toast.tsx';
-import {
-  Search,
-  RotateCw,
-  Eye,
-  Edit3,
-  Power,
-  PowerOff,
-  Trash2,
-} from 'lucide-react';
+import { Search, RotateCw, Eye, Edit3, Power, PowerOff, Trash2 } from 'lucide-react';
 import type { TableColumn } from '../components/layout/DataPage.tsx';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -99,14 +98,26 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
       label: 'Nome',
       width: 'minmax(180px, 1fr)',
       render: (r: Mirror) => (
-        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.name}</span>
+        <span
+          style={{
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'block',
+          }}
+        >
+          {r.name}
+        </span>
       ),
     },
     {
       label: 'Status',
       width: '100px',
       render: (r: Mirror) => (
-        <Badge variant={r.status === 'active' ? 'success' : 'neutral'}>{r.status === 'active' ? 'Ativo' : 'Inativo'}</Badge>
+        <Badge variant={r.status === 'active' ? 'success' : 'neutral'}>
+          {r.status === 'active' ? 'Ativo' : 'Inativo'}
+        </Badge>
       ),
     },
     {
@@ -121,11 +132,39 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
       width: '170px',
       align: 'right',
       render: (r: Mirror) => (
-        <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
-          <Button variant="ghost" size="sm" icon={<Eye size={14} />} title="Ver detalhes" onClick={() => toggleExpand(r.id)} />
-          <Button variant="ghost" size="sm" icon={<Edit3 size={14} />} title="Editar" onClick={() => navigate(`/mirror-form/${r.id}`)} />
-          <Button variant="ghost" size="sm" icon={r.status === 'active' ? <PowerOff size={14} /> : <Power size={14} />} title={r.status === 'active' ? 'Desativar' : 'Ativar'} onClick={() => handleToggleStatus(r)} />
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} title="Excluir" style={{ color: 'var(--color-error)' }} onClick={() => setDeleteTarget(r)} />
+        <div
+          style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Eye size={14} />}
+            title="Ver detalhes"
+            onClick={() => toggleExpand(r.id)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Edit3 size={14} />}
+            title="Editar"
+            onClick={() => navigate(`/mirror-form/${r.id}`)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={r.status === 'active' ? <PowerOff size={14} /> : <Power size={14} />}
+            title={r.status === 'active' ? 'Desativar' : 'Ativar'}
+            onClick={() => handleToggleStatus(r)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Trash2 size={14} />}
+            title="Excluir"
+            style={{ color: 'var(--color-error)' }}
+            onClick={() => setDeleteTarget(r)}
+          />
         </div>
       ),
     },
@@ -165,29 +204,29 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setPage(1);
-      setFetchKey(n => n + 1);
+      setFetchKey((n) => n + 1);
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchText]);
 
   // Fetch na mudança de página ou fetchKey
   useEffect(() => {
     fetchMirrors(page, searchText);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, fetchKey]);
 
   function handleSearch() {
     setPage(1);
-    setFetchKey(n => n + 1);
+    setFetchKey((n) => n + 1);
   }
 
   function handleReset() {
     setSearchText('');
     setPage(1);
-    setFetchKey(n => n + 1);
+    setFetchKey((n) => n + 1);
   }
 
   // ─── Status toggle ─────────────────────────────────────────────
@@ -200,7 +239,7 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status: newStatus }),
       });
@@ -232,14 +271,9 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
       });
       const json = (await res.json()) as { success: boolean };
       if (json.success) {
-        addToast(
-          'Espelhamento excluído',
-          `"${deleteTarget.name}" foi removido.`,
-          'success',
-        );
+        addToast('Espelhamento excluído', `"${deleteTarget.name}" foi removido.`, 'success');
         setDeleteTarget(null);
-        const newPage =
-          data && data.rows.length <= 1 && page > 1 ? page - 1 : page;
+        const newPage = data && data.rows.length <= 1 && page > 1 ? page - 1 : page;
         setPage(newPage);
         fetchMirrors(newPage, searchText);
       } else {
@@ -254,13 +288,69 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
   // ─── Render helpers ─────────────────────────────────────────────
 
   const renderExpanded = (r: Mirror) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
-      <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de origem: </span><span style={{ color: 'var(--color-text-primary)' }}>{r.sourceGroups?.length ? r.sourceGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</span></div>
-      <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Grupos de destino: </span><span style={{ color: 'var(--color-text-primary)' }}>{r.targetGroups?.length ? r.targetGroups.map((g) => g.name || g.jid).join(', ') : '(nenhum)'}</span></div>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem',
+        fontSize: 'var(--text-sm)',
+      }}
+    >
+      <div>
+        <span
+          style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}
+        >
+          Grupos de origem:{' '}
+        </span>
+        <span style={{ color: 'var(--color-text-primary)' }}>
+          {r.sourceGroups?.length
+            ? r.sourceGroups.map((g) => g.name || g.jid).join(', ')
+            : '(nenhum)'}
+        </span>
+      </div>
+      <div>
+        <span
+          style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}
+        >
+          Grupos de destino:{' '}
+        </span>
+        <span style={{ color: 'var(--color-text-primary)' }}>
+          {r.targetGroups?.length
+            ? r.targetGroups.map((g) => g.name || g.jid).join(', ')
+            : '(nenhum)'}
+        </span>
+      </div>
       {/* Template: feature desativada temporariamente */}
-      {false && r.messageTemplate && <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Template: </span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>{r.messageTemplate}</span></div>}
-      {(r.subRateLimitMaxMsgs != null || r.subRateLimitWindowSec != null) && <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Limite: </span><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>{r.subRateLimitMaxMsgs ?? 5} msg / {r.subRateLimitWindowSec ?? 300}s</span></div>}
-      <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Última atualização: {formatDate(r.updatedAt)}</span></div>
+      {false && r.messageTemplate && (
+        <div>
+          <span
+            style={{
+              fontSize: 'var(--text-xs)',
+              color: 'var(--color-text-muted)',
+              fontWeight: 500,
+            }}
+          >
+            Template:{' '}
+          </span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>
+            {r.messageTemplate}
+          </span>
+        </div>
+      )}
+      {/* Sub-rate limit desativado temporariamente — chip oculto.
+      {(r.subRateLimitMaxMsgs != null || r.subRateLimitWindowSec != null) && (
+        <div>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 500 }}>Limite: </span>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
+            {r.subRateLimitMaxMsgs ?? 5} msg / {r.subRateLimitWindowSec ?? 300}s
+          </span>
+        </div>
+      )} */}
+      <div>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+          Última atualização: {formatDate(r.updatedAt)}
+        </span>
+      </div>
     </div>
   );
 
@@ -275,10 +365,23 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
       onRefresh={() => fetchMirrors(page, searchText)}
       onRetry={() => fetchMirrors(page, searchText)}
       empty={!!data && data.rows.length === 0}
-      emptyMessage={searchText ? 'Nenhum espelhamento encontrado para esta busca.' : 'Nenhum espelhamento cadastrado ainda.'}
-      pagination={data ? { page: data.page, totalPages: data.totalPages, onPageChange: (p) => setPage(p) } : null}
+      emptyMessage={
+        searchText
+          ? 'Nenhum espelhamento encontrado para esta busca.'
+          : 'Nenhum espelhamento cadastrado ainda.'
+      }
+      pagination={
+        data
+          ? { page: data.page, totalPages: data.totalPages, onPageChange: (p) => setPage(p) }
+          : null
+      }
       headerActions={
-        <Button variant="primary" size="md" onClick={() => navigate('/mirror-form')} icon={<Edit3 size={14} />}>
+        <Button
+          variant="primary"
+          size="md"
+          onClick={() => navigate('/mirror-form')}
+          icon={<Edit3 size={14} />}
+        >
           Novo
         </Button>
       }
@@ -288,19 +391,58 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
           label="Filtros"
           actions={
             <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
-              <Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />} style={{ flex: 1 }}>Limpar</Button>
-              <Button onClick={handleSearch} loading={loading} icon={<Search size={14} />} size="md" style={{ flex: 1 }}>Buscar</Button>
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={handleReset}
+                icon={<RotateCw size={14} />}
+                style={{ flex: 1 }}
+              >
+                Limpar
+              </Button>
+              <Button
+                onClick={handleSearch}
+                loading={loading}
+                icon={<Search size={14} />}
+                size="md"
+                style={{ flex: 1 }}
+              >
+                Buscar
+              </Button>
             </div>
           }
         >
-          <Input label="Buscar por nome" placeholder="Digite o nome do espelhamento..." value={searchText} onChange={(e) => setSearchText(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }} />
+          <Input
+            label="Buscar por nome"
+            placeholder="Digite o nome do espelhamento..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSearch();
+            }}
+          />
         </MobileFilterBar>
       </DataPage.Mobile>
 
       <DataPage.Desktop>
-        <FilterBar title="Filtros" action={<Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />}>Limpar</Button>}>
+        <FilterBar
+          title="Filtros"
+          action={
+            <Button variant="ghost" size="md" onClick={handleReset} icon={<RotateCw size={14} />}>
+              Limpar
+            </Button>
+          }
+        >
           <FilterBar.Item width="280px" grow={2}>
-            <Input label="Buscar por nome" placeholder="Digite o nome do espelhamento..." value={searchText} onChange={(e) => setSearchText(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }} />
+            <Input
+              label="Buscar por nome"
+              placeholder="Digite o nome do espelhamento..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSearch();
+              }}
+            />
           </FilterBar.Item>
         </FilterBar>
       </DataPage.Desktop>
@@ -317,12 +459,27 @@ export function MirrorsPage({ token }: MirrorsPageProps) {
       {/* Delete confirmation — fora dos slots pra funcionar em mobile e desktop */}
       <Dialog
         open={!!deleteTarget}
-        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
         title="Excluir espelhamento"
-        description={deleteTarget ? `Tem certeza que deseja excluir "${deleteTarget.name}"? Esta ação não pode ser desfeita.` : ''}
+        description={
+          deleteTarget
+            ? `Tem certeza que deseja excluir "${deleteTarget.name}"? Esta ação não pode ser desfeita.`
+            : ''
+        }
       >
-        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-          <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.75rem',
+            justifyContent: 'flex-end',
+            marginTop: '0.5rem',
+          }}
+        >
+          <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>
+            Cancelar
+          </Button>
           <Button variant="danger" size="sm" loading={deleting} onClick={handleConfirmDelete}>
             {deleting ? 'Excluindo...' : 'Sim, excluir'}
           </Button>
