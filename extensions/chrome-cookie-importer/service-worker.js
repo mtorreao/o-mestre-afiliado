@@ -214,7 +214,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-log.info('service-worker.boot', { version: SW_VERSION, hasApiKey: HAS_API_KEY });
+log.info('service-worker.boot', {
+  version: SW_VERSION,
+  hasApiKey: HAS_API_KEY,
+  manifestVersion: chrome.runtime.getManifest().version,
+});
 sink.init().catch(() => {});
 updateBadge();
 verifyAuthToken();
