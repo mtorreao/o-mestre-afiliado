@@ -1,9 +1,24 @@
 import { Elysia } from 'elysia';
-import { UserRepository, UserCredentialsRepository, MlAffiliateRepository, MirrorLogRepository, AmazonAffiliateRepository } from '@omestre/db';
+import {
+  UserRepository,
+  UserCredentialsRepository,
+  MlAffiliateRepository,
+  MirrorLogRepository,
+  AmazonAffiliateRepository,
+} from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
-import { convertShopeeUrlWithCredentials, convertAmazonUrlWithAffiliate } from '@omestre/converters';
+import {
+  convertShopeeUrlWithCredentials,
+  convertAmazonUrlWithAffiliate,
+} from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
-import { detectMarketplace, resolvePlaceholders, processConditionalsHuman, buildEvalContext, findUnknownPlaceholders } from '@omestre/shared';
+import {
+  detectMarketplace,
+  resolvePlaceholders,
+  processConditionalsHuman,
+  buildEvalContext,
+  findUnknownPlaceholders,
+} from '@omestre/shared';
 import type { ConversionResult, TemplateContext } from '@omestre/shared';
 import { generateViaUrlParams } from '@omestre/converters';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
@@ -50,7 +65,7 @@ export const affiliateRoutes = new Elysia()
     const amazonInfo = amazonAffiliate
       ? {
           connected: true,
-          nickname: amazonAffiliate.nickname,
+          id: amazonAffiliate.id,
           active: amazonAffiliate.active,
           trackingIds: amazonAffiliate.trackingIds ?? [],
           activeTrackingCount: (amazonAffiliate.trackingIds ?? []).filter((t) => t.active).length,
@@ -63,14 +78,14 @@ export const affiliateRoutes = new Elysia()
         id: user.id,
         email: user.email,
         name: user.name,
-        shopeeConfigured: !!(creds?.shopeeAppId),
+        shopeeConfigured: !!creds?.shopeeAppId,
         shopeeAppId: creds?.shopeeAppId || null,
         // Mantido para compat (campo legado em user_credentials)
         amazonConfigured: !!amazonAffiliate,
         amazonTrackingId: amazonAffiliate
           ? (amazonAffiliate.trackingIds?.find((t) => t.isDefault)?.tag ??
-              amazonAffiliate.trackingIds?.[0]?.tag ??
-              null)
+            amazonAffiliate.trackingIds?.[0]?.tag ??
+            null)
           : null,
         mercadoLivre: mlInfo,
         amazon: amazonInfo,
@@ -119,9 +134,10 @@ export const affiliateRoutes = new Elysia()
     }
 
     // Usa a plataforma fornecida ou detecta automaticamente
-    const marketplace = platform && ['shopee', 'mercadolivre', 'amazon'].includes(platform)
-      ? platform
-      : detectMarketplace(url);
+    const marketplace =
+      platform && ['shopee', 'mercadolivre', 'amazon'].includes(platform)
+        ? platform
+        : detectMarketplace(url);
 
     if (marketplace === 'shopee') {
       return handleShopeeConversion(auth.userId, url);
@@ -167,8 +183,9 @@ export const affiliateRoutes = new Elysia()
       const result = await mirrorLogRepo.list({
         sourceGroupJid,
         targetGroupJid,
-        status: (status as 'sent' | 'failed' | 'blocked' | undefined),
-        marketplace: (marketplace as 'shopee' | 'mercadolivre' | 'amazon' | 'magalu' | 'unknown' | undefined),
+        status: status as 'sent' | 'failed' | 'blocked' | undefined,
+        marketplace: marketplace as
+          'shopee' | 'mercadolivre' | 'amazon' | 'magalu' | 'unknown' | undefined,
         dateFrom,
         dateTo,
         search,
@@ -193,21 +210,15 @@ export const affiliateRoutes = new Elysia()
       return { success: false, error: 'Não autenticado' };
     }
 
-    const {
-      template,
-      testUrl,
-      convertedUrl,
-      marketplace,
-      sourceGroupName,
-      targetGroupName,
-    } = body as {
-      template?: string;
-      testUrl?: string;
-      convertedUrl?: string | null;
-      marketplace?: string;
-      sourceGroupName?: string;
-      targetGroupName?: string;
-    };
+    const { template, testUrl, convertedUrl, marketplace, sourceGroupName, targetGroupName } =
+      body as {
+        template?: string;
+        testUrl?: string;
+        convertedUrl?: string | null;
+        marketplace?: string;
+        sourceGroupName?: string;
+        targetGroupName?: string;
+      };
 
     if (!template) {
       set.status = 400;
@@ -297,10 +308,7 @@ export const affiliateRoutes = new Elysia()
       conditionalErrors,
     };
   });
-async function handleShopeeConversion(
-  userId: number,
-  url: string,
-): Promise<ConversionResult> {
+async function handleShopeeConversion(userId: number, url: string): Promise<ConversionResult> {
   const creds = await credentialsRepo.findByUserId(userId);
 
   if (!creds?.shopeeAppId || !creds?.shopeeAppSecret) {
@@ -323,10 +331,7 @@ async function handleShopeeConversion(
 /**
  * Converte URL do Mercado Livre usando o afiliado vinculado ao usuário.
  */
-async function handleMlConversion(
-  userId: number,
-  url: string,
-): Promise<ConversionResult> {
+async function handleMlConversion(userId: number, url: string): Promise<ConversionResult> {
   const mlAffiliate = await mlRepo.findByPlatformUserId(userId);
 
   if (!mlAffiliate) {

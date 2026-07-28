@@ -1,9 +1,9 @@
 /**
- * Schema da tabela de afiliados Amazon (multi-tracking ID).
+ * Schema da tabela de integração Amazon (um Tracking ID por usuário).
  *
  * Cada afiliado da plataforma tem UMA linha em `amazon_affiliates`
- * (UNIQUE(user_id)) e pode cadastrar ATÉ 100 tracking IDs (limite
- * do Amazon Associates) em `tracking_ids` (jsonb).
+ * (UNIQUE(user_id)) e, por decisão de produto atual, apenas UM Tracking ID
+ * em `tracking_ids` (jsonb preservado para compatibilidade dos dados).
  *
  * O Amazon Associates permite 1 Store ID + até 100 Tracking IDs.
  * Aqui modelamos apenas os tracking IDs (o Store ID é implícito
@@ -20,11 +20,12 @@
  * - `active`: false = ignorado na conversão
  * - `isDefault`: qual tracking usar quando o mirror não especificar
  */
-import { boolean, integer, jsonb, serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, serial, timestamp } from 'drizzle-orm/pg-core';
 import { omestre } from './omestre.ts';
 import { users } from './users.ts';
 
-export type AmazonRegion = 'BR' | 'US' | 'CA' | 'MX' | 'UK' | 'DE' | 'FR' | 'IT' | 'ES' | 'JP' | 'AU' | 'OTHER';
+export type AmazonRegion =
+  'BR' | 'US' | 'CA' | 'MX' | 'UK' | 'DE' | 'FR' | 'IT' | 'ES' | 'JP' | 'AU' | 'OTHER';
 
 export interface AmazonTrackingId {
   tag: string;
@@ -44,14 +45,8 @@ export const amazonAffiliates = omestre.table('amazon_affiliates', {
     .unique()
     .references(() => users.id),
 
-  // Apelido (ex: "Matheus Afiliado", "Loja do Zé")
-  nickname: text('nickname'),
-
-  // Array de tracking IDs (jsonb). Default = [] vazio.
-  trackingIds: jsonb('tracking_ids')
-    .$type<AmazonTrackingId[]>()
-    .notNull()
-    .default([]),
+  // Único Tracking ID usado pela integração.
+  trackingIds: jsonb('tracking_ids').$type<AmazonTrackingId[]>().notNull().default([]),
 
   // Status: true = ativo, false = pausado
   active: boolean('active').notNull().default(true),
