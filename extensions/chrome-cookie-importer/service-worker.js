@@ -5,6 +5,16 @@ importScripts('lib/log-sink.config.js');
 importScripts('lib/log.js');
 importScripts('lib/log-sink.js');
 
+// Bootstrap log — primeira coisa que o SW faz. Deve aparecer no DB
+// logo após cada reload. Se voce nao ve 'service-worker.bootstrap'
+// nos logs remotos, o SW nao foi reiniciado.
+globalThis.extLog?.info?.('service-worker.bootstrap', {
+  swVersion: chrome.runtime.getManifest().version,
+  manifestVersion: chrome.runtime.getManifest().version,
+  hasApiKey: Boolean(globalThis.__EXT_LOGS_API_KEY__),
+  sinkLoaded: Boolean(globalThis.extLogSink),
+});
+
 const DEFAULT_API_URL = 'https://dev.omestreafiliado.com.br';
 const SESSION_ALARM = 'session-health-reminder';
 const SW_VERSION = chrome.runtime.getManifest().version;
