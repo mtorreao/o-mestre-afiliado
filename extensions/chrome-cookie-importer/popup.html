@@ -20,11 +20,6 @@ button.success { background:#059669; }
 button.success:hover { background:#047857; }
 button.danger { background:#dc2626; }
 button.small { width:auto; padding:5px 10px; font-size:11px; }
-.tab-bar { display:flex; gap:4px; margin-bottom:10px; }
-.tab { flex:1; text-align:center; padding:6px; border-radius:6px; background:#1e293b; color:#94a3b8; cursor:pointer; font-size:12px; }
-.tab.active { background:#6366f1; color:white; }
-.tab-content { display:none; }
-.tab-content.active { display:block; }
 .status { margin-top:8px; padding:8px 10px; border-radius:6px; font-size:12px; display:none; }
 .status.success { display:block; background:#14532d; color:#86efac; }
 .status.error { display:block; background:#7f1d1d; color:#fca5a5; }
@@ -33,54 +28,30 @@ button.small { width:auto; padding:5px 10px; font-size:11px; }
 .session-state.neutral { background:#1e293b; color:#94a3b8; }
 .session-state.valid { background:#14532d; color:#86efac; }
 .session-state.expired { background:#7f1d1d; color:#fca5a5; }
-.group-list { max-height:100px; overflow-y:auto; margin-bottom:6px; padding:6px; background:#0f172a; border-radius:6px; border:1px solid #1e293b; }
-.group-item { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:12px; }
-.group-item input { width:auto; margin:0; }
-.log-list { max-height:180px; overflow-y:auto; }
-.log-entry { padding:6px 8px; border-bottom:1px solid #1e293b; font-size:11px; }
-.log-entry:last-child { border-bottom:0; }
-.log-entry .time { color:#64748b; font-size:10px; }
-.log-entry .status-badge { display:inline-block; padding:1px 5px; border-radius:4px; font-size:10px; }
-.status-badge.sent { background:#14532d; color:#86efac; }
-.status-badge.error { background:#7f1d1d; color:#fca5a5; }
-.ml-badge { background:#1e293b; color:#64748b; font-size:10px; padding:2px 6px; border-radius:10px; }
-.ml-status { font-size:11px; }
 a { color:#818cf8; }
 </style>
 </head>
 <body>
 <div class="container">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-    <div style="flex:1"><h1>O Mestre Afiliado</h1><div class="subtitle" id="mlStatus">🔴 Abra um marketplace</div></div>
-    <div class="ml-badge" id="sessionBadge">—</div>
+    <div style="flex:1">
+      <h1>O Mestre Afiliado</h1>
+      <div class="subtitle" id="greeting">Olá 👋</div>
+    </div>
   </div>
 
   <div id="authState" class="session-state neutral">🔴 Não logado</div>
-  <div id="reloginHint" style="display:none;font-size:11px;color:#fca5a5;margin-bottom:8px">
-    Abra <a href="https://dev.omestreafiliado.com.br" target="_blank">o painel</a> e faça login. A extensão sincroniza o token automaticamente.
-  </div>
 
-  <div class="tab-bar">
-    <div class="tab active" data-tab="session">🔑 Sessão</div>
-  </div>
+  <!-- Mercado Livre -->
+  <label for="affiliateSelect" style="margin-top:10px">Afiliado Mercado Livre</label>
+  <select id="affiliateSelect"><option>— Carregando... —</option></select>
+  <button id="importBtn" disabled style="margin-top:6px">📥 Importar cookies Mercado Livre</button>
+  <div class="status" id="sessionStatus"></div>
 
-  <!-- Tab: Sessão -->
-  <div class="tab-content active" id="tab-session">
-    <label for="affiliateSelect">Afiliado</label>
-    <select id="affiliateSelect"><option>— Carregando... —</option></select>
-    <div id="sessionState" class="session-state neutral">Sessão ainda não validada</div>
-    <button id="importBtn" disabled>📥 Sincronizar cookies</button>
-    <div class="status" id="sessionStatus"></div>
-
-    <div style="border-top:1px solid #1e293b;margin:12px 0 8px"></div>
-    <label>🛍️ Magalu (Magazine Você)</label>
-    <div id="magaluState" class="session-state neutral">Sessão ainda não testada</div>
-    <button id="magaluTestBtn">🧪 Testar OneLink (sessão do navegador)</button>
-    <button id="magaluSyncBtn" style="margin-top:4px">📥 Sincronizar cookies Magalu</button>
-    <div class="status" id="magaluStatus"></div>
-
-    <a id="optionsLink" href="#" style="display:block;text-align:center;margin-top:10px;font-size:11px;color:#6366f1">⚙️ Abrir configurações</a>
-  </div>
+  <!-- Magalu (Magazine Você) -->
+  <label style="margin-top:12px">🛍️ Magalu (Magazine Você)</label>
+  <button id="magaluSyncBtn">📥 Importar cookies Magalu</button>
+  <div class="status" id="magaluStatus"></div>
 </div>
 <script src="lib/log-sink.config.js"></script>
 <script src="lib/log.js"></script>

@@ -1,12 +1,10 @@
 import {
   DEFAULT_API_URL,
   MAGALU_DOMAINS,
-  MAGALU_ONELINK_API,
   ML_DOMAINS,
   buildAuthHeaders,
   cookieMetadata,
   deduplicateCookies,
-  isMercadoLivreUrl,
   normalizeApiUrl,
   redactSensitiveText,
   serializeCookies,
@@ -53,7 +51,6 @@ async function init() {
     'authState',
   ]);
   log.info('popup.init.after-storage-get', { keys: Object.keys(saved) });
-  console.log('[DEBUG] popup.init.after-storage-get OK');
   const apiUrlEl = $('apiUrl');
   if (apiUrlEl) apiUrlEl.value = saved.apiUrl || DEFAULT_API_URL;
   authToken = saved.authToken || '';
@@ -76,13 +73,18 @@ async function init() {
     authReason: authState?.reason || null,
   });
 
-  await updateMLStatus();
+  renderGreeting();
   renderAuthState();
   await loadAffiliates(saved.sessionState);
-  renderSessionState(saved.sessionState);
 
-  setupTabs();
   setupEvents();
+}
+
+function renderGreeting() {
+  const name = authState?.name || authState?.email?.split('@')[0];
+  const greeting = $('greeting');
+  if (!greeting) return;
+  greeting.textContent = name ? `Olá, ${name} 👋` : 'Olá 👋';
 }
 
 function renderAuthState() {
@@ -91,80 +93,39 @@ function renderAuthState() {
     status: authState?.status,
   });
   const el = $('authState');
-  const badge = $('sessionBadge');
-  const relogin = $('reloginHint');
+  if (!el) return;
   if (!authState || authState.status === 'missing') {
-    // Estado inicial — SW ainda não verificou. Não mostrar "Não logado"
-    // (parece erro mas é só "ainda não checou").
-    el.textContent = '🟡 Verificando...';
+    el.textContent = '🔴 Não logado';
     el.className = 'session-state neutral';
-    if (badge) badge.textContent = '🟡';
-    if (relogin) relogin.style.display = 'none';
     return;
   }
   if (authState.status === 'pending') {
     el.textContent = '🟡 Verificando...';
     el.className = 'session-state neutral';
-    if (badge) badge.textContent = '🟡';
-    if (relogin) relogin.style.display = 'none';
     return;
   }
   if (authState.status === 'error') {
     el.textContent = '🟠 Erro ao verificar';
     el.className = 'session-state neutral';
-    if (badge) badge.textContent = '🟠';
-    if (relogin) relogin.style.display = 'block';
     return;
   }
   if (authState.status === 'expired') {
     el.textContent = '🔴 Sessão expirada';
     el.className = 'session-state expired';
-    if (badge) badge.textContent = '🔴';
-    if (relogin) relogin.style.display = 'block';
     return;
   }
   // valid
-  const who = authState.name || authState.email || 'usuário';
-  el.textContent = `🟢 ${who}`;
+  el.textContent = `🟢 Logado`;
   el.className = 'session-state valid';
-  if (badge) badge.textContent = '🟢';
-  if (relogin) relogin.style.display = 'none';
-}
-
-async function updateMLStatus() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const isML = Boolean(tab?.url && isMercadoLivreUrl(tab.url));
-  const isShopee = Boolean(tab?.url?.includes('shopee'));
-  const isAmazon = Boolean(tab?.url?.includes('amazon'));
-  $('mlStatus').textContent =
-    isML || isShopee || isAmazon ? '🟡 Abra um produto' : '🔴 Abra um marketplace';
 }
 
 function authHeaders() {
   return buildAuthHeaders(authToken);
 }
 
-function setupTabs() {
-  document.querySelectorAll('.tab').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      document
-        .querySelectorAll('.tab, .tab-content')
-        .forEach((el) => el.classList.remove('active'));
-      tab.classList.add('active');
-      const target = document.getElementById(`tab-${tab.dataset.tab}`);
-      if (target) target.classList.add('active');
-    });
-  });
-}
-
 function setupEvents() {
   $('importBtn').addEventListener('click', importCookies);
-  $('magaluTestBtn').addEventListener('click', testMagaluOneLink);
   $('magaluSyncBtn').addEventListener('click', syncMagaluCookies);
-  $('optionsLink').addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.runtime.openOptionsPage();
-  });
 
   // Auto-update: re-renderiza quando o SW grava novo authState/authToken.
   // Resolve o problema de abrir o popup antes do SW terminar o verify-auth.
@@ -179,13 +140,11 @@ function setupEvents() {
     if (changes.authState) {
       authState = changes.authState.newValue || null;
       log.info('popup.storage.authState.changed', { status: authState?.status });
+      renderGreeting();
       renderAuthState();
     }
     if (changes.authToken) {
       authToken = changes.authToken.newValue || '';
-    }
-    if (changes.sessionState) {
-      renderSessionState(changes.sessionState.newValue);
     }
   });
 }
@@ -216,21 +175,6 @@ async function loadAffiliates(sessionState) {
 
 function setActionState() {
   $('importBtn').disabled = !Boolean(selectedUserId);
-}
-
-function renderSessionState(state) {
-  const el = $('sessionState');
-  if (!state?.status) {
-    el.textContent = 'Ainda não validada';
-    el.className = 'session-state neutral';
-    return;
-  }
-  el.textContent =
-    state.status === 'valid'
-      ? `🟢 Válida${state.melitat ? ' · ' + state.melitat : ''}`
-      : '🔴 Expirada';
-  el.className = `session-state ${state.status}`;
-  $('sessionBadge').textContent = state.status === 'valid' ? '🟢' : '🔴';
 }
 
 function showStatus(id, msg, type) {
@@ -266,11 +210,7 @@ async function importCookies() {
       showStatus('sessionStatus', `Erro: ${data.error}`, 'error');
       return;
     }
-    showStatus(
-      'sessionStatus',
-      `✅ ${meta.count} cookies salvos. Use "Testar OneLink" para validar a sessão.`,
-      'success',
-    );
+    showStatus('sessionStatus', `✅ ${meta.count} cookies salvos.`, 'success');
   } catch (err) {
     showStatus('sessionStatus', `Erro: ${err.message}`, 'error');
   } finally {
@@ -279,45 +219,6 @@ async function importCookies() {
 }
 
 // ─── Magalu (Magazine Você) ─────────────────────────────────────────────────
-
-async function testMagaluOneLink() {
-  const btn = $('magaluTestBtn');
-  btn.disabled = true;
-  showStatus('magaluStatus', 'Testando OneLink com a sessão do navegador...', 'loading');
-
-  try {
-    const testProduct =
-      'https://www.magazineluiza.com.br/perfume-cebolinha-25ml-edicao-limitada-frasco-de-vidro-jequiti/p/jb440h4cc8/de/frap/';
-    const res = await fetch(MAGALU_ONELINK_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        addPartnerId: true,
-        desktopLink: testProduct,
-        link: testProduct.replace('www.magazineluiza.com.br', 'm.magazineluiza.com.br'),
-      }),
-    });
-
-    const data = await res.json();
-    if (res.ok && data.shortenedLink) {
-      $('magaluState').textContent = `🟢 Sessão válida · OneLink OK`;
-      $('magaluState').className = 'session-state valid';
-      showStatus('magaluStatus', `✅ OneLink gerado: ${data.shortenedLink}`, 'success');
-    } else {
-      $('magaluState').textContent = '🔴 Sessão expirada';
-      $('magaluState').className = 'session-state expired';
-      showStatus(
-        'magaluStatus',
-        `❌ ${data.message || 'Sessão inválida. Faça login no magazinevoce.com.br'}`,
-        'error',
-      );
-    }
-  } catch (err) {
-    showStatus('magaluStatus', `❌ Erro: ${err.message}`, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-}
 
 /**
  * Lê os cookies do magazinevoce.com.br (incluindo HttpOnly) e envia
