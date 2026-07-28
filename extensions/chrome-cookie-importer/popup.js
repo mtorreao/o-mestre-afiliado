@@ -3,6 +3,7 @@ import {
   MAGALU_DOMAINS,
   MAGALU_ONELINK_API,
   ML_DOMAINS,
+  buildAuthHeaders,
   cookieMetadata,
   deduplicateCookies,
   isMercadoLivreUrl,
@@ -20,6 +21,8 @@ let productData = null;
 let availableGroups = [];
 let selectedGroups = new Set();
 let mirrorMap = new Map(); // jid → mirror name
+let authToken = '';
+let authState = null; // { status: 'valid'|'expired'|'missing'|'pending'|'error', ... }
 
 void init();
 
@@ -30,9 +33,13 @@ async function init() {
     'productData',
     'productDataAt',
     'offerLog',
+    'authToken',
+    'authState',
   ]);
   $('apiUrl').value = saved.apiUrl || DEFAULT_API_URL;
   productData = getValidProductData(saved.productData, saved.productDataAt);
+  authToken = saved.authToken || '';
+  authState = saved.authState || null;
 
   if (productData) {
     const isFromMenu = await chrome.storage.local.get('productFromContextMenu');
@@ -42,6 +49,7 @@ async function init() {
   }
 
   await updateMLStatus();
+  renderAuthState();
   await loadAffiliates(saved.sessionState);
   renderSessionState(saved.sessionState);
 
@@ -59,6 +67,55 @@ function getValidProductData(data, timestamp) {
   if (!data || !timestamp) return null;
   if (Date.now() - timestamp > PRODUCT_DATA_TTL) return null;
   return data;
+}
+
+async function refreshAuth() {
+  const res = await chrome.runtime.sendMessage({ type: 'check-auth' });
+  const saved = await chrome.storage.local.get(['authToken', 'authState']);
+  authToken = saved.authToken || '';
+  authState = saved.authState || null;
+  renderAuthState();
+  return res;
+}
+
+function renderAuthState() {
+  const el = $('authState');
+  const badge = $('authBadge');
+  const relogin = $('reloginHint');
+  if (!authState || authState.status === 'missing') {
+    el.textContent = '🔴 Não logado';
+    el.className = 'session-state expired';
+    badge.textContent = '🔴';
+    if (relogin) relogin.style.display = 'block';
+    return;
+  }
+  if (authState.status === 'pending') {
+    el.textContent = '🟡 Verificando...';
+    el.className = 'session-state neutral';
+    badge.textContent = '🟡';
+    if (relogin) relogin.style.display = 'none';
+    return;
+  }
+  if (authState.status === 'error') {
+    el.textContent = '🟠 Erro ao verificar';
+    el.className = 'session-state neutral';
+    badge.textContent = '🟠';
+    if (relogin) relogin.style.display = 'block';
+    return;
+  }
+  if (authState.status === 'expired') {
+    el.textContent = '🔴 Sessão expirada';
+    el.className = 'session-state expired';
+    badge.textContent = '🔴';
+    if (relogin) relogin.style.display = 'block';
+    return;
+  }
+  // valid
+  const who = authState.name || authState.email || 'usuário';
+  el.textContent = `🟢 Logado · ${who}`;
+  el.className = 'session-state valid';
+  badge.textContent = '🟢';
+  if (relogin) relogin.style.display = 'none';
 }
 
 async function updateMLStatus() {
@@ -83,7 +140,7 @@ async function loadGroups() {
 
   try {
     const res = await fetch(`${apiUrl}/api/mirrors?status=active&pageSize=50`, {
-      headers: authHeaders(),
+      headers: buildAuthHeaders(authToken),
     });
     const data = await res.json();
     if (!data.success) {
@@ -119,7 +176,7 @@ async function loadGroups() {
 }
 
 function authHeaders() {
-  return { 'Content-Type': 'application/json' };
+  return buildAuthHeaders(authToken);
 }
 
 function deduplicateGroups(groups) {
@@ -177,6 +234,10 @@ function setupEvents() {
   $('magaluSyncBtn').addEventListener('click', syncMagaluCookies);
   $('sendOfferBtn').addEventListener('click', sendOffer);
   $('clearLogBtn').addEventListener('click', clearLog);
+  $('refreshAuthBtn').addEventListener('click', async () => {
+    $('authState').textContent = '🟡 Verificando...';
+    await refreshAuth();
+  });
   $('selectAllGroups').addEventListener('change', () => {
     if ($('selectAllGroups').checked) {
       selectedGroups = new Set(availableGroups.map((g) => g.jid));
@@ -254,7 +315,8 @@ function setActionState() {
   const has = Boolean(selectedUserId);
   $('importBtn').disabled = !has;
   $('validateBtn').disabled = !has;
-  $('sendOfferBtn').disabled = !has || !productData || !selectedGroups.size;
+  const authed = authState?.status === 'valid';
+  $('sendOfferBtn').disabled = !has || !productData || !selectedGroups.size || !authed;
 }
 
 function renderSessionState(state) {
@@ -350,6 +412,8 @@ async function sendOffer() {
   if (!apiUrl) return showStatus('offerStatus', 'URL da API inválida', 'error');
   if (!selectedGroups.size)
     return showStatus('offerStatus', 'Selecione ao menos um grupo.', 'error');
+  if (authState?.status !== 'valid')
+    return showStatus('offerStatus', 'Faça login no painel primeiro.', 'error');
 
   $('sendOfferBtn').disabled = true;
   showStatus('offerStatus', 'Enviando oferta...', 'loading');
@@ -426,11 +490,6 @@ async function clearLog() {
 
 // ─── Magalu (Magazine Você) ─────────────────────────────────────────────────
 
-/**
- * Testa a geração de OneLink usando a sessão ativa do navegador.
- * A extensão tem host_permission para magazinevoce.com.br, então o fetch
- * envia os cookies da sessão automaticamente (incluindo HttpOnly).
- */
 async function testMagaluOneLink() {
   const btn = $('magaluTestBtn');
   btn.disabled = true;

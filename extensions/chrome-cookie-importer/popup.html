@@ -48,6 +48,7 @@ button.small { width:auto; padding:5px 10px; font-size:11px; }
 .opt-row label { margin:0; }
 .ml-badge { background:#1e293b; color:#64748b; font-size:10px; padding:2px 6px; border-radius:10px; }
 .ml-status { font-size:11px; }
+a { color:#818cf8; }
 </style>
 </head>
 <body>
@@ -55,6 +56,14 @@ button.small { width:auto; padding:5px 10px; font-size:11px; }
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
     <div style="flex:1"><h1>O Mestre Afiliado</h1><div class="subtitle" id="mlStatus">🔴 Abra um marketplace</div></div>
     <div class="ml-badge" id="sessionBadge">—</div>
+  </div>
+
+  <div id="authState" class="session-state neutral">🔴 Não logado</div>
+  <div id="reloginHint" style="display:none;font-size:11px;color:#fca5a5;margin-bottom:8px">
+    Abra <a href="https://dev.omestreafiliado.com.br" target="_blank">o painel</a> e faça login. A extensão sincroniza o token automaticamente.
+  </div>
+  <div style="text-align:right;margin-bottom:8px">
+    <button id="refreshAuthBtn" class="small" style="width:auto">🔄 Verificar login</button>
   </div>
 
   <div class="tab-bar">

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildAuthHeaders,
   cookieMetadata,
   deduplicateCookies,
   isMercadoLivreUrl,
@@ -50,5 +51,17 @@ describe('extension pure helpers', () => {
     expect(redacted).not.toContain('secret-session');
     expect(redacted).not.toContain('long-secret-token-value');
     expect(redacted).toContain('[redacted]');
+  });
+
+  test('buildAuthHeaders includes Bearer token when present', () => {
+    const headers = buildAuthHeaders('jwt-token-value');
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(headers['Authorization']).toBe('Bearer jwt-token-value');
+  });
+
+  test('buildAuthHeaders omits Authorization when token is empty', () => {
+    expect(buildAuthHeaders('')['Authorization']).toBeUndefined();
+    expect(buildAuthHeaders(null)['Authorization']).toBeUndefined();
+    expect(buildAuthHeaders(undefined)['Authorization']).toBeUndefined();
   });
 });

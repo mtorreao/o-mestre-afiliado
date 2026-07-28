@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "O Mestre Afiliado — Cookie Importer",
   "description": "Sincroniza e valida a sessão do Mercado Livre e Magazine Você para operações de afiliado",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "permissions": [
     "alarms",
     "cookies",
@@ -43,6 +43,11 @@
     "128": "icons/icon128.png"
   },
   "content_scripts": [
+    {
+      "matches": ["https://dev.omestreafiliado.com.br/*"],
+      "js": ["content/auth-sync.js"],
+      "run_at": "document_idle"
+    },
     {
       "matches": [
         "https://*.mercadolivre.com.br/*",

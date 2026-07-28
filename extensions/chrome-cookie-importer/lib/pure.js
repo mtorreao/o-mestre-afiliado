@@ -56,6 +56,15 @@ export function cookieMetadata(cookies) {
   };
 }
 
+/** Monta headers de autenticação. Inclui `Authorization: Bearer` só se houver token. */
+export function buildAuthHeaders(token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (typeof token === 'string' && token.length > 0) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export function redactSensitiveText(value) {
   return String(value || '')
     .replace(/(sessionCookies|cookie|authorization|token)\s*[:=]\s*[^,;\s}]+/gi, '$1=[redacted]')
