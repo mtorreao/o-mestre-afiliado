@@ -153,9 +153,14 @@ function setupEvents() {
 
   // Auto-update: re-renderiza quando o SW grava novo authState/authToken.
   // Resolve o problema de abrir o popup antes do SW terminar o verify-auth.
+  // Filtra mudanças do proprio log-sink pra evitar feedback loop
+  // (o sink grava logsUpload* no storage a cada flush, e logá-los de volta
+  //  geraria entradas infinitas).
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
-    log.info('popup.storage.changed', { keys: Object.keys(changes) });
+    const relevantKeys = Object.keys(changes).filter((k) => !k.startsWith('logsUpload'));
+    if (relevantKeys.length === 0) return;
+    log.info('popup.storage.changed', { keys: relevantKeys });
     if (changes.authState) {
       authState = changes.authState.newValue || null;
       log.info('popup.storage.authState.changed', { status: authState?.status });
