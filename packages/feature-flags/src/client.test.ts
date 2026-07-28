@@ -15,7 +15,13 @@ mock.module('@omestre/db', () => ({
   })),
 }));
 
-import { isFeatureEnabled, countFlagChecks, invalidateFlagCache } from './client';
+// Mock do redis local — sem Redis real nos testes de unidade.
+mock.module('./redis.ts', () => ({
+  getFlagRedis: () => null,
+  isFlagRedisConnected: () => false,
+}));
+
+const { isFeatureEnabled, countFlagChecks, invalidateFlagCache } = await import('./client');
 import type { FlagKey } from './registry';
 
 describe('isFeatureEnabled', () => {
