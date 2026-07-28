@@ -3,22 +3,9 @@
   "name": "O Mestre Afiliado — Cookie Importer",
   "description": "Sincroniza e valida a sessão do Mercado Livre e Magazine Você para operações de afiliado",
   "version": "1.5.0",
-  "permissions": [
-    "alarms",
-    "cookies",
-    "notifications",
-    "storage",
-    "tabs",
-    "activeTab",
-    "contextMenus"
-  ],
+  "permissions": ["alarms", "cookies", "notifications", "storage", "tabs", "activeTab"],
   "host_permissions": [
     "https://*.mercadolivre.com.br/*",
-    "https://*.mercadolibre.com/*",
-    "https://*.mercadolivre.com/*",
-    "https://*.shopee.com.br/*",
-    "https://*.amazon.com.br/*",
-    "https://*.amazon.com/*",
     "https://*.magazinevoce.com.br/*",
     "https://dev.omestreafiliado.com.br/*",
     "http://127.0.0.1:5441/*",
@@ -46,25 +33,6 @@
     {
       "matches": ["https://dev.omestreafiliado.com.br/*"],
       "js": ["content/auth-sync.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://*.mercadolivre.com.br/*",
-        "https://*.mercadolibre.com/*",
-        "https://*.mercadolivre.com/*"
-      ],
-      "js": ["content/mercadolivre.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["https://*.shopee.com.br/*"],
-      "js": ["content/shopee.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["https://*.amazon.com.br/*", "https://*.amazon.com/*"],
-      "js": ["content/amazon.js"],
       "run_at": "document_idle"
     }
   ]

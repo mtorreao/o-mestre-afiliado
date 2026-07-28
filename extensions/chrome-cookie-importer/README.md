@@ -16,7 +16,8 @@ Extensão Manifest V3 para sincronizar e validar a sessão do Mercado Livre usad
 - salva a URL da API sem credenciais, query string ou hash;
 - oferece página de opções;
 - agenda lembretes locais para sessões marcadas como expiradas;
-- redige valores sensíveis em mensagens de erro.
+- redige valores sensíveis em mensagens de erro;
+- testa e sincroniza cookies do Magazine Você (Magalu OneLink).
 
 ## Instalação manual
 
@@ -57,5 +58,4 @@ Os testes cobrem normalização da API, domínios ML, deduplicação, metadados 
 
 - menu de contexto para gerar link de afiliado;
 - conversão contextual de produtos;
-- captura de ofertas como rascunho;
 - campanhas e suporte a Shopee/Amazon.

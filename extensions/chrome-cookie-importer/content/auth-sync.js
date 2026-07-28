@@ -3,9 +3,9 @@
  *
  * O web app guarda o JWT em `localStorage['omestre_auth_token']` no origin do
  * painel (ex: dev.omestreafiliado.com.br). A extensão precisa desse token para
- * autenticar o `POST /api/extension/offers/create`. Como o `localStorage` da
- * extensão é isolado do do site, este script (que roda no contexto do painel)
- * lê o token e o encaminha ao service worker via `chrome.runtime.sendMessage`.
+ * autenticar as chamadas à API. Como o `localStorage` da extensão é isolado do
+ * do site, este script (que roda no contexto do painel) lê o token e o
+ * encaminha ao service worker via `chrome.runtime.sendMessage`.
  *
  * Só dispara quando há um token válido (string não vazia) — nunca envia
  * segredos a não ser o próprio JWT, e o SW não o loga.
