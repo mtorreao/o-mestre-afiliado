@@ -1,5 +1,7 @@
 // MV3 service workers suportam importScripts para carregar scripts clássicos
 // do mesmo diretório. Carrega o logger antes do código principal.
+// Ordem: log-sink.config.js (gerado pelo build) → log.js → log-sink.js
+importScripts('lib/log-sink.config.js');
 importScripts('lib/log.js');
 importScripts('lib/log-sink.js');
 

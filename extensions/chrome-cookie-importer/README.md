@@ -19,12 +19,12 @@ Extensão Manifest V3 para sincronizar e validar a sessão do Mercado Livre usad
 - redige valores sensíveis em mensagens de erro;
 - testa e sincroniza cookies do Magazine Você (Magalu OneLink);
 - logger estruturado opcional (`extLog`) para diagnóstico de fluxo de auth;
-- sink opcional que envia logs para `POST /api/extension/logs` (auth via API key dedicada).
+- sink opcional que envia logs para `POST /api/extension/logs` (auth via API key embutida no build).
 
 ## Envio de logs para a API
 
-A extensão pode enviar logs estruturados para diagnóstico remoto. Auth via
-API key dedicada (escopo apenas inserir — não dá pra ler nada).
+A extensão envia logs estruturados para diagnóstico remoto. Auth via API key
+embutida no build (escopo apenas inserir — não dá pra ler nada).
 
 ### Configuração
 
@@ -42,10 +42,16 @@ API key dedicada (escopo apenas inserir — não dá pra ler nada).
    bun run db:migrate   # aplica 0017_add_extension_logs.sql
    ```
 
-3. **Extensão**: abra `chrome://extensions/` → O Mestre Afiliado → **Configurações**
-   → cole a mesma key em **API key (opcional)** → **Salvar**.
+3. **Build da extensão**: gere o `log-sink.config.js` com a key embutida:
+   ```bash
+   bun run build:extension
+   ```
+   O script lê `EXTENSION_LOGS_API_KEY` do `.env` e gera
+   `extensions/chrome-cookie-importer/lib/log-sink.config.js` (ignorado pelo git).
+   Recarregue a extensão em `chrome://extensions/`.
 
-4. **Popup**: marque **📤 Enviar logs para a API**. Pronto.
+O envio é **automático** — não precisa marcar checkbox. Logs vão pra API
+assim que o SW emite eventos (auth-sync, verify-auth, popup, etc).
 
 ### Como funciona
 
@@ -65,8 +71,8 @@ API key dedicada (escopo apenas inserir — não dá pra ler nada).
 ### Privacidade
 
 - O token JWT **nunca** é enviado — apenas `userEmail` (se logado) e `tabUrl`.
-- Eventos sensíveis passam por redação antes do envio.
-- API key fica em `chrome.storage.local` (criptografado pelo Chrome no SO).
+- API key embutida fica ofuscada no bundle (não aparece em `git diff`).
+- O arquivo gerado `log-sink.config.js` está no `.gitignore`.
 
 ## Debug de login
 

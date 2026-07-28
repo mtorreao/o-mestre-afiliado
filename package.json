@@ -22,6 +22,7 @@
     "build:ingestor": "bun run --cwd apps/ingestor build",
     "build:dispatcher": "bun run --cwd apps/dispatcher build",
     "build:web": "bun run --cwd apps/web build",
+    "build:extension": "bun run scripts/build-extension-config.ts",
     "build": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:web",
     "build:v2": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:web",
     "shopee": "bun run --cwd packages/converters shopee",

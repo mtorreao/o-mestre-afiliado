@@ -29,12 +29,10 @@ async function init() {
     'authToken',
     'authState',
     'authDebugEnabled',
-    'logsUploadEnabled',
     'logsUploadLastSentAt',
     'logsUploadLastError',
     'logsUploadBuffer',
     'logsUploadLastBatchSize',
-    'logsUploadApiKey',
   ]);
   $('apiUrl').value = saved.apiUrl || DEFAULT_API_URL;
   authToken = saved.authToken || '';
@@ -43,25 +41,18 @@ async function init() {
   const debugToggle = $('debugLogsToggle');
   if (debugToggle) debugToggle.checked = saved.authDebugEnabled === true;
 
-  const logsToggle = $('logsUploadToggle');
-  if (logsToggle) logsToggle.checked = saved.logsUploadEnabled === true;
-
   log.info('popup.init', {
     apiUrl: $('apiUrl').value,
     hasToken: Boolean(authToken),
     authStatus: authState?.status || null,
     logDebugEnabled: log.isEnabled(),
-    logsUploadEnabled: saved.logsUploadEnabled === true,
-    hasApiKey: Boolean(saved.logsUploadApiKey),
   });
 
   renderLogsUploadStatus({
-    enabled: saved.logsUploadEnabled === true,
     lastSentAt: saved.logsUploadLastSentAt || null,
     lastError: saved.logsUploadLastError || null,
     bufferSize: Array.isArray(saved.logsUploadBuffer) ? saved.logsUploadBuffer.length : 0,
     lastBatchSize: saved.logsUploadLastBatchSize || null,
-    hasApiKey: Boolean(saved.logsUploadApiKey),
   });
 
   await updateMLStatus();
@@ -78,18 +69,6 @@ function renderLogsUploadStatus(s) {
   const el = $('logsUploadStatus');
   const btn = $('flushLogsBtn');
   if (!el) return;
-  if (!s.enabled) {
-    el.textContent = 'Envio de logs desativado.';
-    el.style.color = '#64748b';
-    if (btn) btn.style.display = 'none';
-    return;
-  }
-  if (!s.hasApiKey) {
-    el.textContent = '⚠️ Ativado, mas falta configurar a API key em Configurações.';
-    el.style.color = '#fca5a5';
-    if (btn) btn.style.display = 'none';
-    return;
-  }
   const parts = [];
   if (s.lastSentAt) {
     const ago = Math.round((Date.now() - new Date(s.lastSentAt).getTime()) / 1000);
@@ -99,9 +78,9 @@ function renderLogsUploadStatus(s) {
         : ago < 3600
           ? `há ${Math.round(ago / 60)}min`
           : `há ${Math.round(ago / 3600)}h`;
-    parts.push(`Último envio: ${label} (${s.lastBatchSize ?? '?'} logs)`);
+    parts.push(`📤 Último envio: ${label} (${s.lastBatchSize ?? '?'} logs)`);
   } else {
-    parts.push('Ainda sem envios.');
+    parts.push('📤 Envio ativo. Aguardando primeiro batch…');
   }
   if (s.bufferSize > 0) parts.push(`Buffer: ${s.bufferSize}`);
   if (s.lastError) parts.push(`❌ Último erro: ${s.lastError}`);
@@ -210,14 +189,6 @@ function setupEvents() {
       log.info('popup.debug-toggle.changed', { enabled });
     });
   }
-  const logsToggle = $('logsUploadToggle');
-  if (logsToggle) {
-    logsToggle.addEventListener('change', async () => {
-      const enabled = logsToggle.checked;
-      await chrome.storage.local.set({ logsUploadEnabled: enabled });
-      log.info('popup.logs-upload.changed', { enabled });
-    });
-  }
   const flushBtn = $('flushLogsBtn');
   if (flushBtn) {
     flushBtn.addEventListener('click', async () => {
@@ -263,22 +234,17 @@ function setupEvents() {
       'logsUploadLastError',
       'logsUploadBuffer',
       'logsUploadLastBatchSize',
-      'logsUploadEnabled',
-      'logsUploadApiKey',
     ];
     if (sinkKeys.some((k) => k in changes)) {
       chrome.storage.local.get(
         [
-          'logsUploadEnabled',
           'logsUploadLastSentAt',
           'logsUploadLastError',
           'logsUploadBuffer',
           'logsUploadLastBatchSize',
-          'logsUploadApiKey',
         ],
         (saved) => {
           renderLogsUploadStatus({
-            enabled: saved.logsUploadEnabled === true,
             lastSentAt: saved.logsUploadLastSentAt || null,
             lastError: saved.logsUploadLastError || null,
             bufferSize: Array.isArray(saved.logsUploadBuffer) ? saved.logsUploadBuffer.length : 0,

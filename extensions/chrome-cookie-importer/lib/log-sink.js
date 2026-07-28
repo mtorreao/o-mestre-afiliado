@@ -1,5 +1,5 @@
 /**
- * Sink opcional para enviar logs ao backend.
+ * Sink que envia logs ao backend.
  *
  * Buffer em memória + persistência em chrome.storage.local para sobreviver
  * a restart do service worker. Flush quando:
@@ -9,18 +9,18 @@
  *
  * Erros de rede → descarta batch + log local. NUNCA bloqueia a extensão.
  *
- * API key vem de chrome.storage.local:logsUploadApiKey (configurável
- * em options.html). Se vazia, sink fica inerte mas não dá erro.
+ * API key vem de globalThis.__EXT_LOGS_API_KEY__ (injetada por
+ * lib/log-sink.config.js, gerado por scripts/build-extension-config.ts).
+ * Se vazia, sink fica inerte — fail-safe.
  *
- * Toggle on/off: chrome.storage.local:logsUploadEnabled (default false).
+ * Envio é padrão — não precisa opt-in. Para desativar, basta rodar o
+ * build com EXTENSION_LOGS_API_KEY vazia.
  */
 
 (function () {
   'use strict';
 
   const STORAGE_KEYS = {
-    enabled: 'logsUploadEnabled',
-    apiKey: 'logsUploadApiKey',
     sessionId: 'logsUploadSessionId',
     buffer: 'logsUploadBuffer',
     lastSentAt: 'logsUploadLastSentAt',
@@ -31,14 +31,19 @@
   const FLUSH_INTERVAL_MS = 10_000;
   const MAX_BUFFER = 20;
   const MAX_PERSISTED = 200; // limite em chrome.storage.local
-  const MAX_BODY_BYTES = 200_000; // < 256KB limite do servidor
   const ENDPOINT_DEFAULT = 'https://dev.omestreafiliado.com.br/api/extension/logs';
   const EXTENSION_VERSION = '1.6.0';
 
   const log = globalThis.extLog;
+  // API key injetada pelo build via lib/log-sink.config.js (carregado antes).
+  const API_KEY = globalThis.__EXT_LOGS_API_KEY__ || '';
+  if (!API_KEY) {
+    log.warn('logs-sink.no-api-key', {
+      message: 'EXTENSION_LOGS_API_KEY não configurada. Rode `bun run build:extension` para gerar.',
+    });
+  }
+
   let state = {
-    enabled: false,
-    apiKey: '',
     apiUrl: '',
     sessionId: '',
     userEmail: null,
@@ -46,7 +51,6 @@
   let timer = null;
 
   function uuid() {
-    // UUID v4 simples
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0;
       const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -58,16 +62,12 @@
     return new Promise((resolve) => {
       chrome.storage.local.get(
         [
-          STORAGE_KEYS.enabled,
-          STORAGE_KEYS.apiKey,
           STORAGE_KEYS.sessionId,
           'apiUrl', // URL da API configurada em options.html (compartilhada)
           'logsUploadUserEmail',
         ],
         (saved) => {
           state = {
-            enabled: saved[STORAGE_KEYS.enabled] === true,
-            apiKey: saved[STORAGE_KEYS.apiKey] || '',
             apiUrl: saved.apiUrl || '',
             sessionId: saved[STORAGE_KEYS.sessionId] || '',
             userEmail: saved.logsUploadUserEmail || null,
@@ -93,7 +93,6 @@
   }
 
   async function saveBuffer(buffer) {
-    // Mantém só as últimas MAX_PERSISTED entries (memória finita do storage).
     const trimmed = buffer.slice(-MAX_PERSISTED);
     await chrome.storage.local.set({ [STORAGE_KEYS.buffer]: trimmed });
   }
@@ -115,7 +114,7 @@
   }
 
   async function flush() {
-    if (!state.enabled || !state.apiKey) return;
+    if (!API_KEY) return;
     const buffer = await loadBuffer();
     if (buffer.length === 0) return;
 
@@ -126,7 +125,7 @@
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Extension-Logs-Key': state.apiKey,
+          'X-Extension-Logs-Key': API_KEY,
         },
         body: JSON.stringify(buffer),
       });
@@ -138,7 +137,6 @@
         });
         return;
       }
-      // Sucesso: limpa buffer + atualiza status
       await chrome.storage.local.set({
         [STORAGE_KEYS.buffer]: [],
         [STORAGE_KEYS.lastSentAt]: new Date().toISOString(),
@@ -171,24 +169,20 @@
    * Chamada leve — só adiciona ao buffer (operação assíncrona leve).
    */
   async function sink(level, event, data) {
-    if (!state.enabled) return;
+    if (!API_KEY) return;
 
     try {
       await ensureSessionId();
       const entry = buildEntry(level, event, data);
       const buffer = await loadBuffer();
       buffer.push(entry);
-      // Limite duro: descarta oldest se passar muito de MAX_PERSISTED
       const trimmed = buffer.length > MAX_PERSISTED ? buffer.slice(-MAX_PERSISTED) : buffer;
       await saveBuffer(trimmed);
 
-      // Flush imediato se passou do threshold
       if (trimmed.length >= MAX_BUFFER) {
-        // Não await — fire-and-forget pra não bloquear o caller
         flush().catch(() => {});
       }
     } catch (err) {
-      // NUNCA propaga erro — sink é best-effort
       try {
         log.warn('logs-sink.append.failed', { error: String(err) });
       } catch {
@@ -204,7 +198,7 @@
 
   async function init() {
     await loadState();
-    if (state.enabled) {
+    if (API_KEY) {
       startTimer();
       log.info('logs-sink.started', { sessionId: state.sessionId });
       // Flush imediato do que sobrou do último restart
@@ -212,30 +206,13 @@
     }
   }
 
-  // Observa mudanças nas configs (toggle, API key, apiUrl, email).
+  // Observa mudanças em apiUrl e userEmail (únicas configs dinâmicas).
   if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener(async (changes, area) => {
       if (area !== 'local') return;
-      const interesting = [
-        'logsUploadEnabled',
-        'logsUploadApiKey',
-        'apiUrl',
-        'logsUploadUserEmail',
-      ];
+      const interesting = ['apiUrl', 'logsUploadUserEmail'];
       if (!interesting.some((k) => k in changes)) return;
-      const wasEnabled = state.enabled;
       await loadState();
-      if (state.enabled && !wasEnabled) {
-        startTimer();
-        log.info('logs-sink.started');
-        flush().catch(() => {});
-      } else if (!state.enabled && wasEnabled) {
-        stopTimer();
-        log.info('logs-sink.stopped');
-      } else if (state.enabled) {
-        // Mudou config enquanto rodando — restart timer
-        startTimer();
-      }
     });
   }
 

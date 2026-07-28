@@ -208,25 +208,26 @@ Os mesmos guards rodam em `.github/workflows/ci.yml` (typecheck + build + pretti
 
 ## 🧪 Comandos
 
-| Comando                                                                  | Descrição                                                                                                     |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `bun install`                                                            | Instala tudo (workspaces)                                                                                     |
-| `bun run dev`                                                            | Sobe `docker-compose.dev.yml` isolado pela branch atual (containers, rede, volumes, portas e tunnel próprios) |
-| `bun run scripts/dev.ts --dry-run`                                       | Exibe slug, Compose project, hostname e portas sem alterar o ambiente                                         |
-| `SKIP_TUNNEL=1 bun run dev`                                              | Sobe a stack da branch sem Cloudflare Tunnel                                                                  |
-| `DEV_BUILD=0 bun run dev`                                                | Reutiliza as imagens Docker já construídas                                                                    |
-| `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev`            | Cria/atualiza o CNAME da branch via API da zona correta; o token precisa de `Zone / DNS / Edit`               |
-| `bun run shopee <url>`                                                   | CLI conversor Shopee                                                                                          |
-| `bun run ml <url>`                                                       | CLI conversor Mercado Livre                                                                                   |
-| `bun run build`                                                          | Compila todos os apps (api + worker + web)                                                                    |
-| `bun run typecheck`                                                      | Typecheck de todos os subprojetos (via `scripts/typecheck-all.ts`)                                            |
-| `bun run typecheck:root`                                                 | Typecheck só dos arquivos de tooling (scripts/, e2e/, deploy/)                                                |
-| `bun run test:unit`                                                      | Roda `bun test` em cada subprojeto que tem `*.test.ts` (~5s, 117 testes)                                      |
-| `bun run test:e2e`                                                       | Roda Playwright (sobe stack E2E própria, ~60-120s)                                                            |
-| `bun run db:generate`                                                    | Gerar migrations Drizzle                                                                                      |
-| `bun run db:migrate`                                                     | Aplicar migrations                                                                                            |
-| `bun run db:push`                                                        | Push rápido (dev)                                                                                             |
-| `docker compose --env-file .env.infra -f docker-compose.infra.yml up -d` | Subir infra (Evolution + PG + Redis)                                                                          |
+| Comando                                                                  | Descrição                                                                                                           |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `bun install`                                                            | Instala tudo (workspaces)                                                                                           |
+| `bun run dev`                                                            | Sobe `docker-compose.dev.yml` isolado pela branch atual (containers, rede, volumes, portas e tunnel próprios)       |
+| `bun run scripts/dev.ts --dry-run`                                       | Exibe slug, Compose project, hostname e portas sem alterar o ambiente                                               |
+| `SKIP_TUNNEL=1 bun run dev`                                              | Sobe a stack da branch sem Cloudflare Tunnel                                                                        |
+| `DEV_BUILD=0 bun run dev`                                                | Reutiliza as imagens Docker já construídas                                                                          |
+| `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev`            | Cria/atualiza o CNAME da branch via API da zona correta; o token precisa de `Zone / DNS / Edit`                     |
+| `bun run shopee <url>`                                                   | CLI conversor Shopee                                                                                                |
+| `bun run ml <url>`                                                       | CLI conversor Mercado Livre                                                                                         |
+| `bun run build`                                                          | Compila todos os apps (api + worker + web)                                                                          |
+| `bun run build:extension`                                                | Gera `extensions/chrome-cookie-importer/lib/log-sink.config.js` com `EXTENSION_LOGS_API_KEY` do `.env` (gitignored) |
+| `bun run typecheck`                                                      | Typecheck de todos os subprojetos (via `scripts/typecheck-all.ts`)                                                  |
+| `bun run typecheck:root`                                                 | Typecheck só dos arquivos de tooling (scripts/, e2e/, deploy/)                                                      |
+| `bun run test:unit`                                                      | Roda `bun test` em cada subprojeto que tem `*.test.ts` (~5s, 117 testes)                                            |
+| `bun run test:e2e`                                                       | Roda Playwright (sobe stack E2E própria, ~60-120s)                                                                  |
+| `bun run db:generate`                                                    | Gerar migrations Drizzle                                                                                            |
+| `bun run db:migrate`                                                     | Aplicar migrations                                                                                                  |
+| `bun run db:push`                                                        | Push rápido (dev)                                                                                                   |
+| `docker compose --env-file .env.infra -f docker-compose.infra.yml up -d` | Subir infra (Evolution + PG + Redis)                                                                                |
 
 ---
 
