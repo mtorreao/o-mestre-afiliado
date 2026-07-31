@@ -1,4 +1,4 @@
-import { serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { serial, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { omestre } from './omestre.ts';
 
 /**
@@ -13,6 +13,10 @@ export const users = omestre.table('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
+
+  // Papel
+  // Bootstrap: aplicado em apps/api/src/modules/auth/auth.routes.ts via ADMIN_EMAILS (env).
+  isAdmin: boolean('is_admin').notNull().default(false),
 
   // Metadados
   createdAt: timestamp('created_at').notNull().defaultNow(),

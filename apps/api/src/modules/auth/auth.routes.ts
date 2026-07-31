@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia';
-import { UserRepository, UserCredentialsRepository } from '@omestre/db';
+import { UserRepository, UserCredentialsRepository, isEmailAdminAllowed } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
+import { config } from '../../config.ts';
 
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
@@ -32,16 +33,18 @@ export const authRoutes = new Elysia()
       }
 
       const passwordHash = await Bun.password.hash(password);
-      const user = await userRepo.create({ email, name, passwordHash });
+      // Admin bootstrap via env: emails em ADMIN_EMAILS nascem admin.
+      const isAdmin = isEmailAdminAllowed(email, config.ADMIN_EMAILS);
+      const user = await userRepo.create({ email, name, passwordHash, isAdmin });
 
       await credentialsRepo.upsert(user.id, {});
 
-      const token = await jwt.sign({ userId: user.id, userEmail: user.email });
+      const token = await jwt.sign({ userId: user.id, userEmail: user.email, isAdmin });
 
       return {
         success: true,
         token,
-        user: { id: user.id, email: user.email, name: user.name },
+        user: { id: user.id, email: user.email, name: user.name, isAdmin },
       };
     },
     {
@@ -75,12 +78,24 @@ export const authRoutes = new Elysia()
         return { success: false, error: 'Email ou senha inválidos' };
       }
 
-      const token = await jwt.sign({ userId: user.id, userEmail: user.email });
+      // Admin bootstrap via env: se o email entrou em ADMIN_EMAILS depois do
+      // cadastro, promove no DB (idempotente) e usa o valor atualizado no JWT.
+      // Se o email foi removido da lista, mantém o valor atual do DB.
+      // Fail-closed: se o UPDATE não retornar linha (e-mail sumiu do banco
+      // entre o find e o UPDATE, etc.), cai pro default seguro (false) em
+      // vez de presentear o usuário com admin.
+      let isAdmin = user.isAdmin;
+      if (!isAdmin && isEmailAdminAllowed(email, config.ADMIN_EMAILS)) {
+        const updated = await userRepo.promoteToAdmin(email);
+        isAdmin = updated?.isAdmin ?? false;
+      }
+
+      const token = await jwt.sign({ userId: user.id, userEmail: user.email, isAdmin });
 
       return {
         success: true,
         token,
-        user: { id: user.id, email: user.email, name: user.name },
+        user: { id: user.id, email: user.email, name: user.name, isAdmin },
       };
     },
     {

@@ -54,6 +54,7 @@ export type {
 
 export { UserRepository } from './repository/users.repository.ts';
 export type { User, NewUser, UserPublic } from './repository/users.repository.ts';
+export { isEmailAdminAllowed } from './repository/users-pure.ts';
 
 export { UserCredentialsRepository } from './repository/userCredentials.repository.ts';
 export type {
