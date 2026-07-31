@@ -68,4 +68,29 @@ describe('FeatureFlagRepository', () => {
     expect(r.key).toBe('f');
     expect(r.enabled).toBe(true);
   });
+
+  it('upsert inclui updatedAt no set do onConflictDoUpdate (bug: updated_at congelada no PATCH)', async () => {
+    let conflictSet: unknown;
+    mock.module('../db.ts', () => ({
+      getDb: () => ({
+        insert: () => ({
+          values: () => ({
+            onConflictDoUpdate: (conf: { set: unknown }) => {
+              conflictSet = conf.set;
+              return {
+                returning: () =>
+                  Promise.resolve([
+                    { key: 'f', enabled: true, updatedBy: 'admin', updatedAt: new Date() },
+                  ]),
+              };
+            },
+          }),
+        }),
+      }),
+    }));
+    const { FeatureFlagRepository: R } = await import('./featureFlags.repository.ts');
+    await new R().upsert('f', true, 'admin');
+    expect(conflictSet).toHaveProperty('updatedAt');
+    expect((conflictSet as Record<string, unknown>).updatedAt).toBeInstanceOf(Date);
+  });
 });

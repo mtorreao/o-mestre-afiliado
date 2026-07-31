@@ -28,7 +28,10 @@ export class FeatureFlagRepository {
     const rows = await db
       .insert(featureFlags)
       .values({ key, enabled, updatedBy })
-      .onConflictDoUpdate({ target: featureFlags.key, set: { enabled, updatedBy } })
+      .onConflictDoUpdate({
+        target: featureFlags.key,
+        set: { enabled, updatedBy, updatedAt: new Date() },
+      })
       .returning();
     return rows[0]!;
   }
