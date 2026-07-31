@@ -183,6 +183,35 @@ describe('buildSendEvent', () => {
     });
   });
 
+  it('propaga productKey quando fornecido (correlação catálogo)', () => {
+    const evt = buildSendEvent({
+      id: 'uuid-2',
+      sourceMessageId: 'msg-1',
+      sourceGroupJid: 'grp-1',
+      mirrorId: 42,
+      text: 'template',
+      marketplace: 'shopee',
+      originalUrl: 'orig',
+      convertedUrl: 'conv',
+      productKey: 'shopee:456',
+    });
+    expect(evt.productKey).toBe('shopee:456');
+  });
+
+  it('não preenche productKey quando ausente (undefined)', () => {
+    const evt = buildSendEvent({
+      id: 'uuid-3',
+      sourceMessageId: 'msg-1',
+      sourceGroupJid: 'grp-1',
+      mirrorId: 42,
+      text: 'template',
+      marketplace: 'mercadolivre',
+      originalUrl: 'orig',
+      convertedUrl: 'conv',
+    });
+    expect(evt.productKey).toBeUndefined();
+  });
+
   it('convertedUrl null é preservado (caller decide)', () => {
     const evt = buildSendEvent({
       id: 'u',

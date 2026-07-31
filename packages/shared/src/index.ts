@@ -246,6 +246,7 @@ export type { TemplateEvalContext } from './template-parser.ts';
 // ─── Tipos do pipeline de espelhamento ──────────────────────────────────
 
 export type {
+  CatalogJob,
   MirrorDLQEntry,
   RawMessageEvent,
   SendEvent,
@@ -305,6 +306,12 @@ export const MIRROR_SEND_STREAM = 'omestre:mirror:send';
 
 /** Consumer group da Queue B */
 export const MIRROR_SEND_CONSUMER_GROUP = 'mirror-send';
+
+/** Stream Redis da Queue C (catálogo de preços — CatalogWorker, futuro) */
+export const MIRROR_CATALOG_STREAM = 'omestre:mirror:catalog';
+
+/** Consumer group da Queue C */
+export const MIRROR_CATALOG_CONSUMER_GROUP = 'mirror-catalog';
 
 /** Prefixo das chaves de cache sourceGroup → mirrors (1:N) */
 export const MIRROR_SOURCE_GROUP_CACHE_PREFIX = 'mirror:source-group:';
