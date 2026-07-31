@@ -84,8 +84,8 @@ describe('resolveEffectiveMarketplace', () => {
 // ─── classifyUnsupportedMarketplace ───────────────────────────────────
 
 describe('classifyUnsupportedMarketplace', () => {
-  it('retorna nome amigável para magalu (bloqueado)', () => {
-    expect(classifyUnsupportedMarketplace('magalu')).toBe('Magalu (Magazine Luiza)');
+  it('retorna null para magalu (integrado)', () => {
+    expect(classifyUnsupportedMarketplace('magalu')).toBeNull();
   });
 
   it('retorna null para shopee (suportado)', () => {

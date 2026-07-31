@@ -18,6 +18,8 @@ import {
   verifyMlParams,
   verifyAmazonTag,
   extractUserIdFromInstanceId,
+  extractMagaluStoreSlug,
+  verifyMagaluStoreSlug,
 } from '../link-verifier-pure.ts';
 
 // ─── extractAffiliateParams ──────────────────────────────────────────
@@ -223,5 +225,59 @@ describe('extractUserIdFromInstanceId', () => {
 
   it('retorna null quando userId não é numérico', () => {
     expect(extractUserIdFromInstanceId('user-abc')).toBeNull();
+  });
+});
+
+// ─── verifyMagaluStoreSlug / extractMagaluStoreSlug ───────────────────
+
+describe('verifyMagaluStoreSlug', () => {
+  const affiliate = { storeSlug: 'magazinetorre' };
+
+  it('é válido quando não há slug na URL', () => {
+    expect(verifyMagaluStoreSlug(null, affiliate)).toEqual({ valid: true });
+  });
+
+  it('é válido quando o slug confere com o afiliado', () => {
+    expect(verifyMagaluStoreSlug('magazinetorre', affiliate)).toEqual({ valid: true });
+  });
+
+  it('é inválido quando o slug diverge', () => {
+    const r = verifyMagaluStoreSlug('outraloja', affiliate);
+    expect(r.valid).toBe(false);
+    expect(r.reason).toContain('Magalu store_slug não corresponde');
+    expect(r.reason).toContain('esperado magazinetorre');
+    expect(r.reason).toContain('recebido outraloja');
+  });
+
+  it('é inválido quando o slug difere apenas por caixa (case-sensitive)', () => {
+    expect(verifyMagaluStoreSlug('MagazineTorre', affiliate).valid).toBe(false);
+  });
+});
+
+describe('extractMagaluStoreSlug', () => {
+  it('extrai o slug de URL magazinevoce.com.br/{slug}/...', () => {
+    expect(
+      extractMagaluStoreSlug(
+        'https://www.magazinevoce.com.br/magazinetorre/eliptico-x/p/eadk91754h/es/elet/',
+      ),
+    ).toBe('magazinetorre');
+  });
+
+  it('extrai o slug de URL sem sub-path ({slug} no final)', () => {
+    expect(extractMagaluStoreSlug('https://www.magazinevoce.com.br/magazinetorre')).toBe(
+      'magazinetorre',
+    );
+  });
+
+  it('retorna null para URL sem primeiro segmento', () => {
+    expect(extractMagaluStoreSlug('https://www.magazineluiza.com.br/p/eadk91754h')).toBeNull();
+  });
+
+  it('retorna null para URL inválida', () => {
+    expect(extractMagaluStoreSlug('não é url')).toBeNull();
+  });
+
+  it('retorna null para URL vazia', () => {
+    expect(extractMagaluStoreSlug('')).toBeNull();
   });
 });

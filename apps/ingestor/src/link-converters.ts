@@ -22,6 +22,7 @@
 import {
   convertShopeeUrlWithCredentials,
   convertAmazonUrlWithAffiliate,
+  convertMagaluUrlWithStoreSlug,
   generateShortAffiliateLink,
 } from '@omestre/converters';
 import { detectMarketplace, makeLogger } from '@omestre/shared';
@@ -30,6 +31,7 @@ import {
   UserCredentialsRepository,
   MlAffiliateRepository,
   AmazonAffiliateRepository,
+  MagaluAffiliateRepository,
 } from '@omestre/db';
 import { resolveRedirectUrl } from './resolve-redirect.ts';
 import { resolveMeliRedirect, isMeliProductUrl } from './resolve-redirect.ts';
@@ -115,6 +117,9 @@ export async function convertOfferUrl(
     }
     if (effectiveMarketplace === 'amazon') {
       return await convertAmazonForAffiliate(resolvedUrl, userId);
+    }
+    if (effectiveMarketplace === 'magalu') {
+      return await convertMagaluForAffiliate(resolvedUrl, userId);
     }
 
     // Marketplaces conhecidos mas sem integração implementada
@@ -294,4 +299,32 @@ async function convertAmazonForAffiliate(url: string, userId: number): Promise<C
   const { convertUrl } = await import('@omestre/converters');
   const result = await convertUrl(url);
   return toConversionResult('amazon', result);
+}
+
+/**
+ * Conversão Magalu — usa o storeSlug do MagaluAffiliateRepository.
+ * Sem afiliado vinculado / slug configurado, bloqueia a oferta e
+ * notifica o usuário (magalu_account_not_linked) — não há fallback
+ * global: usar o slug de outro afiliado geraria comissão errada.
+ */
+async function convertMagaluForAffiliate(url: string, userId: number): Promise<ConversionResult> {
+  const magaluRepo = new MagaluAffiliateRepository();
+  const affiliate = await magaluRepo.findByUserId(userId);
+
+  if (!affiliate || !affiliate.active || !affiliate.storeSlug) {
+    log('info', 'Afiliado Magalu sem slug configurado — bloqueando oferta', { userId });
+    processFailure(buildInstanceName(userId), 'magalu_account_not_linked', {
+      marketplace: 'magalu',
+    }).catch(() => {});
+    return buildBlockedResult(
+      'magalu',
+      'Afiliado Magalu sem slug configurado. Configure em Configurações → Magalu.',
+    );
+  }
+
+  const result = await convertMagaluUrlWithStoreSlug(url, affiliate.storeSlug);
+  if (result.success) {
+    await magaluRepo.touch(userId);
+  }
+  return toConversionResult('magalu', result);
 }

@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test';
 const dbSelectResult: Array<{ evolutionInstanceId: string | null }> = [];
 let mlAffiliateById: any = null;
 let amazonAffiliateById: any = null;
+let magaluAffiliateById: any = null;
 
 const fakeSelectChain = () => ({
   from: () => ({
@@ -39,6 +40,13 @@ const AmazonAffiliateRepositoryMock = mock().mockImplementation(
     }) as any,
 );
 
+const MagaluAffiliateRepositoryMock = mock().mockImplementation(
+  () =>
+    ({
+      findByUserId: async () => magaluAffiliateById,
+    }) as any,
+);
+
 // Flag para forçar erro de DB (exercita o catch de fail-open do verifyAffiliateLink)
 let forceDbError = false;
 
@@ -52,6 +60,7 @@ await mock.module('@omestre/db', () => ({
   affiliates: { evolutionInstanceId: 'evolutionInstanceId' },
   MlAffiliateRepository: MlAffiliateRepositoryMock,
   AmazonAffiliateRepository: AmazonAffiliateRepositoryMock,
+  MagaluAffiliateRepository: MagaluAffiliateRepositoryMock,
 }));
 
 const { verifyAffiliateLink } = await import('../link-verifier.ts');
@@ -71,6 +80,7 @@ describe('verifyAffiliateLink — orquestração (DB mockado)', () => {
   beforeEach(() => {
     mlAffiliateById = null;
     amazonAffiliateById = null;
+    magaluAffiliateById = null;
     dbSelectResult.length = 0;
   });
 
@@ -198,4 +208,65 @@ describe('verifyAffiliateLink — orquestração (DB mockado)', () => {
       forceDbError = false;
     }
   });
+});
+
+// ─── Magalu ──────────────────────────────────────────────────────────
+
+it('Magalu: slug confere com o afiliado → válido', async () => {
+  setInstance(11);
+  magaluAffiliateById = { storeSlug: 'magazinetorre', active: true };
+  const r = await verifyAffiliateLink(
+    'https://www.magazinevoce.com.br/magazinetorre/eliptico/p/eadk91754h/',
+    1,
+    'magalu',
+  );
+  expect(r.valid).toBe(true);
+});
+
+it('Magalu: slug diverge do afiliado → inválido', async () => {
+  setInstance(11);
+  magaluAffiliateById = { storeSlug: 'magazinetorre', active: true };
+  const r = await verifyAffiliateLink(
+    'https://www.magazinevoce.com.br/outraloja/eliptico/p/eadk91754h/',
+    1,
+    'magalu',
+  );
+  expect(r.valid).toBe(false);
+  expect(r.reason).toContain('Magalu store_slug não corresponde');
+  expect(r.reason).toContain('esperado magazinetorre');
+  expect(r.reason).toContain('recebido outraloja');
+});
+
+it('Magalu: URL sem slug de loja (magazineluiza.com.br) → válido (fail-open)', async () => {
+  setInstance(11);
+  magaluAffiliateById = { storeSlug: 'magazinetorre', active: true };
+  const r = await verifyAffiliateLink(
+    'https://www.magazineluiza.com.br/p/eadk91754h/',
+    1,
+    'magalu',
+  );
+  expect(r.valid).toBe(true);
+});
+
+it('Magalu: afiliado não vinculado → inválido', async () => {
+  setInstance(11);
+  magaluAffiliateById = null;
+  const r = await verifyAffiliateLink(
+    'https://www.magazinevoce.com.br/magazinetorre/eliptico/p/eadk91754h/',
+    1,
+    'magalu',
+  );
+  expect(r.valid).toBe(false);
+  expect(r.reason).toContain('afiliado não vinculado');
+});
+
+it('Magalu: evolutionInstanceId nulo → inválido (sem instance)', async () => {
+  setInstance(null);
+  const r = await verifyAffiliateLink(
+    'https://www.magazinevoce.com.br/magazinetorre/eliptico/p/eadk91754h/',
+    1,
+    'magalu',
+  );
+  expect(r.valid).toBe(false);
+  expect(r.reason).toContain('evolutionInstanceId');
 });

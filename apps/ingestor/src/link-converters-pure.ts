@@ -97,9 +97,10 @@ export function resolveEffectiveMarketplace(
  * cair no conversor global.
  */
 export function classifyUnsupportedMarketplace(marketplace: string): string | null {
-  const unsupportedMarketplaces: Record<string, string> = {
-    magalu: 'Magalu (Magazine Luiza)',
-  };
+  // Nenhum marketplace bloqueado atualmente — Magalu foi liberado na
+  // integração de afiliados (docs/plans/magalu.md §5.2). Mantemos o mapa
+  // vazio para futuros marketplaces conhecidos sem integração.
+  const unsupportedMarketplaces: Record<string, string> = {};
   return unsupportedMarketplaces[marketplace] ?? null;
 }
 
