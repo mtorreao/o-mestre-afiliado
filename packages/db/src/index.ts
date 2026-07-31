@@ -20,6 +20,7 @@ export {
   affiliates,
   mlAffiliates,
   amazonAffiliates,
+  magaluAffiliates,
   reflectedOffers,
   marketplaceEnum,
   offerStatusEnum,
