@@ -29,6 +29,7 @@ const WEB = process.env.WEB_URL || `http://localhost:${process.env.WEB_PORT || '
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 
 const EVIDENCE_DIR = 'test-results/mirror-form-evidence';
+const FORM_CARD_TITLES = ['📋 Informações Básicas', '🔗 Grupos de Origem', '🎯 Grupos de Destino'];
 
 /**
  * Helper: registra + configura token no localStorage (login instantâneo).
@@ -662,5 +663,255 @@ test.describe('MirrorFormPage — Dirty Guard', () => {
     expect(dirtyReturnValue).toBe(true);
 
     await page.screenshot({ path: `${EVIDENCE_DIR}/dirty-beforeunload-handler.png` });
+  });
+});
+
+async function horizontalOverflow(page: Page): Promise<number> {
+  return page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+}
+
+function collectFatalErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      errors.push(msg.text());
+    }
+  });
+  page.on('pageerror', (err) => errors.push(`Uncaught: ${err.message}`));
+  return errors;
+}
+
+function fatalOnly(errors: string[]): string[] {
+  return errors.filter(
+    (e) =>
+      (e.includes('500') || e.includes('Failed to load') || e.includes('Uncaught')) &&
+      !e.includes('favicon') &&
+      !e.includes('.ico') &&
+      !e.includes('ERR_FAILED'),
+  );
+}
+
+test.describe('MirrorForm — Sticky actions (mobile 390x844)', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test.beforeEach(async ({ page }) => {
+    await loginDirect(page);
+  });
+
+  test('1.0 — Mobile: barra de ações continua visível ao rolar o form (sticky)', async ({
+    page,
+  }) => {
+    // Viewport mobile menor (390x600): o form E2E tem ~643px (WhatsApp desconectado
+    // → autocompletes compactos), então em 390x844 não há scroll para exercitar o
+    // sticky. A regra é de largura (max-width: 767px), não de altura.
+    await page.setViewportSize({ width: 390, height: 600 });
+    await openCreateForm(page);
+    // Espera autocompletes estabilizarem a altura do form
+    await page.waitForTimeout(800);
+
+    const bar = page.locator('.form-actions-bar');
+    const before = await page.evaluate(() => {
+      const bar = document.querySelector('.form-actions-bar')!;
+      const barRect = bar.getBoundingClientRect();
+      return {
+        vh: window.innerHeight,
+        pageH: document.documentElement.scrollHeight,
+        maxScroll: document.documentElement.scrollHeight - window.innerHeight,
+        formBottom: document.querySelector('form')!.getBoundingClientRect().bottom,
+        barTop: barRect.top,
+        barBottom: barRect.bottom,
+        barHeight: barRect.height,
+      };
+    });
+
+    // Pré-condição: o fim do form está abaixo da dobra (senão o sticky não engaja)
+    expect(before.formBottom).toBeGreaterThan(before.vh + before.barHeight + 20);
+    expect(before.maxScroll).toBeGreaterThan(50);
+
+    // Computed style: position sticky no mobile
+    const position = await bar.evaluate((el) => getComputedStyle(el).position);
+    expect(position).toBe('sticky');
+
+    // Sem scroll: posição natural da barra (formBottom - barHeight) está abaixo da
+    // dobra → sticky bottom:0 já a prende no rodapé da viewport. Se o sticky não
+    // existisse, a barra ficaria invisível (y ≈ 741 > 600).
+    await expect(bar).toBeInViewport();
+    expect(Math.abs(before.barBottom - before.vh)).toBeLessThanOrEqual(2);
+    expect(Math.abs(before.barTop + before.barHeight - before.formBottom)).toBeGreaterThan(40);
+
+    // Full-bleed: barra ocupa a largura total da viewport
+    const box0 = (await bar.boundingBox())!;
+    expect(Math.abs(box0.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(box0.width - 390)).toBeLessThanOrEqual(2);
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/mobile-sticky-bar-scroll0.png` });
+
+    // Rola até o meio da página: a barra continua visível e presa no rodapé
+    await page.evaluate((t: number) => window.scrollTo(0, t), Math.floor(before.maxScroll / 2));
+    await page.waitForTimeout(300);
+
+    await expect(bar).toBeInViewport();
+    const boxMid = (await bar.boundingBox())!;
+    expect(Math.abs(boxMid.y + boxMid.height - before.vh)).toBeLessThanOrEqual(2);
+
+    await page.screenshot({
+      path: `${EVIDENCE_DIR}/mobile-sticky-bar-rolado.png`,
+      fullPage: false,
+    });
+  });
+
+  test('1.1 — Mobile: botões Salvar/Cancelar full-width (flex 1) na barra', async ({ page }) => {
+    await openCreateForm(page);
+
+    const bar = page.locator('.form-actions-bar');
+    const buttons = bar.locator('> .Button');
+    await expect(buttons).toHaveCount(2);
+
+    // Ambos com flex-grow 1 → expandem para preencher a largura disponível
+    const flexGrows = await buttons.evaluateAll((els) =>
+      els.map((el) => getComputedStyle(el).flexGrow),
+    );
+    expect(flexGrows).toEqual(['1', '1']);
+
+    const widths = await buttons.evaluateAll((els) =>
+      els.map((el) => el.getBoundingClientRect().width),
+    );
+    const barBox = (await bar.boundingBox())!;
+    // Barra full-bleed: largura = viewport (padding lateral 1rem compensado por margens negativas)
+    expect(Math.abs(barBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(barBox.width - 390)).toBeLessThanOrEqual(2);
+
+    // Botões juntos preenchem a largura útil da barra (390 - 2*16 de padding - 12 de gap = 346)
+    // Obs: flexbox com min-width do conteúdo pode deixar o botão maior ~10px mais largo
+    // (texto + ícone "Criar Espelhamento" > "Cancelar") — comportamento padrão, não bug.
+    const total = widths[0]! + widths[1]! + 12;
+    expect(Math.abs(total - (barBox.width - 32))).toBeLessThanOrEqual(4);
+    expect(widths[0]!).toBeGreaterThan(150);
+    expect(widths[1]!).toBeGreaterThan(150);
+
+    // Textos dos botões visíveis
+    await expect(bar.getByRole('button', { name: 'Criar Espelhamento' })).toBeVisible();
+    await expect(bar.getByRole('button', { name: 'Cancelar' })).toBeVisible();
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/mobile-botoes-fullwidth.png` });
+  });
+
+  test('1.2 — Mobile: cards do form renderizam sem overflow horizontal', async ({ page }) => {
+    await openCreateForm(page);
+    await page.waitForTimeout(500);
+
+    for (const title of FORM_CARD_TITLES) {
+      await expect(page.locator(`text=${title}`).first()).toBeVisible();
+    }
+
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(1);
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/mobile-cards-form.png` });
+  });
+
+  test('1.3 — Mobile: navegação no form sem erros JS fatais', async ({ page }) => {
+    const errors = collectFatalErrors(page);
+    await openCreateForm(page);
+    await page.waitForTimeout(1000);
+    expect(fatalOnly(errors)).toEqual([]);
+  });
+});
+
+test.describe('MirrorForm — Layout desktop (1280x800)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test.beforeEach(async ({ page }) => {
+    await loginDirect(page);
+  });
+
+  test('2.0 — Desktop: barra de ações inline (static) no fim do form', async ({ page }) => {
+    await openCreateForm(page);
+
+    const bar = page.locator('.form-actions-bar');
+    const position = await bar.evaluate((el) => getComputedStyle(el).position);
+    expect(position).toBe('static');
+
+    // Barra é o último elemento do form (fluxo normal, sem sticky/fixed):
+    // bottom da barra == bottom do form
+    const formBox = (await page.locator('form').boundingBox())!;
+    const barBox = (await bar.boundingBox())!;
+    expect(barBox.y + barBox.height).toBeLessThanOrEqual(formBox.y + formBox.height + 1);
+    expect(barBox.y + barBox.height).toBeGreaterThanOrEqual(formBox.y + formBox.height - 120);
+
+    // Botões visíveis
+    await expect(bar.getByRole('button', { name: 'Criar Espelhamento' })).toBeVisible();
+    await expect(bar.getByRole('button', { name: 'Cancelar' })).toBeVisible();
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-botoes-inline.png` });
+  });
+
+  test('2.1 — Desktop: form centralizado com max-width 720px consistente', async ({ page }) => {
+    await openCreateForm(page);
+
+    const formBox = (await page.locator('form').boundingBox())!;
+    // max-width 720 aplicado
+    expect(formBox.width).toBeGreaterThanOrEqual(719);
+    expect(formBox.width).toBeLessThanOrEqual(721);
+
+    // Centralizado em relação ao container pai (PageLayout inner)
+    const parent = await page
+      .locator('form')
+      .evaluate((el) => el.parentElement!.getBoundingClientRect());
+    const formCenter = formBox.x + formBox.width / 2;
+    const parentCenter = parent.left + parent.width / 2;
+    expect(Math.abs(formCenter - parentCenter)).toBeLessThanOrEqual(2);
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-form-centralizado.png` });
+  });
+
+  test('2.2 — Desktop: cards do form renderizam sem overflow', async ({ page }) => {
+    await openCreateForm(page);
+    await page.waitForTimeout(500);
+
+    for (const title of FORM_CARD_TITLES) {
+      await expect(page.locator(`text=${title}`).first()).toBeVisible();
+    }
+
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(1);
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-cards-form.png` });
+  });
+
+  test('2.3 — Desktop: navegação no form sem erros JS fatais', async ({ page }) => {
+    const errors = collectFatalErrors(page);
+    await openCreateForm(page);
+    await page.waitForTimeout(1000);
+    expect(fatalOnly(errors)).toEqual([]);
+  });
+});
+
+test.describe('MirrorsPage — sem regressão nos cards (sticky dev)', () => {
+  test('3.0 — Mobile: lista de espelhamentos renderiza sem overflow', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const token = await loginDirect(page);
+    await createMirror(token, 'Ofertas Diárias');
+
+    await page.goto(`${WEB}/mirrors`);
+    await page.waitForSelector('text=📋 Espelhamentos', { timeout: 15_000 });
+
+    await expect(page.locator('text=Ofertas Diárias')).toBeVisible();
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(1);
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/mobile-mirrors-cards.png` });
+  });
+
+  test('3.1 — Desktop: lista de espelhamentos renderiza sem overflow', async ({ page }) => {
+    const token = await loginDirect(page);
+    await createMirror(token, 'Ofertas Diárias');
+
+    await page.goto(`${WEB}/mirrors`);
+    await page.waitForSelector('text=📋 Espelhamentos', { timeout: 15_000 });
+
+    await expect(page.locator('text=Ofertas Diárias')).toBeVisible();
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(1);
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-mirrors-cards.png` });
   });
 });
