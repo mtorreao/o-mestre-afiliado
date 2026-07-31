@@ -240,8 +240,9 @@ export function GroupOfferAutocomplete({
             setHighlightIndex(0);
           }}
           onBlur={() => {
-            setIsOpen(false);
-            setHighlightIndex(-1);
+            // Não fechar o dropdown aqui: o blur dispara no mousedown do item e fechar
+            // antes do click impediria a seleção por mouse (regressão f58e818).
+            // handleClickOutside (mousedown fora) + Tab + Escape fecham o dropdown.
             onBlur?.();
           }}
           onKeyDown={handleKeyDown}
@@ -281,7 +282,13 @@ export function GroupOfferAutocomplete({
             {filtered.map((g, i) => (
               <div
                 key={g.jid}
-                onClick={() => handleSelect(g)}
+                onMouseDown={(e) => {
+                  // Seleção no mousedown + preventDefault: impede o blur do input
+                  // (o blur antes do click desmontaria o dropdown e o click nunca
+                  // dispararia — regressão f58e818). Padrão robusto p/ autocomplete.
+                  e.preventDefault();
+                  handleSelect(g);
+                }}
                 onMouseEnter={() => setHighlightIndex(i)}
                 style={{
                   padding: '0.5rem 0.75rem',

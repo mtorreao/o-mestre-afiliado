@@ -342,7 +342,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
               </span>
             </>
           }
-          style={{ marginBottom: '1.5rem' }}
+          style={{ marginBottom: '1.5rem', overflow: 'visible' }}
         >
           <p
             style={{
@@ -387,7 +387,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
               </span>
             </>
           }
-          style={{ marginBottom: '1.5rem' }}
+          style={{ marginBottom: '1.5rem', overflow: 'visible' }}
         >
           <p
             style={{
