@@ -359,3 +359,162 @@ describe('convertMagaluUrl (fallback .env)', () => {
     expect(result.error).toMatch(/mínimo 3/);
   });
 });
+
+// ─── generateMagaluOneLink ──────────────────────────────────────────
+
+describe('generateMagaluOneLink', () => {
+  // Import dynamically to avoid top-level side effects
+  const { generateMagaluOneLink } = require('./magalu.ts') as typeof import('./magalu.ts');
+
+  it('retorna OneLink quando API responde com shortenedLink', async () => {
+    mockFetchWithResponses([
+      {
+        match: (url) => url.includes('azion-rochelle-proxy/v1/shortenlink/onelink'),
+        response: new Response(
+          JSON.stringify({ shortenedLink: 'https://magazineluiza.onelink.me/abc/xyz' }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      },
+    ]);
+    const result = await generateMagaluOneLink(
+      'session=abc123',
+      'https://www.magazineluiza.com.br/produto-x/p/12345/',
+    );
+    expect(result).toBe('https://magazineluiza.onelink.me/abc/xyz');
+  });
+
+  it('retorna null quando API responde sem shortenedLink', async () => {
+    mockFetchWithResponses([
+      {
+        match: (url) => url.includes('azion-rochelle-proxy'),
+        response: new Response(JSON.stringify({}), { status: 200 }),
+      },
+    ]);
+    const result = await generateMagaluOneLink(
+      'session=abc',
+      'https://www.magazineluiza.com.br/p/123/',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('retorna null quando API retorna erro', async () => {
+    mockFetchWithResponses([
+      {
+        match: (url) => url.includes('azion-rochelle-proxy'),
+        response: new Response('Unauthorized', { status: 401 }),
+      },
+    ]);
+    const result = await generateMagaluOneLink(
+      'session=invalid',
+      'https://www.magazineluiza.com.br/p/123/',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('retorna null quando fetch lança exceção', async () => {
+    const failingFetch = mock(async () => {
+      throw new Error('network error');
+    });
+    globalThis.fetch = failingFetch as unknown as typeof fetch;
+    const result = await generateMagaluOneLink(
+      'session=abc',
+      'https://www.magazineluiza.com.br/p/123/',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('substitui www por m. na URL mobile', async () => {
+    let capturedBody: string | null = null;
+    const capturingFetch = mock(async (input: unknown, init?: RequestInit) => {
+      if (init?.body) capturedBody = init.body as string;
+      return new Response(JSON.stringify({ shortenedLink: 'https://onelink.me/x' }), {
+        status: 200,
+      });
+    });
+    globalThis.fetch = capturingFetch as unknown as typeof fetch;
+    await generateMagaluOneLink('s=x', 'https://www.magazineluiza.com.br/prod/p/123/');
+    expect(capturedBody).not.toBeNull();
+    const body = JSON.parse(capturedBody!);
+    expect(body.link).toBe('https://m.magazineluiza.com.br/prod/p/123/');
+    expect(body.desktopLink).toBe('https://www.magazineluiza.com.br/prod/p/123/');
+  });
+});
+
+// ─── resolveMagaluShortlink GET fallback ─────────────────────────────
+
+describe('resolveMagaluShortlink (GET fallback)', () => {
+  it('usa GET quando HEAD retorna 200 (sem redirect)', async () => {
+    mockFetchWithResponses([
+      {
+        match: (url) => url.includes('maga.lu/head200'),
+        response: new Response(null, { status: 200 }),
+      },
+      {
+        match: (url) => url.includes('maga.lu/head200'),
+        response: new Response(null, { status: 200 }),
+      },
+    ]);
+    const result = await resolveMagaluShortlink('https://maga.lu/head200');
+    // GET não retorna url diferente, então retorna null
+    expect(result).toBeNull();
+  });
+});
+
+// ─── resolvePromozoneMagaluUrl ───────────────────────────────────────
+
+describe('resolvePromozoneMagaluUrl', () => {
+  const { resolvePromozoneMagaluUrl } = require('./magalu.ts') as typeof import('./magalu.ts');
+
+  it('resolve via HEAD 302', async () => {
+    mockFetchWithResponses([
+      {
+        match: (url) => url.includes('go.promozone.ai/magalu/test'),
+        response: new Response(null, {
+          status: 302,
+          headers: { location: 'https://www.magazineluiza.com.br/prod/p/999/' },
+        }),
+      },
+    ]);
+    const result = await resolvePromozoneMagaluUrl('https://go.promozone.ai/magalu/test');
+    expect(result).toBe('https://www.magazineluiza.com.br/prod/p/999/');
+  });
+
+  it('retorna null quando HEAD retorna 404', async () => {
+    mockFetchWithResponses([
+      {
+        match: (url) => url.includes('go.promozone.ai/magalu/nf'),
+        response: new Response(null, { status: 404 }),
+      },
+    ]);
+    const result = await resolvePromozoneMagaluUrl('https://go.promozone.ai/magalu/nf');
+    expect(result).toBeNull();
+  });
+
+  it('retorna null para URL que não é Promozone', async () => {
+    const result = await resolvePromozoneMagaluUrl('https://www.magazineluiza.com.br/p/123/');
+    expect(result).toBeNull();
+  });
+
+  it('usa GET fallback quando HEAD retorna 200', async () => {
+    mockFetchWithResponses([
+      {
+        match: (url) => url.includes('go.promozone.ai/magalu/head200'),
+        response: new Response(null, { status: 200 }),
+      },
+    ]);
+    const result = await resolvePromozoneMagaluUrl('https://go.promozone.ai/magalu/head200');
+    expect(result).toBeNull();
+  });
+
+  it('retorna null quando fetch falha', async () => {
+    const failingFetch = mock(async () => {
+      throw new Error('network');
+    });
+    globalThis.fetch = failingFetch as unknown as typeof fetch;
+    const result = await resolvePromozoneMagaluUrl('https://go.promozone.ai/magalu/fail');
+    expect(result).toBeNull();
+  });
+});
