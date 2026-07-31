@@ -505,3 +505,119 @@ test.describe('Pipeline v2 — Casos negativos', () => {
     expect(msgs.filter((m) => m.number === TARGET_GROUP.jid).length).toBe(0);
   });
 });
+
+// ─── P11: Oferta Magalu chega ao destino ───────────────────────────
+
+const MAGALU_PRODUCT_ID = '123';
+const MAGALU_PRODUCT_URL = `https://www.magazineluiza.com.br/celular-x/p/${MAGALU_PRODUCT_ID}/`;
+const MAGALU_SLUG = 'e2emagazinevoce';
+
+async function seedMagaluMirror(opts: {
+  affiliateName: string;
+  targetGroup: { jid: string; name: string };
+  sourceGroup: { jid: string; name: string };
+}): Promise<SeededMirror> {
+  const { token, user } = await createTestUser(API_MIRROR);
+  const instanceName = `user-${user.id}`;
+
+  // 1. Conecta WhatsApp (simulador aceita sempre)
+  await authPostMirror('/api/whatsapp/connect', token, {});
+
+  // 2. Afiliado Magalu + storeSlug ativo (cria o afiliado no primeiro PUT)
+  const put = await authPutMirror('/api/magalu/affiliate', token, {
+    nickname: opts.affiliateName,
+    storeSlug: MAGALU_SLUG,
+  });
+  expect(put.body.success).toBe(true);
+
+  // 3. Linha em omestre.affiliates para o group-cache resolver o affiliateId
+  seedAffiliate(user.id, opts.affiliateName);
+
+  // 4. Mirror ativo — popula o cache Redis sourceGroup → config
+  const mirrorRes = await authPostMirror('/api/mirrors', token, {
+    name: opts.affiliateName,
+    sourceGroups: [opts.sourceGroup],
+    targetGroups: [opts.targetGroup],
+    status: 'active',
+  });
+  expect(mirrorRes.body.success).toBe(true);
+  const mirror = mirrorRes.body.mirror as { id: number };
+
+  return {
+    token,
+    userId: user.id,
+    instanceName,
+    mirrorId: mirror.id,
+    sourceGroup: opts.sourceGroup,
+  };
+}
+
+function magaluOfferWebhook(opts: {
+  messageId: string;
+  instance: string;
+  groupJid: string;
+  url?: string;
+}): unknown {
+  const url = opts.url ?? MAGALU_PRODUCT_URL;
+  return {
+    event: 'messages.upsert',
+    instance: opts.instance,
+    data: [
+      {
+        key: {
+          id: opts.messageId,
+          remoteJid: opts.groupJid,
+          fromMe: false,
+        },
+        message: {
+          conversation: `🔥 Oferta imperdível na Magalu!\n\nConfira: ${url}`,
+        },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+        pushName: 'Test E2E',
+      },
+    ],
+  };
+}
+
+test.describe('Pipeline v2 — Magalu end-to-end', () => {
+  test.beforeEach(async () => {
+    await resetSimulator();
+  });
+
+  test('P11 — Oferta Magalu /p/{id} é convertida e enviada ao grupo destino', async () => {
+    const sourceGroup = genSourceJid('p11');
+    const { instanceName, token } = await seedMagaluMirror({
+      affiliateName: 'E2E Magalu P11',
+      targetGroup: TARGET_GROUP,
+      sourceGroup,
+    });
+
+    const messageId = `e2e_mag_p11_${Date.now()}`;
+    const res = await postWebhook(
+      magaluOfferWebhook({ messageId, instance: instanceName, groupJid: sourceGroup.jid }),
+    );
+    expect(res.status).toBe(200);
+
+    // Aguarda a mensagem aparecer no simulador (enviada ao grupo destino)
+    const msgs = await waitForMessages((m) =>
+      m.some(
+        (x) =>
+          x.number === TARGET_GROUP.jid && x.text.includes(`magazinevoce.com.br/${MAGALU_SLUG}/`),
+      ),
+    );
+
+    const sent = msgs.find((m) => m.number === TARGET_GROUP.jid);
+    expect(
+      sent,
+      `Nenhuma mensagem enviada ao destino. Recebidas: ${JSON.stringify(msgs)}`,
+    ).toBeDefined();
+    // A URL afiliada deve apontar para a loja do afiliado de teste
+    expect(sent!.text).toContain(`magazinevoce.com.br/${MAGALU_SLUG}/`);
+    // E preservar o ID do produto Magalu original
+    expect(sent!.text).toContain(`/p/${MAGALU_PRODUCT_ID}/`);
+    // Não pode ter ficado com slug de outra loja (URL original) ou com placeholder
+    expect(sent!.text).not.toContain('undefined');
+
+    await authDeleteMirror('/api/whatsapp/disconnect', token);
+  });
+});

@@ -143,6 +143,15 @@ o-mestre-afiliado/
 - Endpoint interno do ML, **não documentado** publicamente.
 - Cookies expirados → fallback automático para URL params.
 
+### Magalu Converter (magalu.ts / magalu-pure.ts)
+
+- Influenciador Magalu **não tem API oficial** — conversão é construção local de URL (sem chamadas de rede, exceto `maga.lu/{id}` shortlinks).
+- URL convertida: `magazinevoce.com.br/{storeSlug}/{slugProduto}/p/{productId}/{cat}/{subCat}/`.
+- **Slug do afiliado** vem da tabela `omestre.magalu_affiliates` (1 slug por usuário), validado por regex `^[a-z0-9-]{3,40}$`.
+- Lógica pura isolada em `packages/converters/src/magalu-pure.ts` (regex, validação, construção) para cobertura 100%. I/O em `magalu.ts`.
+- `resolveMagaluShortlink(maga.lu/{id})` faz HEAD/GET para resolver para URL real antes da conversão. Se falhar, bloqueia a oferta (sem fallback cego).
+- Plano completo: [`docs/plans/magalu.md`](./docs/plans/magalu.md). Referência de API: [`docs/marketplaces/magalu/api-reference.md`](./docs/marketplaces/magalu/api-reference.md).
+
 ### Extensão Chrome
 
 - `extensions/chrome-cookie-importer/` — Manifest V3.
@@ -302,6 +311,7 @@ a spec é a fonte da verdade do que está no código, não um snapshot do moment
 | `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=... bun run dev`            | Cria/atualiza o CNAME da branch via API da zona correta; o token precisa de `Zone / DNS / Edit`                     |
 | `bun run shopee <url>`                                                   | CLI conversor Shopee                                                                                                |
 | `bun run ml <url>`                                                       | CLI conversor Mercado Livre                                                                                         |
+| `bun run magalu <url>`                                                   | CLI conversor Magalu (usa `MAGALU_STORE_NAME` do .env)                                                              |
 | `bun run build`                                                          | Compila todos os apps (api + worker + web)                                                                          |
 | `bun run build:extension`                                                | Gera `extensions/chrome-cookie-importer/lib/log-sink.config.js` com `EXTENSION_LOGS_API_KEY` do `.env` (gitignored) |
 | `bun run typecheck`                                                      | Typecheck de todos os subprojetos (via `scripts/typecheck-all.ts`)                                                  |
@@ -338,6 +348,7 @@ Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
 | `POSTGRES_SCHEMA`       | Não (default omestre)                               | api, worker                |
 | `FRONTEND_URL`          | Não (default http://localhost:5441)                 | api                        |
 | `ML_REDIRECT_URI`       | Não (default http://localhost:5442/api/ml/callback) | api                        |
+| `MAGALU_STORE_NAME`     | Não (fallback global p/ CLI; produção usa painel)   | converters, api            |
 | `ADMIN_EMAILS`          | Não (CSV vazio = ninguém vira admin via env)        | api                        |
 
 ---
@@ -440,6 +451,10 @@ Repositório expõe métodos: `findAll()`, `findByUserId()`, `upsert()`, `patch(
 13. **`isMeliProductUrl` precisa reconhecer o formato `produto.mercadolivre.com.br/MLB-{id}-{slug}`** — Quando `resolveSocialProductUrl()` extrai a URL de um produto via página `/social/`, o resultado tem formato `produto.mercadolivre.com.br/MLB-{id}-{slug}` (sem `/p/` no path). A função `isMeliProductUrl` só reconhecia `/p/MLB` e `/social/<id>`. Adicionar o padrão `/\/MLB-\d+/i` para cobrir o formato. Arquivo: `apps/ingestor/src/resolve-redirect.ts`, função `isMeliProductUrl()`.
 
 14. **`shopeeGraphqlRequest` vs `generateAuthHeaders` — sincronizar auth header da Shopee** — Duas funções montam o Authorization header da Shopee GraphQL API. A `generateAuthHeaders` (linha 39, usada pelo fluxo de conversão de links) tem o prefixo `SHA256` correto. A `shopeeGraphqlRequest` (linha 344, usada pelo `fetchShopeeImage` via `getProductOffer`) estava sem o `SHA256`, causando "Unsupported Auth Type". **Sempre que alterar o formato do header em uma, alterar na outra também.** Arquivo: `packages/converters/src/shopee.ts`, funções `generateAuthHeaders()` e `shopeeGraphqlRequest()`.
+
+15. **`/api/magalu/convert` exige afiliado configurado (retorna 404 sem slug)** — sem `magalu_affiliates` para o usuário logado, a rota retorna 404 com mensagem clara. O pipeline de espelhamento também bloqueia e chama `processFailure('magalu_account_not_linked')` (notifica via WhatsApp com cooldown 1h). Arquivo: `apps/api/src/modules/magalu/magalu.routes.ts`, `apps/ingestor/src/link-converters.ts`, `packages/worker-common/src/notifier.ts`.
+
+16. **Slug da Magalu é imutável após 24h** — Influenciador Magalu permite trocar slug apenas no primeiro dia. Validar regex `^[a-z0-9-]{3,40}$` no PUT (`slugErrorOrNull` em `apps/api/src/modules/magalu/magalu.routes.ts`) e exibir tooltip no frontend apontando para `https://www.magazinevoce.com.br/` (login → Minha Loja).
 
 ---
 
