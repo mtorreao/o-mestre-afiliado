@@ -4,7 +4,7 @@
  * Busca grupos do WhatsApp conectado via API e permite selecionar
  * 1 ou mais grupos como destino do espelhamento de ofertas.
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { useWhatsAppGroups } from '../hooks/useWhatsAppGroups.ts';
 
 interface Group {
@@ -17,15 +17,36 @@ interface GroupDestAutocompleteProps {
   value: Group[];
   onChange: (groups: Group[]) => void;
   refreshSignal?: number;
+  /** id estavel do input (foco programatico + aria-controls/aria-activedescendant) */
+  inputId?: string;
+  /** nome acessivel do combobox */
+  ariaLabel?: string;
+  /** erro do campo (controlado pelo pai) — liga aria-invalid/aria-describedby */
+  error?: string | null;
+  /** id do elemento do pai que renderiza a mensagem de erro */
+  errorId?: string;
 }
 
-export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }: GroupDestAutocompleteProps) {
-  const { groups, loading, error, refresh } = useWhatsAppGroups(token);
+export function GroupDestAutocomplete({
+  token,
+  value,
+  onChange,
+  refreshSignal,
+  inputId,
+  ariaLabel,
+  error,
+  errorId,
+}: GroupDestAutocompleteProps) {
+  const { groups, loading, error: fetchError, refresh } = useWhatsAppGroups(token);
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // A11y: ids estaveis para o padrao combobox (aria-controls, aria-activedescendant)
+  const uid = useId();
+  const searchInputId = inputId ?? `dest-autocomplete-input-${uid}`;
+  const listboxId = `${searchInputId}-listbox`;
 
   // Reage a refreshSignal do pai (ex: botão Atualizar no MirrorConfigSection)
   const prevSignal = useRef(refreshSignal);
@@ -40,9 +61,7 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
   const selectedJids = new Set(value.map((g) => g.jid));
   const filtered = query.trim()
     ? groups.filter(
-        (g) =>
-          !selectedJids.has(g.jid) &&
-          g.name.toLowerCase().includes(query.toLowerCase()),
+        (g) => !selectedJids.has(g.jid) && g.name.toLowerCase().includes(query.toLowerCase()),
       )
     : groups.filter((g) => !selectedJids.has(g.jid));
 
@@ -130,11 +149,11 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
     );
   }
 
-  if (error) {
+  if (fetchError) {
     return (
       <div>
         <div style={{ padding: '0.75rem 0', color: '#f87171', fontSize: '0.85rem' }}>
-          ❌ {error}
+          ❌ {fetchError}
         </div>
         <button
           onClick={() => refresh()}
@@ -157,7 +176,8 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
   if (groups.length === 0) {
     return (
       <div style={{ padding: '0.75rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-        Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de grupos.
+        Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de
+        grupos.
       </div>
     );
   }
@@ -210,6 +230,19 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
       <div style={{ position: 'relative' }}>
         <input
           ref={inputRef}
+          id={searchInputId}
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-autocomplete="list"
+          aria-controls={listboxId}
+          aria-activedescendant={
+            isOpen && highlightIndex >= 0 && highlightIndex < filtered.length
+              ? `${listboxId}-option-${highlightIndex}`
+              : undefined
+          }
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          aria-label={ariaLabel ?? 'Buscar grupo de destino'}
           value={query}
           onChange={(e) => {
             setQuery((e.target as HTMLInputElement).value);
@@ -226,7 +259,7 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
             width: '100%',
             padding: '0.5rem 0.625rem',
             borderRadius: '6px',
-            border: '1px solid #334155',
+            border: `1px solid ${error ? 'var(--color-error)' : '#334155'}`,
             background: '#0f172a',
             color: '#e2e8f0',
             fontSize: '0.85rem',
@@ -239,6 +272,9 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
         {isOpen && filtered.length > 0 && (
           <div
             ref={dropdownRef}
+            role="listbox"
+            id={listboxId}
+            aria-label={ariaLabel ?? 'Grupos de destino disponiveis'}
             style={{
               position: 'absolute',
               top: '100%',
@@ -256,6 +292,9 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
             {filtered.map((g, i) => (
               <div
                 key={g.jid}
+                id={`${listboxId}-option-${i}`}
+                role="option"
+                aria-selected={highlightIndex === i}
                 onClick={() => handleSelect(g)}
                 onMouseEnter={() => setHighlightIndex(i)}
                 style={{
