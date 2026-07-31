@@ -1,6 +1,8 @@
 # Magalu — Integração de Afiliados para Tenants
 
-> **Status:** planejado, não iniciado.
+> **Status:** camada de banco de dados **entregue** em 2026-07-31 via commit `c4883a2` (migration `0020`, schema Drizzle e repository). Conversor, API e pipeline permanecem **pendentes** na Fase 2 do [`docs/roadmap.md`](../roadmap.md).
+>
+> **Entregue:** DB multi-tenant para afiliados Magalu. **Pendente:** conversão de links, endpoints/perfil e integração no pipeline/painel.
 >
 > **Objetivo:** tornar o **Magalu** (Magazine Luiza) o **quarto marketplace real** do `O Mestre Afiliado`, multi-tenant e operável pelo painel, espelhando o que já existe para Shopee / Mercado Livre / Amazon.
 >
@@ -83,9 +85,10 @@
 
 ## 2. Modelo de dados
 
-### 2.1 Migration `0017_add_magalu_affiliates.sql`
+### 2.1 Migration `0020_add_magalu_affiliates.sql`
 
 ```sql
+-- packages/db/src/migrations/0020_add_magalu_affiliates.sql
 -- Migration: adiciona tabela magalu_affiliates (Influenciador Magalu)
 -- Estrutura paralela a amazon_affiliates, mas usando storeSlug em vez de trackingIds[]
 -- (Magalu usa slug único da loja, não tags múltiplas)
@@ -823,9 +826,9 @@ Fase 0 (Fundação admin)
 - **Cookie `mlparceiro`** — cookie interno do Magalu (não usado para afiliação).
 - **Rede parceira:** Sovrn Commerce (Magazine Luiza BR Affiliate Program) — referência externa.
 
-
 ## Revision history
 
-| Date       | Version | Change                                | Reason                           |
-| ---------- | ------- | ------------------------------------- | -------------------------------- |
-| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |
+| Date       | Version | Change                                                                              | Reason                           |
+| ---------- | ------- | ----------------------------------------------------------------------------------- | -------------------------------- |
+| 2026-07-31 | 0.1.1   | DB layer delivered via commit `c4883a2`; converter, API and pipeline remain pending | Roadmap Phase 2                  |
+| 2026-07-28 | 0.1.0   | Adopted spec-driven template                                                        | Bootstrap of `spec-driven` skill |
