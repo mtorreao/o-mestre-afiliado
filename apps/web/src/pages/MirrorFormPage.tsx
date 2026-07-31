@@ -17,6 +17,17 @@ import { TemplateEditor } from '../components/TemplateEditor.tsx';
 import { TemplatePreview } from '../components/TemplatePreview.tsx';
 import { AlertTriangle, Save, ArrowLeft, Loader2 } from 'lucide-react';
 
+// ─── A11y: ids estaveis para foco e aria-describedby ──
+const NAME_INPUT_ID = 'mirror-form-nome';
+const NAME_TITLE_ID = 'mirror-form-nome-titulo';
+const SOURCE_INPUT_ID = 'mirror-form-origem-input';
+const TARGET_INPUT_ID = 'mirror-form-destino-input';
+const SOURCE_TITLE_ID = 'mirror-form-origem-titulo';
+const TARGET_TITLE_ID = 'mirror-form-destino-titulo';
+const SOURCE_ERROR_ID = 'mirror-form-origem-error';
+const TARGET_ERROR_ID = 'mirror-form-destino-error';
+const SUCCESS_TITLE_ID = 'mirror-form-success-title';
+
 // ─── Types ──────────────────────────────────────────
 
 interface MirrorData {
@@ -104,35 +115,53 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
     }
   }, [isEdit, fetchMirror]);
 
+  // A11y: ao montar o success state, move o foco para o titulo da pagina.
+  useEffect(() => {
+    if (success) {
+      document.getElementById(SUCCESS_TITLE_ID)?.focus();
+    }
+  }, [success]);
+
   // ─── Validation ─────────────────────────────────
-  function validate(): boolean {
-    let valid = true;
+  // Retorna o primeiro campo com erro ('name' | 'source' | 'target') ou null.
+  function validate(): 'name' | 'source' | 'target' | null {
+    let firstError: 'name' | 'source' | 'target' | null = null;
 
     if (!name.trim()) {
       setNameError('O nome é obrigatório');
-      valid = false;
+      firstError = firstError ?? 'name';
     } else if (name.trim().length > 255) {
       setNameError('O nome deve ter no máximo 255 caracteres');
-      valid = false;
+      firstError = firstError ?? 'name';
     } else {
       setNameError(null);
     }
 
     if (sourceGroups.length === 0) {
       setSourceError('Selecione pelo menos 1 grupo de origem');
-      valid = false;
+      firstError = firstError ?? 'source';
     } else {
       setSourceError(null);
     }
 
     if (targetGroups.length === 0) {
       setTargetError('Selecione pelo menos 1 grupo de destino');
-      valid = false;
+      firstError = firstError ?? 'target';
     } else {
       setTargetError(null);
     }
 
-    return valid;
+    return firstError;
+  }
+
+  // A11y: foca o primeiro campo com erro após submit inválido.
+  function focusField(field: 'name' | 'source' | 'target'): void {
+    const idByField = {
+      name: NAME_INPUT_ID,
+      source: SOURCE_INPUT_ID,
+      target: TARGET_INPUT_ID,
+    } as const;
+    document.getElementById(idByField[field])?.focus();
   }
 
   // ─── Submit ─────────────────────────────────────
@@ -140,7 +169,11 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
     e.preventDefault();
     setSubmitError(null);
 
-    if (!validate()) return;
+    const firstError = validate();
+    if (firstError) {
+      focusField(firstError);
+      return;
+    }
 
     setSaving(true);
 
@@ -245,7 +278,11 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   if (success) {
     return (
       <PageLayout>
-        <PageHeader title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'} onBack={onBack} />
+        <PageHeader
+          title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'}
+          titleId={SUCCESS_TITLE_ID}
+          onBack={onBack}
+        />
         <div
           style={{
             display: 'flex',
@@ -301,10 +338,17 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         onBack={onBack}
       />
 
-      <form onSubmit={handleSubmit}>
-        <Card title="📋 Informações Básicas" style={{ marginBottom: '1.5rem' }}>
+      <form onSubmit={handleSubmit} noValidate>
+        <Card
+          title="📋 Informações Básicas"
+          titleId={NAME_TITLE_ID}
+          role="group"
+          aria-labelledby={NAME_TITLE_ID}
+          style={{ marginBottom: '1.5rem' }}
+        >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <Input
+              id={NAME_INPUT_ID}
               label="Nome do Espelhamento"
               placeholder="Ex: Ofertas Diárias → Grupo VIP"
               value={name}
@@ -319,7 +363,13 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           </div>
         </Card>
 
-        <Card title="🔗 Grupos de Origem" style={{ marginBottom: '1.5rem' }}>
+        <Card
+          title="🔗 Grupos de Origem"
+          titleId={SOURCE_TITLE_ID}
+          role="group"
+          aria-labelledby={SOURCE_TITLE_ID}
+          style={{ marginBottom: '1.5rem' }}
+        >
           <p
             style={{
               fontSize: 'var(--text-xs)',
@@ -337,9 +387,15 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
               setSourceGroups(groups);
               if (sourceError) setSourceError(null);
             }}
+            inputId={SOURCE_INPUT_ID}
+            ariaLabel="Buscar grupo de origem"
+            error={sourceError}
+            errorId={SOURCE_ERROR_ID}
           />
           {sourceError && (
             <p
+              id={SOURCE_ERROR_ID}
+              role="alert"
               style={{
                 fontSize: 'var(--text-xs)',
                 color: 'var(--color-error)',
@@ -352,7 +408,13 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           )}
         </Card>
 
-        <Card title="🎯 Grupos de Destino" style={{ marginBottom: '1.5rem' }}>
+        <Card
+          title="🎯 Grupos de Destino"
+          titleId={TARGET_TITLE_ID}
+          role="group"
+          aria-labelledby={TARGET_TITLE_ID}
+          style={{ marginBottom: '1.5rem' }}
+        >
           <p
             style={{
               fontSize: 'var(--text-xs)',
@@ -370,9 +432,15 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
               setTargetGroups(groups);
               if (targetError) setTargetError(null);
             }}
+            inputId={TARGET_INPUT_ID}
+            ariaLabel="Buscar grupo de destino"
+            error={targetError}
+            errorId={TARGET_ERROR_ID}
           />
           {targetError && (
             <p
+              id={TARGET_ERROR_ID}
+              role="alert"
               style={{
                 fontSize: 'var(--text-xs)',
                 color: 'var(--color-error)',
@@ -485,6 +553,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         {/* Submit Error */}
         {submitError && (
           <div
+            role="alert"
             style={{
               marginTop: '1rem',
               padding: '0.75rem 1rem',

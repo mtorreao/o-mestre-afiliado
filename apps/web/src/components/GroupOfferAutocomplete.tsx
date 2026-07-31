@@ -4,7 +4,7 @@
  * Busca grupos do WhatsApp conectado via API e permite selecionar
  * 1 a 3 grupos como fontes de ofertas.
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { useWhatsAppGroups } from '../hooks/useWhatsAppGroups.ts';
 
 interface Group {
@@ -17,17 +17,38 @@ interface GroupOfferAutocompleteProps {
   value: Group[];
   onChange: (groups: Group[]) => void;
   refreshSignal?: number;
+  /** id estavel do input (foco programatico + aria-controls/aria-activedescendant) */
+  inputId?: string;
+  /** nome acessivel do combobox */
+  ariaLabel?: string;
+  /** erro do campo (controlado pelo pai) — liga aria-invalid/aria-describedby */
+  error?: string | null;
+  /** id do elemento do pai que renderiza a mensagem de erro */
+  errorId?: string;
 }
 
 const MAX_SELECTION = 3;
 
-export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }: GroupOfferAutocompleteProps) {
-  const { groups, loading, error, refresh } = useWhatsAppGroups(token);
+export function GroupOfferAutocomplete({
+  token,
+  value,
+  onChange,
+  refreshSignal,
+  inputId,
+  ariaLabel,
+  error,
+  errorId,
+}: GroupOfferAutocompleteProps) {
+  const { groups, loading, error: fetchError, refresh } = useWhatsAppGroups(token);
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // A11y: ids estaveis para o padrao combobox (aria-controls, aria-activedescendant)
+  const uid = useId();
+  const searchInputId = inputId ?? `offer-autocomplete-input-${uid}`;
+  const listboxId = `${searchInputId}-listbox`;
 
   // Reage a refreshSignal do pai (ex: botão Atualizar no MirrorConfigSection)
   const prevSignal = useRef(refreshSignal);
@@ -42,9 +63,7 @@ export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }
   const selectedJids = new Set(value.map((g) => g.jid));
   const filtered = query.trim()
     ? groups.filter(
-        (g) =>
-          !selectedJids.has(g.jid) &&
-          g.name.toLowerCase().includes(query.toLowerCase()),
+        (g) => !selectedJids.has(g.jid) && g.name.toLowerCase().includes(query.toLowerCase()),
       )
     : groups.filter((g) => !selectedJids.has(g.jid));
 
@@ -126,49 +145,49 @@ export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }
     [isOpen, filtered, highlightIndex, handleSelect, query, value],
   );
 
-  // Estados
-  if (loading) {
-    return (
-      <div style={{ padding: '0.75rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-        Carregando grupos...
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div>
-        <div style={{ padding: '0.75rem 0', color: '#f87171', fontSize: '0.85rem' }}>
-          ❌ {error}
-        </div>
-        <button
-          onClick={() => refresh()}
-          style={{
-            padding: '0.3rem 0.6rem',
-            borderRadius: '4px',
-            border: '1px solid #475569',
-            background: 'transparent',
-            color: '#94a3b8',
-            fontSize: '0.8rem',
-            cursor: 'pointer',
-          }}
-        >
-          🔄 Tentar novamente
-        </button>
-      </div>
-    );
-  }
-
-  if (groups.length === 0) {
-    return (
-      <div style={{ padding: '0.75rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-        Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de grupos.
-      </div>
-    );
-  }
-
   return (
     <div>
+      {/* Status (loading / erro / vazio) — sempre acessível via aria-live */}
+      {loading && (
+        <div role="status" style={{ padding: '0.5rem 0', color: '#64748b', fontSize: '0.85rem' }}>
+          Carregando grupos...
+        </div>
+      )}
+      {!loading && fetchError && (
+        <div
+          role="alert"
+          style={{
+            padding: '0.5rem 0',
+            color: '#dc2626',
+            fontSize: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          <span>❌ {fetchError}</span>
+          <button
+            onClick={() => refresh()}
+            style={{
+              padding: '0.2rem 0.5rem',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              background: 'transparent',
+              color: '#64748b',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+            }}
+          >
+            🔄 Tentar novamente
+          </button>
+        </div>
+      )}
+      {!loading && !fetchError && groups.length === 0 && (
+        <div role="status" style={{ padding: '0.5rem 0', color: '#64748b', fontSize: '0.85rem' }}>
+          Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de
+          grupos.
+        </div>
+      )}
       {/* Tags selecionadas */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
         {value.map((g) => (
@@ -195,7 +214,7 @@ export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#94a3b8',
+                color: '#64748b',
                 cursor: 'pointer',
                 padding: 0,
                 fontSize: '0.9rem',
@@ -218,6 +237,19 @@ export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }
       <div style={{ position: 'relative' }}>
         <input
           ref={inputRef}
+          id={searchInputId}
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-autocomplete="list"
+          aria-controls={listboxId}
+          aria-activedescendant={
+            isOpen && highlightIndex >= 0 && highlightIndex < filtered.length
+              ? `${listboxId}-option-${highlightIndex}`
+              : undefined
+          }
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          aria-label={ariaLabel ?? 'Buscar grupo de oferta'}
           value={query}
           onChange={(e) => {
             setQuery((e.target as HTMLInputElement).value);
@@ -235,7 +267,7 @@ export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }
             width: '100%',
             padding: '0.5rem 0.625rem',
             borderRadius: '6px',
-            border: '1px solid #334155',
+            border: `1px solid ${error ? 'var(--color-error)' : '#334155'}`,
             background: isMaxed ? '#1e293b' : '#0f172a',
             color: isMaxed ? '#64748b' : '#e2e8f0',
             fontSize: '0.85rem',
@@ -248,6 +280,9 @@ export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }
         {isOpen && filtered.length > 0 && (
           <div
             ref={dropdownRef}
+            role="listbox"
+            id={listboxId}
+            aria-label={ariaLabel ?? 'Grupos de oferta disponiveis'}
             style={{
               position: 'absolute',
               top: '100%',
@@ -265,13 +300,16 @@ export function GroupOfferAutocomplete({ token, value, onChange, refreshSignal }
             {filtered.map((g, i) => (
               <div
                 key={g.jid}
+                id={`${listboxId}-option-${i}`}
+                role="option"
+                aria-selected={highlightIndex === i}
                 onClick={() => handleSelect(g)}
                 onMouseEnter={() => setHighlightIndex(i)}
                 style={{
                   padding: '0.5rem 0.75rem',
                   cursor: 'pointer',
                   background: highlightIndex === i ? '#334155' : 'transparent',
-                  color: highlightIndex === i ? '#e2e8f0' : '#94a3b8',
+                  color: highlightIndex === i ? '#e2e8f0' : '#64748b',
                   fontSize: '0.85rem',
                   borderBottom: i < filtered.length - 1 ? '1px solid #1e293b' : 'none',
                 }}

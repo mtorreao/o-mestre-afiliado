@@ -15,9 +15,19 @@ interface PageHeaderProps {
   actions?: React.ReactNode;
   className?: string;
   children?: React.ReactNode;
+  /** id aplicado ao <h1> (com tabIndex -1) — permite mover o foco programaticamente */
+  titleId?: string;
 }
 
-export function PageHeader({ title, subtitle, onBack, actions, className, children }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  subtitle,
+  onBack,
+  actions,
+  className,
+  children,
+  titleId,
+}: PageHeaderProps) {
   const headerStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'flex-start',
@@ -52,7 +62,13 @@ export function PageHeader({ title, subtitle, onBack, actions, className, childr
           />
         )}
         <div style={titleBlockStyle}>
-          <h1 style={{ margin: 0, fontSize: 'var(--text-xl)', fontWeight: 600 }}>{title}</h1>
+          <h1
+            id={titleId}
+            tabIndex={titleId ? -1 : undefined}
+            style={{ margin: 0, fontSize: 'var(--text-xl)', fontWeight: 600 }}
+          >
+            {title}
+          </h1>
           {subtitle && (
             <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
               {subtitle}
@@ -61,7 +77,9 @@ export function PageHeader({ title, subtitle, onBack, actions, className, childr
         </div>
       </div>
       {actions && (
-        <div style={{ display: 'flex', gap: 'var(--spacing-2)', alignItems: 'center', flexShrink: 0 }}>
+        <div
+          style={{ display: 'flex', gap: 'var(--spacing-2)', alignItems: 'center', flexShrink: 0 }}
+        >
           {actions}
         </div>
       )}

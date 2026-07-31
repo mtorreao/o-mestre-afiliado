@@ -13,6 +13,8 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, hint, id, style, className, ...props }, ref) => {
     const inputId = id || `input-${label?.toLowerCase().replace(/\s+/g, '-')}`;
+    // A11y: id estavel da mensagem de erro — referenciada via aria-describedby
+    const errorId = `${inputId}-error`;
 
     const containerStyle: React.CSSProperties = {
       display: 'flex',
@@ -61,6 +63,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           id={inputId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           style={{
             ...inputStyle,
             ...(error ? { borderColor: 'var(--color-error)' } : {}),
@@ -68,7 +72,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           onFocus={(e) => {
             if (!error) {
               (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-primary)';
-              (e.currentTarget as HTMLInputElement).style.boxShadow = '0 0 0 3px var(--color-primary-subtle)';
+              (e.currentTarget as HTMLInputElement).style.boxShadow =
+                '0 0 0 3px var(--color-primary-subtle)';
             }
           }}
           onBlur={(e) => {
@@ -79,7 +84,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           }}
           {...props}
         />
-        {error && <span style={errorStyle}>{error}</span>}
+        {error && (
+          <span id={errorId} role="alert" style={errorStyle}>
+            {error}
+          </span>
+        )}
         {hint && !error && <span style={hintStyle}>{hint}</span>}
       </div>
     );
