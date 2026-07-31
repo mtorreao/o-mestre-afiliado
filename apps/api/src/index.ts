@@ -35,9 +35,8 @@ import {
   removeDlqItem,
   purgeDlq,
 } from './services/worker-metrics.ts';
-import { makeLogger } from '@omestre/shared';
+import { globalErrorHandler } from './error-handler.ts';
 
-const log = makeLogger('api');
 const PORT = parseInt(config.API_PORT, 10);
 
 // ─── App ─────────────────────────────────────────────────────────────────
@@ -57,31 +56,8 @@ const app = new Elysia()
     }),
   )
   // ─── Error handler global ──────────────────────────────────────────
-  .onError(({ code, error, set }) => {
-    // Se for erro de banco (timeout, conexão), retorna 503
-    const msg = error instanceof Error ? error.message.toLowerCase() : '';
-    if (
-      msg.includes('timeout') ||
-      msg.includes('connect') ||
-      msg.includes('database') ||
-      msg.includes('postgres') ||
-      msg.includes('connection') ||
-      msg.includes('pool') ||
-      msg.includes('select') ||
-      msg.includes('relation') ||
-      msg.includes('db is')
-    ) {
-      set.status = 503;
-      return {
-        success: false,
-        error: 'Serviço temporariamente indisponível. O banco de dados pode estar reiniciando.',
-      };
-    }
-    // Erros internos não tratados
-    log('error', 'Erro não tratado', { error: String(error) });
-    set.status = 500;
-    return { success: false, error: 'Erro interno do servidor' };
-  })
+  // (VALIDAÇÃO → 400, banco → 503, resto → 500 — ver error-handler.ts)
+  .onError(globalErrorHandler)
   .use(authRoutes)
   .use(affiliateRoutes)
   .use(mirrorRoutes)
