@@ -171,6 +171,55 @@ export function verifyAmazonTag(
   return { valid: true };
 }
 
+// ─── Verificação Magalu ──────────────────────────────────────────────
+
+/** Dados mínimos do afiliado Magalu para verificação do store slug. */
+export interface MagaluAffiliateParams {
+  storeSlug: string;
+}
+
+/**
+ * Verifica se o slug do Magazine Você na URL convertida corresponde ao
+ * afiliado. Sem slug na URL → válido (assume que conversão preservou o
+ * slug — URLs magazineluiza.com.br sem slug não carregam identidade de
+ * afiliado).
+ */
+export function verifyMagaluStoreSlug(
+  extractedSlug: string | null,
+  affiliate: MagaluAffiliateParams,
+): ParamVerification {
+  if (!extractedSlug) return { valid: true };
+  if (extractedSlug !== affiliate.storeSlug) {
+    return {
+      valid: false,
+      reason: `Magalu store_slug não corresponde ao afiliado: esperado ${affiliate.storeSlug}, recebido ${extractedSlug}`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Extrai o store slug de uma URL convertida do Magazine Você.
+ *
+ * O slug é o primeiro segmento do pathname de `magazinevoce.com.br`
+ * (`/{slug}/...`). Retorna `null` para URLs de outros domínios (ex:
+ * magazineluiza.com.br sem slug, OneLink) — sem slug de loja não há
+ * identidade de afiliado para conferir, e a verificação é fail-open.
+ */
+export function extractMagaluStoreSlug(convertedUrl: string): string | null {
+  try {
+    const url = new URL(convertedUrl);
+    if (!/magazinevoce\.com\.br/i.test(url.hostname)) {
+      return null;
+    }
+    // pathname começa com /{slug}/... ou /{slug}
+    const match = url.pathname.match(/^\/([a-z0-9-]+)(\/|$)/i);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Utilidades ──────────────────────────────────────────────────────
 
 /**

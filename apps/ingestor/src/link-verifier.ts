@@ -5,21 +5,30 @@
  * (melitat/meliid/matt_word no ML, tag na Amazon). Se detectar mismatch,
  * retorna { valid: false, reason } — o pipeline bloqueia a oferta.
  *
- * Apenas ML e Amazon são verificados — Shopee não tem como o Link Builder
- * retornar URL com credenciais de outro afiliado.
+ * ML, Amazon e Magalu são verificados — Shopee não tem como o Link Builder
+ * retornar URL com credenciais de outro afiliado. Magalu confere o store
+ * slug do Magazine Você na URL convertida contra o slug do afiliado.
  *
  * A lógica de comparação de parâmetros foi extraída para
  * `link-verifier-pure.ts` (funções puras, sem I/O), e este módulo apenas
  * orquestra o acesso a DB/repositórios e alimenta aquelas funções.
  */
 import { eq } from 'drizzle-orm';
-import { getDb, affiliates, MlAffiliateRepository, AmazonAffiliateRepository } from '@omestre/db';
+import {
+  getDb,
+  affiliates,
+  MlAffiliateRepository,
+  AmazonAffiliateRepository,
+  MagaluAffiliateRepository,
+} from '@omestre/db';
 import { makeLogger } from '@omestre/shared';
 import {
   extractAffiliateParams,
   verifyMlParams,
   verifyAmazonTag,
   extractUserIdFromInstanceId,
+  extractMagaluStoreSlug,
+  verifyMagaluStoreSlug,
 } from './link-verifier-pure.ts';
 
 const log = makeLogger('ingestor');
@@ -47,6 +56,9 @@ export async function verifyAffiliateLink(
     }
     if (marketplace === 'amazon') {
       return await verifyAmazonLink(convertedUrl, affiliateId);
+    }
+    if (marketplace === 'magalu') {
+      return await verifyMagaluLink(convertedUrl, affiliateId);
     }
     return { valid: true };
   } catch (err) {
@@ -143,4 +155,30 @@ async function verifyAmazonLink(
   }
 
   return { valid: true };
+}
+
+/**
+ * Verifica que o store slug do Magazine Você no convertedUrl corresponde
+ * ao afiliado Magalu. Sem slug na URL, considera válido (a conversão
+ * preserva o slug — URL sem slug não carrega identidade de afiliado).
+ */
+async function verifyMagaluLink(
+  convertedUrl: string,
+  affiliateId: number,
+): Promise<{ valid: boolean; reason?: string }> {
+  const extracted = extractMagaluStoreSlug(convertedUrl);
+
+  const userId = await resolveUserId(affiliateId);
+  if (userId === null) {
+    return { valid: false, reason: 'Afiliado sem evolutionInstanceId' };
+  }
+
+  const magaluRepo = new MagaluAffiliateRepository();
+  const affiliate = await magaluRepo.findByUserId(userId);
+
+  if (!affiliate) {
+    return { valid: false, reason: 'URL Magazine Você mas afiliado não vinculado' };
+  }
+
+  return verifyMagaluStoreSlug(extracted, { storeSlug: affiliate.storeSlug });
 }

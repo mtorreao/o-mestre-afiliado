@@ -250,18 +250,34 @@ validateMagaluStoreSlug(slug: string): { valid: boolean; reason?: string }   // 
 Atualizar `packages/converters/src/index.ts`:
 
 ```ts
+// Implementado (commit de integração wt/t_b1d054a8). Os helpers de detecção/
+// extração/build vivem em magalu-pure.ts e seguem a convenção de sufixo
+// `Pure` do repo (ex: extractMagaluProductIdPure, isMagaluShortlinkPure,
+// buildMagaluAffiliateLinkPure) — não existe versão sem sufixo.
 export {
-  extractMagaluProductId,
-  isMagaluShortlink,
-  isMagazineluizaProductUrl,
-  isMagazinevoceProductUrl,
-  isMagaluProductUrl,
-  extractMagazinevoceStoreSlug,
   resolveMagaluShortlink,
-  buildMagaluAffiliateLink,
+  resolvePromozoneMagaluUrl,
+  generateMagaluOneLink,
   convertMagaluUrlWithStoreSlug,
   convertMagaluUrl,
 } from './magalu.ts';
+
+export {
+  isMagaluShortlinkPure,
+  isMagazineluizaProductUrlPure,
+  isMagazinevoceProductUrlPure,
+  isPromozoneMagaluUrlPure,
+  isMagaluOnelinkUrlPure,
+  isMagaluProductUrlPure,
+  extractPromozoneMagaluIdPure,
+  extractMagaluProductIdPure,
+  extractMagazinevoceStoreSlugPure,
+  extractMagaluShortlinkIdPure,
+  validateMagaluStoreSlugPure,
+  buildMagaluAffiliateLinkPure,
+  buildMagaluAffiliateLinkPureSafe,
+} from './magalu-pure.ts';
+export type { BuildMagaluLinkInput, SlugValidation } from './magalu-pure.ts';
 
 export function selectConverter(marketplace): (...) | null {
   switch (marketplace) {

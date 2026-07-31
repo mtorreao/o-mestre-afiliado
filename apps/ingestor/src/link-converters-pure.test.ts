@@ -103,8 +103,8 @@ describe('resolveEffectiveMarketplace', () => {
 // ─── classifyUnsupportedMarketplace ────────────────────────────────────
 
 describe('classifyUnsupportedMarketplace', () => {
-  it('magalu é bloqueado com nome amigável', () => {
-    expect(classifyUnsupportedMarketplace('magalu')).toBe('Magalu (Magazine Luiza)');
+  it('magalu não é mais bloqueado (integrado)', () => {
+    expect(classifyUnsupportedMarketplace('magalu')).toBeNull();
   });
 
   it('marketplaces suportados retornam null', () => {
@@ -119,8 +119,8 @@ describe('classifyUnsupportedMarketplace', () => {
 
 describe('buildUnsupportedMarketplaceError', () => {
   it('monta mensagem PT-BR', () => {
-    expect(buildUnsupportedMarketplaceError('Magalu (Magazine Luiza)')).toBe(
-      'Marketplace ainda não liberado: Magalu (Magazine Luiza)',
+    expect(buildUnsupportedMarketplaceError('Marketplace Futuro')).toBe(
+      'Marketplace ainda não liberado: Marketplace Futuro',
     );
   });
 });

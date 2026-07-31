@@ -42,6 +42,31 @@ export {
 } from './amazon.ts';
 export type { ConvertAmazonMultiOptions } from './amazon.ts';
 
+export {
+  resolveMagaluShortlink,
+  resolvePromozoneMagaluUrl,
+  generateMagaluOneLink,
+  convertMagaluUrlWithStoreSlug,
+  convertMagaluUrl,
+} from './magalu.ts';
+
+export {
+  isMagaluShortlinkPure,
+  isMagazineluizaProductUrlPure,
+  isMagazinevoceProductUrlPure,
+  isPromozoneMagaluUrlPure,
+  isMagaluOnelinkUrlPure,
+  isMagaluProductUrlPure,
+  extractPromozoneMagaluIdPure,
+  extractMagaluProductIdPure,
+  extractMagazinevoceStoreSlugPure,
+  extractMagaluShortlinkIdPure,
+  validateMagaluStoreSlugPure,
+  buildMagaluAffiliateLinkPure,
+  buildMagaluAffiliateLinkPureSafe,
+} from './magalu-pure.ts';
+export type { BuildMagaluLinkInput, SlugValidation } from './magalu-pure.ts';
+
 /**
  * Converte qualquer URL suportada em link de afiliado.
  * Detecta automaticamente o marketplace.
@@ -51,6 +76,7 @@ import type { ConversionResult } from '@omestre/shared';
 import { convertShopeeUrl } from './shopee.ts';
 import { convertMercadoLivreUrl } from './mercadolivre.ts';
 import { convertAmazonUrl } from './amazon.ts';
+import { convertMagaluUrl } from './magalu.ts';
 
 export async function convertUrl(url: string): Promise<ConversionResult> {
   const marketplace = detectMarketplace(url);
@@ -88,6 +114,8 @@ export function selectConverter(
       return convertMercadoLivreUrl;
     case 'amazon':
       return convertAmazonUrl;
+    case 'magalu':
+      return convertMagaluUrl;
     default:
       return null;
   }

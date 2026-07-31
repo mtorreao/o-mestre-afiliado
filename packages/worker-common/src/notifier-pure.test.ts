@@ -74,6 +74,7 @@ describe('buildNotificationText', () => {
       'invalid_shopee_creds',
       'invalid_amazon_tracking_id',
       'ml_account_not_linked',
+      'magalu_account_not_linked',
       'evolution_api_offline',
     ];
     for (const t of types) {
