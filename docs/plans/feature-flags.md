@@ -20,13 +20,13 @@
 
 | O que existe                    | Onde                                            | Observação                                                                                                   |
 | ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Auth JWT `{userId, userEmail}`  | `apps/api/src/middleware/auth.ts`               | **Sem papel/role.** O conceito de admin ainda não existe no código.                                          |
+| Auth JWT `{userId, userEmail, isAdmin}` | `apps/api/src/middleware/auth.ts` (verify) + `apps/api/src/modules/auth/auth.routes.ts` (sign) | **Admin implementado:** o payload carrega `isAdmin` (bootstrap via `ADMIN_EMAILS` no register/login) e `/api/auth/me` retorna `isAdmin`. |
 | Plano do admin (`is_admin`)     | `docs/plans/historico-precos.md` §5.5           | Já especifica `is_admin` + `ADMIN_EMAILS` + JWT. **Este plano reusa a mesma fundação** (prerequisito comum). |
 | Redis singleton (API)           | `apps/api/src/services/redis.ts`                | `cacheGet`/`cacheSet` com fallback silencioso.                                                               |
 | Redis nos workers               | `apps/ingestor`, `apps/dispatcher` (ioredis)    | Dispatcher já tem padrão de cache local 60s (`rate-limiter.ts:20`) — mesmo padrão serve para flags.          |
 | Loop do Dispatcher              | `apps/dispatcher/src/index.ts:149` (`mainLoop`) | Ponto ideal do kill switch: pausar ANTES do `XREADGROUP` → mensagens acumulam na Queue B, nada é perdido.    |
 | Design system Switch/Card/Badge | `apps/web/src/components/ui/`                   | A tela de flags usa `Switch` — zero componente novo.                                                         |
-| Migrations                      | `packages/db/src/migrations/` (última: `0015`)  | ⚠️ Numeração compartilhada com o plano do catálogo (`0016`/`0017`). Ver §9 Coordenação.                      |
+| Migrations                      | `packages/db/src/migrations/` (última: `0020`)  | Sequência executada: `0016` feature_flags, `0019` is_admin (bootstrap admin), `0020` magalu. Ver §9.             |
 
 ---
 
@@ -532,7 +532,7 @@ docker logs omestre_dev_dispatcher --tail 20
 Os dois planos compartilham a **fundação admin** (`is_admin` + `ADMIN_EMAILS` + JWT + `useAuth.isAdmin` + filtro de nav no AppShell). Regras:
 
 1. **Quem implementar primeiro cria a fundação** — a migration de `is_admin` e as mudanças em auth/useAuth/AppShell são idênticas nos dois planos; o segundo plano só consome.
-2. **Numeração de migrations:** o plano do catálogo reservou `0016`/`0017`. Este plano usa **o próximo número livre no momento da implementação** (se rodar antes do catálogo: `0016_add_users_is_admin.sql` + `0017_add_feature_flags.sql`; o catálogo renumera). Conferir `ls packages/db/src/migrations/` antes de gerar.
+2. **Numeração de migrations (outcome real):** a sequência aplicada em main foi `0016_add_feature_flags.sql` (feature flags), `0019_add_users_is_admin.sql` (is_admin — bootstrap admin) e `0020_add_magalu_affiliates.sql` (magalu). A migração de `is_admin` ficou em `0019` porque `0017` (extension_logs) e `0018` (amazon tracking id) entraram no meio do caminho. Para novas migrations, conferir `ls packages/db/src/migrations/` antes de gerar.
 3. Como feature flags é pré-requisito de **produção** e o catálogo é feature de produto, a ordem sugerida é **feature flags primeiro** (leva a fundação admin junto).
 
 ---
