@@ -10,27 +10,33 @@ services:
     container_name: omestre_api
     restart: always
     ports:
-      - "${API_PORT:-127.0.0.1:5442:5442}"
+      - '${API_PORT:-127.0.0.1:5442:5442}'
     env_file:
       - .env
     environment:
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      POSTGRES_PORT: '5432'
       POSTGRES_USERNAME: evolution
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-evolution_pass}"
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
       POSTGRES_DATABASE: omestre_db
       POSTGRES_SCHEMA: omestre
-      EVOLUTION_API_URL: "http://evolution-api:8080"
-      WORKER_METRICS_URL: "http://ingestor:9092"
-      DISPATCHER_METRICS_URL: "http://dispatcher:9093"
-      FRONTEND_URL: "${FRONTEND_URL:-http://localhost:5441}"
-      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
-      METRICS_API_KEY: "${METRICS_API_KEY}"
+      EVOLUTION_API_URL: 'http://evolution-api:8080'
+      WORKER_METRICS_URL: 'http://ingestor:9092'
+      DISPATCHER_METRICS_URL: 'http://dispatcher:9093'
+      FRONTEND_URL: '${FRONTEND_URL:-http://localhost:5441}'
+      ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
+      METRICS_API_KEY: '${METRICS_API_KEY}'
     networks:
       - omestre-prod-net
       - omestre-infra-net
     healthcheck:
-      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)"]
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)",
+        ]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -47,7 +53,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${WEB_PORT:-127.0.0.1:5441:5441}"
+      - '${WEB_PORT:-127.0.0.1:5441:5441}'
     networks:
       - omestre-prod-net
       - omestre-infra-net
@@ -66,20 +72,26 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      POSTGRES_PORT: '5432'
       POSTGRES_USERNAME: evolution
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-evolution_pass}"
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
       POSTGRES_DATABASE: omestre_db
       POSTGRES_SCHEMA: omestre
-      EVOLUTION_API_URL: "http://evolution-api:8080"
-      REDIS_URL: "redis://redis:6379"
-      METRICS_API_KEY: "${METRICS_API_KEY}"
-      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      EVOLUTION_API_URL: 'http://evolution-api:8080'
+      REDIS_URL: 'redis://redis:6379'
+      METRICS_API_KEY: '${METRICS_API_KEY}'
+      ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
       BLACKLIST_PATH: /app/blacklist.json
       WHITELIST_PATH: /app/whitelist.json
-      METRICS_PORT: "9092"
+      METRICS_PORT: '9092'
     healthcheck:
-      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9092/health');process.exit(r.ok?0:1)"]
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r=await fetch('http://localhost:9092/health');process.exit(r.ok?0:1)",
+        ]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -102,18 +114,63 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      POSTGRES_PORT: '5432'
       POSTGRES_USERNAME: evolution
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-evolution_pass}"
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
       POSTGRES_DATABASE: omestre_db
       POSTGRES_SCHEMA: omestre
-      EVOLUTION_API_URL: "http://evolution-api:8080"
-      REDIS_URL: "redis://redis:6379"
-      METRICS_API_KEY: "${METRICS_API_KEY}"
-      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
-      METRICS_PORT: "9093"
+      EVOLUTION_API_URL: 'http://evolution-api:8080'
+      REDIS_URL: 'redis://redis:6379'
+      METRICS_API_KEY: '${METRICS_API_KEY}'
+      ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
+      METRICS_PORT: '9093'
     healthcheck:
-      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9093/health');process.exit(r.ok?0:1)"]
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r=await fetch('http://localhost:9093/health');process.exit(r.ok?0:1)",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+
+  # ─── CatalogWorker (Queue C — catálogo de preços) ─────────────────────
+  catalog-worker:
+    build:
+      context: .
+      dockerfile: apps/catalog-worker/Dockerfile
+    container_name: omestre_catalog_worker
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      REDIS_URL: 'redis://redis:6379'
+      METRICS_API_KEY: '${METRICS_API_KEY}'
+      ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
+      METRICS_PORT: '9094'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r=await fetch('http://localhost:9094/health');process.exit(r.ok?0:1)",
+        ]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -129,7 +186,7 @@ services:
     restart: always
     command: tunnel --config /etc/cloudflared/config.yml run
     volumes:
-      - "${HOME}/.cloudflared:/etc/cloudflared:ro"
+      - '${HOME}/.cloudflared:/etc/cloudflared:ro'
     networks:
       - omestre-prod-net
       - omestre-infra-net

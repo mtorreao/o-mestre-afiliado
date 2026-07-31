@@ -23,8 +23,8 @@
     "build:dispatcher": "bun run --cwd apps/dispatcher build",
     "build:web": "bun run --cwd apps/web build",
     "build:extension": "bun run scripts/build-extension-config.ts",
-    "build": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:web",
-    "build:v2": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:web",
+    "build": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:catalog-worker && bun run build:web",
+    "build:v2": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:catalog-worker && bun run build:web",
     "shopee": "bun run --cwd packages/converters shopee",
     "mercadolivre": "bun run --cwd packages/converters mercadolivre",
     "ml": "bun run --cwd packages/converters mercadolivre",
@@ -41,7 +41,10 @@
     "test:unit": "bun run scripts/test-unit.ts",
     "test:coverage": "bun run scripts/test-coverage.ts",
     "test:all": "bun run test:unit && bun run test:e2e",
-    "setup:hooks": "bun run scripts/setup-hooks.sh"
+    "setup:hooks": "bun run scripts/setup-hooks.sh",
+    "dev:catalog-worker": "bun run --cwd apps/catalog-worker dev",
+    "build:catalog-worker": "bun run --cwd apps/catalog-worker build",
+    "backfill": "bun run --cwd apps/catalog-worker backfill"
   },
   "engines": {
     "bun": ">=1.3.0"

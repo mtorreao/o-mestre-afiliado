@@ -106,7 +106,7 @@ if [ "$ACTION" = "rebuild" ]; then
   ok "Testes E2E passaram"
 
   info "Rebuildando imagens Docker..."
-  docker compose build --no-cache api web
+  docker compose build --no-cache api web catalog-worker
 fi
 
 # ─── Subir infra ──────────────────────────────────────────────────────────
