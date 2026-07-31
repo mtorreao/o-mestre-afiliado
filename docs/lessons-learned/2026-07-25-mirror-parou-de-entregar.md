@@ -840,10 +840,9 @@ Os arquivos modificados `ingestor.ts`, `resolve-redirect.ts`, `WorkerStatusPage.
 - `omestre-mirror-diagnostics` §15 — dedup atômico no consumer (Dispatcher OK, já tem `SET NX EX`)
 - `omestre-afiliado-overview` — visão geral do monorepo, Docker, comandos
 
-
 ## Revision history
 
-| Date       | Version | Change                                | Reason                                                       |
-| ---------- | ------- | ------------------------------------- | ------------------------------------------------------------ |
+| Date       | Version | Change                                                                                                                                               | Reason                                                                                   |
+| ---------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | 2026-07-28 | 0.2.0   | Adopted lessons-learned template (added Severity, Time lost, Status, "What we learned" / "Why it happened" / "What we changed" / "Related" sections) | Migrated from `docs/investigacoes/` to `docs/lessons-learned/` per spec-driven bootstrap |
-| 2026-07-25 | 0.1.0   | Initial investigation                  | Diagnostic session for blocked mirror `id=1`                |
+| 2026-07-25 | 0.1.0   | Initial investigation                                                                                                                                | Diagnostic session for blocked mirror `id=1`                                             |

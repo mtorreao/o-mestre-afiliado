@@ -17,9 +17,10 @@ Tone: terse, factual, blame-free. No "I told you so". Owner is whoever is respon
 
 ## Index
 
-| Date       | Lesson                                                                                                          | Severity | Action                                                              |
-| ---------- | --------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------- |
-| 2026-07-25 | [Mirror parou de entregar — `generateViaUrlParams` removido por commit com argumento técnico incorreto](./lessons-learned/2026-07-25-mirror-parou-de-entregar.md) | high     | Investigação documentada; reverter `a45dfa0` ou justificar decisão |
+| Date       | Lesson                                                                                                                                                             | Severity | Action                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ---------------------------------------------------------------------------- |
+| 2026-07-25 | [Mirror parou de entregar — `generateViaUrlParams` removido por commit com argumento técnico incorreto](./lessons-learned/2026-07-25-mirror-parou-de-entregar.md)  | high     | Investigação documentada; reverter `a45dfa0` ou justificar decisão           |
+| 2026-07-30 | [Race window entre `getMirrorSendConfig` e `sendMediaOrText` permite bypass de mirror inativo](./lessons-learned/2026-07-30-guardian-race-window-mirror-config.md) | high     | Plano Guardião rev 2 adiciona tripla validação; pendente Phase 10 do roadmap |
 
 ---
 
@@ -61,6 +62,7 @@ Copy this block into `docs/lessons-learned/<slug>.md` (or append here for small 
 
 ## Revision history
 
-| Date       | Version | Change                                | Reason                                                          |
-| ---------- | ------- | ------------------------------------- | --------------------------------------------------------------- |
-| 2026-07-28 | 0.1.0   | Initial index + moved investigation    | Bootstrap of `spec-driven` skill; first retrospective recorded  |
+| Date       | Version | Change                                                   | Reason                                                                                                |
+| ---------- | ------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 2026-07-28 | 0.1.0   | Initial index + moved investigation                      | Bootstrap of `spec-driven` skill; first retrospective recorded                                        |
+| 2026-07-30 | 0.2.0   | Adicionada lição sobre TOCTOU entre mirror-config e send | Race window identificada durante brainstorm do Guardião (Phase 10); motivou tripla validação no plano |
