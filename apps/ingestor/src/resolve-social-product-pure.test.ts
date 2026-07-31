@@ -37,6 +37,48 @@ describe('extractOgImage (pure module)', () => {
   it('retorna null sem og:image/twitter:image', () => {
     expect(extractOgImage('<html><head></head></html>')).toBeNull();
   });
+
+  /**
+   * Bug 2026-07-30: Mercado Livre devolve og:image com template literal
+   * `{sanitized_title}` em URLs do padrão `D_Q_NP_*.webp`. Esse padrão
+   * NÃO é uma URL real — só é resolvido via JS no browser. Quando o
+   * ingestor aceita a URL-template como imageUrl, o `fetchProductImage`
+   * grava no cache e o `sendMedia` falha no WhatsApp como 404.
+   *
+   * Esperado: o parser REJEITA a URL-template (retorna null), permitindo
+   * que o fallback (`og:image` em /p/MLB, ou `fetchOgImage` na página
+   * final) produza uma URL real.
+   */
+  it('rejeita og:image do ML com template literal {sanitized_title}', () => {
+    const html =
+      '<meta property="og:image" content="https://http2.mlstatic.com/D_Q_NP_727559-MLA99590035560_122025-AB{sanitized_title}.webp">';
+    expect(extractOgImage(html)).toBeNull();
+  });
+
+  it('rejeita twitter:image com template literal {qualquer_coisa}', () => {
+    const html =
+      '<meta name="twitter:image" content="https://cdn.example.com/D_Q_NP_x-{title}.jpg">';
+    expect(extractOgImage(html)).toBeNull();
+  });
+
+  /**
+   * Regressão: se og:image vier com placeholder, NÃO descartar o
+   * twitter:image que estiver no mesmo HTML. O parser deve pular o
+   * candidato rejeitado e continuar procurando.
+   */
+  it('cai no twitter:image quando og:image tem placeholder', () => {
+    const html =
+      '<meta property="og:image" content="https://http2.mlstatic.com/D_Q_NP_x-{sanitized_title}.webp">' +
+      '<meta name="twitter:image" content="https://cdn.example.com/real.jpg">';
+    expect(extractOgImage(html)).toBe('https://cdn.example.com/real.jpg');
+  });
+
+  it('cai no og:image quando twitter:image tem placeholder', () => {
+    const html =
+      '<meta name="twitter:image" content="https://cdn.example.com/{slug}.jpg">' +
+      '<meta property="og:image" content="https://cdn.example.com/real.jpg">';
+    expect(extractOgImage(html)).toBe('https://cdn.example.com/real.jpg');
+  });
 });
 
 // ─── stripUrlParams ────────────────────────────────────────────────────

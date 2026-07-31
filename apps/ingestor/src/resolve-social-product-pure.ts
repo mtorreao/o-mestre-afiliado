@@ -20,16 +20,37 @@ export const ML_PRODUCT_HREF_RE =
 
 /**
  * Extrai og:image/twitter:image de um HTML, tolerante à ordem de atributos.
+ *
+ * Quando há mais de um meta tag candidato (og:image E twitter:image),
+ * devolve o primeiro cuja URL não seja template literal (`{slug}` etc.)
+ * — não descarta um valor real só porque o primeiro candidato veio com
+ * placeholder.
  */
 export function extractOgImage(html: string): string | null {
   const patterns = [
-    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*?content=["']([^"']+)["']/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]*?(?:property|name)=["'](?:og:image|twitter:image)["']/i,
+    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*?content=["']([^"']+)["']/gi,
+    /<meta[^>]+content=["']([^"']+)["'][^>]*?(?:property|name)=["'](?:og:image|twitter:image)["']/gi,
   ];
 
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) return match[1].trim();
+  type Candidate = { value: string; offset: number };
+  const candidates: Candidate[] = [];
+  for (const re of patterns) {
+    for (const m of html.matchAll(re)) {
+      if (m.index === undefined || !m[1]) continue;
+      candidates.push({ value: m[1].trim(), offset: m.index });
+    }
+  }
+  candidates.sort((a, b) => a.offset - b.offset);
+
+  for (const { value } of candidates) {
+    // Rejeita URLs com placeholders de template (ex.: {sanitized_title})
+    // que o site não renderiza server-side — não são URLs baixáveis.
+    // Mercado Livre devolve og:image com esse padrão em URLs do tipo
+    // `D_Q_NP_*-{sanitized_title}.webp`. URL-template é inutilizável
+    // pelo sendMedia do WhatsApp (404) e envenena o cache com `imageUrl`
+    // não-funcional.
+    if (/\{[^}]+\}/.test(value)) continue;
+    return value;
   }
 
   return null;

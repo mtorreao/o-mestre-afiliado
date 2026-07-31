@@ -231,6 +231,44 @@ describe('extractOgImage', () => {
   it('retorna null para html vazio', () => {
     expect(extractOgImage('')).toBeNull();
   });
+
+  /**
+   * Bug 2026-07-30: Mercado Livre devolve og:image com template literal
+   * `{sanitized_title}` em URLs do padrão `D_Q_NP_*.webp`. Esses URLs
+   * não são reais (só renderizam via JS no browser) e envenenam o cache
+   * se o parser aceita. Espelha o mesmo filtro de
+   * resolve-social-product-pure.ts para evitar divergência entre o
+   * caminho /social/ e o fallback og:image da página /p/MLB.
+   */
+  it('rejeita og:image com template literal {sanitized_title}', () => {
+    const html =
+      '<meta property="og:image" content="https://http2.mlstatic.com/D_Q_NP_x-MLA{sanitized_title}.webp">';
+    expect(extractOgImage(html)).toBeNull();
+  });
+
+  it('rejeita twitter:image com template literal {slug}', () => {
+    const html = '<meta name="twitter:image" content="https://cdn.example/{slug}.jpg">';
+    expect(extractOgImage(html)).toBeNull();
+  });
+
+  /**
+   * Regressão: se og:image vier com placeholder, NÃO descartar o
+   * twitter:image que estiver no mesmo HTML. O parser deve pular o
+   * candidato rejeitado e continuar procurando.
+   */
+  it('cai no twitter:image quando og:image tem placeholder', () => {
+    const html =
+      '<meta property="og:image" content="https://http2.mlstatic.com/D_Q_NP_x-{sanitized_title}.webp">' +
+      '<meta name="twitter:image" content="https://cdn.example/real.jpg">';
+    expect(extractOgImage(html)).toBe('https://cdn.example/real.jpg');
+  });
+
+  it('cai no og:image quando twitter:image tem placeholder', () => {
+    const html =
+      '<meta name="twitter:image" content="https://cdn.example/{slug}.jpg">' +
+      '<meta property="og:image" content="https://cdn.example/real.jpg">';
+    expect(extractOgImage(html)).toBe('https://cdn.example/real.jpg');
+  });
 });
 
 // ─── extractAmazonDynamicImage ────────────────────────────────────────

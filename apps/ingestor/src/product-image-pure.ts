@@ -47,23 +47,40 @@ export function buildCachedImagePayload(imageUrl: string | null, fetchedAt: stri
 /**
  * Extrai og:image/twitter:image de um HTML, tolerante à ordem de
  * atributos (property antes ou depois de content) e a aspas simples.
+ *
+ * Quando há mais de um meta tag candidato (og:image E twitter:image),
+ * devolve o primeiro cuja URL não seja template literal (`{slug}` etc.)
+ * — não descarta um valor real só porque o primeiro candidato veio com
+ * placeholder.
  */
 export function extractOgImage(html: string): string | null {
   const patterns = [
     // property/name antes de content
-    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*?content=["']([^"']+)["']/i,
+    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*?content=["']([^"']+)["']/gi,
     // content antes de property/name
-    /<meta[^>]+content=["']([^"']+)["'][^>]*?(?:property|name)=["'](?:og:image|twitter:image)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]*?(?:property|name)=["'](?:og:image|twitter:image)["']/gi,
   ];
 
+  type Candidate = { value: string; offset: number };
+  const candidates: Candidate[] = [];
   for (const re of patterns) {
-    const m = html.match(re);
-    if (m?.[1]) {
-      const value = m[1].trim();
-      // Alguns sites colocam múltiplas URLs separadas por vírgula/espaço
-      const first = value.split(/[,\s]+/)[0]!;
-      if (first.startsWith('http') || first.startsWith('/')) return first;
+    for (const m of html.matchAll(re)) {
+      if (m.index === undefined || !m[1]) continue;
+      candidates.push({ value: m[1].trim(), offset: m.index });
     }
+  }
+  candidates.sort((a, b) => a.offset - b.offset);
+
+  for (const { value } of candidates) {
+    // Rejeita URLs com placeholders de template (ex.: {sanitized_title})
+    // que o site não renderiza server-side — não são URLs baixáveis.
+    // Espelha o filtro de resolve-social-product-pure.ts para evitar
+    // divergência entre os dois extractOgImage quando param URL-template
+    // chega via fallback og:image da página /p/MLB.
+    if (/\{[^}]+\}/.test(value)) continue;
+    // Alguns sites colocam múltiplas URLs separadas por vírgula/espaço
+    const first = value.split(/[,\s]+/)[0]!;
+    if (first.startsWith('http') || first.startsWith('/')) return first;
   }
 
   return null;
