@@ -1,7 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { FeatureFlagRepository } from '@omestre/db';
 import { makeLogger } from '@omestre/shared';
-import { createJwtPlugin, getAdminUser } from '../../middleware/auth.ts';
+import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import type { AuthUser } from '../../middleware/auth.ts';
 import {
   FLAGS,
@@ -22,12 +22,45 @@ interface FlagRow {
 }
 
 /**
+ * Helper compartilhado: autentica o caller e exige role admin.
+ *  - Sem token ou token inválido → 401
+ *  - Token válido mas sem role admin → 403
+ *  - Token admin → retorna AuthUser
+ *
+ * Necessário para distinguir 401 (auth ausente) de 403 (auth sem
+ * permissão), em vez de colapsar os dois casos num único HTTP 200
+ * com `{ success:false }` (bug pre-existente).
+ *
+ * O primeiro argumento é a função de auth injetável (default: getAuthUser),
+ * para que os testes consigam controlar 401/403 sem mock de módulo.
+ */
+async function requireAdmin(
+  getAuth: typeof getAuthUser,
+  jwtInstance: {
+    verify: (token: string) => Promise<Record<string, unknown> | null | false>;
+  },
+  headers: Headers,
+  set: { status?: number | string },
+): Promise<{ ok: true; user: AuthUser } | { ok: false; status: 401 | 403; error: string }> {
+  const user = await getAuth(jwtInstance, headers);
+  if (!user) {
+    set.status = 401;
+    return { ok: false, status: 401, error: 'Não autenticado' };
+  }
+  if (!user.isAdmin) {
+    set.status = 403;
+    return { ok: false, status: 403, error: 'Acesso restrito a administradores' };
+  }
+  return { ok: true, user };
+}
+
+/**
  * Dependências injetáveis da rota (para testes sem DB/Redis reais).
  * Os defaults são os módulos de produção; os testes passam fakes.
  */
 export interface FeatureFlagsDeps {
   flagRepo?: Pick<FeatureFlagRepository, 'findAll' | 'upsert'>;
-  getAdmin?: typeof getAdminUser;
+  getAdmin?: typeof getAuthUser;
   flags?: Record<string, FlagDefinition>;
   allFlagKeys?: readonly string[];
   countFlagChecks?: typeof countFlagChecks;
@@ -38,7 +71,7 @@ export interface FeatureFlagsDeps {
 export function createFeatureFlagsRoutes(deps: FeatureFlagsDeps = {}) {
   const {
     flagRepo = new FeatureFlagRepository(),
-    getAdmin = getAdminUser,
+    getAdmin = getAuthUser,
     flags = FLAGS,
     allFlagKeys = ALL_FLAG_KEYS,
     countFlagChecks: countChecks = countFlagChecks,
@@ -51,9 +84,9 @@ export function createFeatureFlagsRoutes(deps: FeatureFlagsDeps = {}) {
       .use(createJwtPlugin())
 
       // GET /api/admin/feature-flags — lista todas as flags com status
-      .get('/api/admin/feature-flags', async ({ jwt, request: { headers } }) => {
-        const admin = await getAdmin(jwt, headers);
-        if (!admin) return { success: false, error: 'Não autorizado' };
+      .get('/api/admin/feature-flags', async ({ jwt, request: { headers }, set }) => {
+        const auth = await requireAdmin(getAdmin, jwt, headers, set);
+        if (!auth.ok) return { success: false, error: auth.error };
 
         try {
           const rows = await flagRepo.findAll();
@@ -91,16 +124,18 @@ export function createFeatureFlagsRoutes(deps: FeatureFlagsDeps = {}) {
         async ({
           jwt,
           request: { headers },
+          set,
           params,
           body,
         }: {
           jwt: any;
           request: { headers: Headers };
+          set: { status?: number | string };
           params: { key: string };
           body: { enabled: boolean };
         }) => {
-          const admin = await getAdmin(jwt, headers);
-          if (!admin) return { success: false, error: 'Não autorizado' };
+          const auth = await requireAdmin(getAdmin, jwt, headers, set);
+          if (!auth.ok) return { success: false, error: auth.error };
 
           const { key } = params;
           const { enabled } = body;
@@ -110,7 +145,7 @@ export function createFeatureFlagsRoutes(deps: FeatureFlagsDeps = {}) {
           }
 
           try {
-            const row = await flagRepo.upsert(key, enabled, admin.userEmail);
+            const row = await flagRepo.upsert(key, enabled, auth.user.userEmail);
             invalidateCache(key);
             publishInvalidation(key);
             return {
