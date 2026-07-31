@@ -11,7 +11,7 @@
 
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
-import type { MirrorDLQEntry, RawMessageEvent, SendEvent } from '@omestre/shared';
+import type { CatalogJob, MirrorDLQEntry, RawMessageEvent, SendEvent } from '@omestre/shared';
 import { MIRROR_DLQ_LIST, MIRROR_DLQ_INDEX, MIRROR_DLQ_TTL, makeLogger } from '@omestre/shared';
 import {
   buildReprocessedEntry,
@@ -23,7 +23,7 @@ import { config } from './config.ts';
 // ─── Tipos ────────────────────────────────────────────────────────────
 
 export interface DLQPushParams {
-  event: RawMessageEvent | SendEvent;
+  event: RawMessageEvent | SendEvent | CatalogJob;
   failureReason: string;
   attempts: number;
   lastError: string;

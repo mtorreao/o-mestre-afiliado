@@ -33,6 +33,21 @@
         "@types/bun": "latest",
       },
     },
+    "apps/catalog-worker": {
+      "name": "@omestre/catalog-worker",
+      "version": "1.0.0",
+      "dependencies": {
+        "@omestre/converters": "workspace:*",
+        "@omestre/db": "workspace:*",
+        "@omestre/shared": "workspace:*",
+        "@omestre/worker-common": "workspace:*",
+        "drizzle-orm": "catalog:",
+        "ioredis": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
     "apps/dispatcher": {
       "name": "@omestre/dispatcher",
       "version": "1.0.0",
@@ -315,6 +330,8 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
     "@omestre/api": ["@omestre/api@workspace:apps/api"],
+
+    "@omestre/catalog-worker": ["@omestre/catalog-worker@workspace:apps/catalog-worker"],
 
     "@omestre/converters": ["@omestre/converters@workspace:packages/converters"],
 
