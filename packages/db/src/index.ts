@@ -56,6 +56,14 @@ export type {
   AmazonTrackingIdInput,
 } from './repository/amazonAffiliates.repository.ts';
 
+export { MagaluAffiliateRepository } from './repository/magaluAffiliates.repository.ts';
+export type {
+  MagaluAffiliate,
+  NewMagaluAffiliate,
+  MagaluAffiliateSummary,
+  MagaluAffiliateUpsertData,
+} from './repository/magaluAffiliates.repository.ts';
+
 export { UserRepository } from './repository/users.repository.ts';
 export type { User, NewUser, UserPublic } from './repository/users.repository.ts';
 export { isEmailAdminAllowed } from './repository/users-pure.ts';
