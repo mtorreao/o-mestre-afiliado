@@ -3,6 +3,7 @@
  *
  * Fluxo atual (v2):
  *   Webhook (messages.upsert) → Queue A (omestre:mirror:raw) → Ingestor → Queue B (omestre:mirror:send) → Dispatcher → Evolution API
+ *   Queue C (omestre:mirror:catalog) — Ingestor → CatalogWorker (catálogo de preços, futuro)
  */
 
 /**
@@ -47,6 +48,10 @@ export interface SendEvent {
   originalUrl: string;
   /** Link convertido para afiliado */
   convertedUrl: string;
+  /** Chave de correlação `marketplace:itemId` (catálogo, Queue C) — propagada pelo Ingestor, ainda não usada pelo Dispatcher */
+  productKey?: string;
+  /** Variação específica (futuro) — undefined nesta fase */
+  variationKey?: string;
 }
 
 /**
@@ -109,4 +114,32 @@ export interface MirrorDLQEntry {
   reprocessedAt?: string;
   /** Resultado do re-processamento */
   reprocessResult?: string;
+}
+
+/**
+ * Job publicado na Queue C (omestre:mirror:catalog) pelo Ingestor.
+ *
+ * Só identidade + contexto — SEM preço/variação/imagem de produto. O
+ * CatalogWorker é dono de buscar o dado fresco na fonte e gravar no
+ * catálogo (products / product_variations / price_history).
+ */
+export interface CatalogJob {
+  /** UUID do job */
+  id: string;
+  /** Chave de normalização do produto: `${marketplace}:${itemId}` */
+  productKey: string;
+  /** Marketplace detectado (shopee | mercadolivre | amazon) */
+  marketplace: string;
+  /** ID do item no marketplace (Shopee itemId | ML itemId | Amazon ASIN) */
+  itemId: string;
+  /** URL já resolvida (redirect tratado) — base para o worker buscar dado fresco */
+  resolvedUrl: string;
+  /** JID do grupo de origem */
+  sourceGroupJid: string;
+  /** messageId original da mensagem fonte */
+  messageId: string;
+  /** Quando a oferta foi capturada (ISO) */
+  capturedAt: string;
+  /** userId de plataforma do afiliado (do SourceGroupConfig) — null se não parseável */
+  userId: number | null;
 }

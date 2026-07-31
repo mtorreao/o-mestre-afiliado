@@ -63,6 +63,7 @@ import { fetchProductImage } from './product-image.ts';
 import { getRedis } from './redis.ts';
 import { steps } from './metrics.ts';
 import { logReflectedOffer } from './offer-logger.ts';
+import { publishCatalogJob, resolveCatalogTarget } from './catalog-publisher.ts';
 
 // Re-exporta funções puras de url-extraction.ts para compatibilidade
 // com testes existentes e callers externos.
@@ -243,6 +244,12 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
     }
   }
 
+  // ── 3.6. Identidade de catálogo (parse, sem rede) ──
+  // Resolve `marketplace:itemId` da URL resolvida. É a chave de correlação
+  // da oferta espelhada ↔ catálogo (Queue C): preenchida no SendEvent
+  // (productKey) e publicada via CatalogJob no passo 10.5.
+  const catalogTarget = resolveCatalogTarget(marketplace, resolvedUrl);
+
   // ── 4. Reconstrução do texto (lógica pura em ingestor-pure.ts) ──
   // 'product' não é substituído aqui — será substituído pela URL convertida
   // no template (buildTemplateMessage faz text.replace(originalUrl, convertedUrl))
@@ -396,6 +403,7 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
           marketplace: conversion.marketplace,
           originalUrl,
           convertedUrl: conversion.convertedUrl!,
+          productKey: catalogTarget?.productKey,
         });
 
         return sendEvent;
@@ -480,6 +488,39 @@ export async function processRawMessage(event: RawMessageEvent): Promise<boolean
       count: sendEvents.length,
       mirrorIds: sendEvents.map((e) => e.mirrorId),
     });
+  }
+
+  // ── 10.5. Publica CatalogJob na Queue C (fire-and-forget) ──
+  // O Ingestor SÓ PUBLICA a identidade do produto (XADD O(1)); quem grava
+  // o catálogo é o CatalogWorker. Falha na publicação NUNCA quebra o
+  // espelhamento — try/catch isolado que apenas loga warn.
+  if (sendEvents.length > 0) {
+    const firstConfig = sourceConfigs.find((config) =>
+      sendEvents.some((event) => event.mirrorId === config.mirrorId),
+    );
+    const userId = firstConfig ? parseAffiliateUserId(firstConfig.instanceName) : null;
+    try {
+      void publishCatalogJob(
+        {
+          marketplace,
+          resolvedUrl,
+          sourceGroupJid,
+          messageId,
+          userId,
+        },
+        r,
+      ).catch((err: unknown) => {
+        log('warn', 'Falha ao publicar CatalogJob na Queue C', {
+          messageId,
+          error: String(err),
+        });
+      });
+    } catch (err) {
+      log('warn', 'Falha ao publicar CatalogJob na Queue C', {
+        messageId,
+        error: String(err),
+      });
+    }
   }
 
   // ── 11. ACK na Queue A ──

@@ -141,6 +141,8 @@ export function buildSendEvent(params: {
   marketplace: string;
   originalUrl: string;
   convertedUrl: string;
+  /** Chave de correlação marketplace:itemId (catálogo, Queue C) — opcional nesta fase */
+  productKey?: string;
 }): import('@omestre/shared').SendEvent {
   return {
     id: params.id,
@@ -152,6 +154,7 @@ export function buildSendEvent(params: {
     marketplace: params.marketplace,
     originalUrl: params.originalUrl,
     convertedUrl: params.convertedUrl,
+    ...(params.productKey ? { productKey: params.productKey } : {}),
   };
 }
 
