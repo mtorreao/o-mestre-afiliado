@@ -2,7 +2,7 @@
 
 ## 🔴 Crítico
 
-### 1. Renovação automática de cookies
+### 1. Renovação automática de cookies ✅ entregue (2026-07-31)
 
 **Problema:** Cookies de sessão expiram (horas/dias) e precisam ser reimportados manualmente.
 
@@ -35,7 +35,7 @@
 
 **Solução:** No frontend, permitir colar múltiplas URLs (uma por linha). No backend, enviar batch e retornar array de resultados.
 
-### 5. Cache de CSRF token
+### 5. Cache de CSRF token ✅ entregue (2026-07-31)
 
 **Problema:** Cada chamada de link curto faz um GET no linkbuilder pra pegar CSRF, mesmo que os cookies ainda sejam os mesmos.
 
@@ -93,9 +93,8 @@
 | **3**  | Extensão: auto-detect + refresh periódico              |
 | **4**  | Mensagens de erro + testes                             |
 
-
 ## Revision history
 
-| Date       | Version | Change                                | Reason                           |
-| ---------- | ------- | ------------------------------------- | -------------------------------- |
-| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |
+| Date       | Version | Change                       | Reason                           |
+| ---------- | ------- | ---------------------------- | -------------------------------- |
+| 2026-07-28 | 0.1.0   | Adopted spec-driven template | Bootstrap of `spec-driven` skill |

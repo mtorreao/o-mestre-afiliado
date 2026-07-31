@@ -27,7 +27,6 @@ import {
   buildNotMercadoLivreResult,
   buildOAuthHeaders,
   buildOAuthPayload,
-  buildRefreshCookiesHeaders,
   canUseStrategy,
   extractMercadoLivreCredentials,
   extractMeliLaLink,
@@ -51,6 +50,7 @@ import {
   type MlStrategy,
   type MercadoLivreCredentials,
 } from './mercadolivre-pure.ts';
+import { renewSessionCookies } from './ml-linkbuilder.ts';
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
 
@@ -189,22 +189,17 @@ export async function generateViaCookies(
 }
 
 /**
- * Renova cookies de sessão acessando o Link Builder
+ * Renova cookies de sessão acessando o Link Builder do ML
+ * (www.mercadolivre.com.br/afiliados/linkbuilder).
+ *
+ * Delega em `renewSessionCookies()` (ml-linkbuilder.ts), que captura TODOS
+ * os headers `set-cookie` (getSetCookie) e mescla com `mergeCookies()`.
+ * Retorna os cookies atuais quando não há set-cookie (sessão ainda válida)
+ * ou quando o fetch falha — nunca lança.
  */
 export async function refreshSessionCookies(currentCookies: string | undefined): Promise<string> {
-  if (!currentCookies) return '';
-
-  const res = await fetch(LINK_BUILDER_PAGE, {
-    headers: buildRefreshCookiesHeaders(currentCookies),
-    redirect: 'manual',
-  });
-
-  const newCookies = res.headers.get('set-cookie');
-  if (newCookies) {
-    return pureMergeCookies(currentCookies, newCookies);
-  }
-
-  return currentCookies;
+  const { cookies } = await renewSessionCookies(currentCookies);
+  return cookies;
 }
 
 /**
