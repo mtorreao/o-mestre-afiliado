@@ -9,7 +9,8 @@
     "dev": "bun run --hot src/index.ts",
     "build": "bun build src/index.ts --outdir=dist --target=bun",
     "start": "bun run dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "backfill": "bun run src/backfill.ts"
   },
   "dependencies": {
     "@omestre/converters": "workspace:*",
