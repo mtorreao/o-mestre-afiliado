@@ -17,14 +17,26 @@ interface GroupDestAutocompleteProps {
   value: Group[];
   onChange: (groups: Group[]) => void;
   refreshSignal?: number;
+  /** Disparado quando o input de busca perde o foco (validação onBlur do pai). */
+  onBlur?: () => void;
+  /** Ref exposta para o input de busca (foco no primeiro campo com erro). */
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
-export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }: GroupDestAutocompleteProps) {
+export function GroupDestAutocomplete({
+  token,
+  value,
+  onChange,
+  refreshSignal,
+  onBlur,
+  inputRef,
+}: GroupDestAutocompleteProps) {
   const { groups, loading, error, refresh } = useWhatsAppGroups(token);
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalRef = useRef<HTMLInputElement>(null);
+  const searchRef = inputRef ?? internalRef;
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Reage a refreshSignal do pai (ex: botão Atualizar no MirrorConfigSection)
@@ -40,9 +52,7 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
   const selectedJids = new Set(value.map((g) => g.jid));
   const filtered = query.trim()
     ? groups.filter(
-        (g) =>
-          !selectedJids.has(g.jid) &&
-          g.name.toLowerCase().includes(query.toLowerCase()),
+        (g) => !selectedJids.has(g.jid) && g.name.toLowerCase().includes(query.toLowerCase()),
       )
     : groups.filter((g) => !selectedJids.has(g.jid));
 
@@ -52,8 +62,8 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
       if (
         dropdownRef.current &&
         !dropdownRef.current.contains(e.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(e.target as Node)
+        searchRef.current &&
+        !searchRef.current.contains(e.target as Node)
       ) {
         setIsOpen(false);
       }
@@ -67,7 +77,7 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
       onChange([...value, group]);
       setQuery('');
       setHighlightIndex(-1);
-      inputRef.current?.focus();
+      searchRef.current?.focus();
     },
     [value, onChange],
   );
@@ -157,7 +167,8 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
   if (groups.length === 0) {
     return (
       <div style={{ padding: '0.75rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-        Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de grupos.
+        Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de
+        grupos.
       </div>
     );
   }
@@ -209,7 +220,7 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
       {/* Input de busca */}
       <div style={{ position: 'relative' }}>
         <input
-          ref={inputRef}
+          ref={searchRef}
           value={query}
           onChange={(e) => {
             setQuery((e.target as HTMLInputElement).value);
@@ -219,6 +230,11 @@ export function GroupDestAutocomplete({ token, value, onChange, refreshSignal }:
           onFocus={() => {
             setIsOpen(true);
             setHighlightIndex(0);
+          }}
+          onBlur={() => {
+            setIsOpen(false);
+            setHighlightIndex(-1);
+            onBlur?.();
           }}
           onKeyDown={handleKeyDown}
           placeholder="Buscar grupo de destino..."

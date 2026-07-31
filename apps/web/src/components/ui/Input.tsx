@@ -11,7 +11,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, id, style, className, ...props }, ref) => {
+  ({ label, error, hint, id, style, className, required, ...props }, ref) => {
     const inputId = id || `input-${label?.toLowerCase().replace(/\s+/g, '-')}`;
 
     const containerStyle: React.CSSProperties = {
@@ -56,11 +56,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label htmlFor={inputId} style={labelStyle}>
             {label}
+            {required && (
+              <span style={{ color: 'var(--color-error)' }} aria-hidden="true">
+                {' '}
+                *
+              </span>
+            )}
           </label>
         )}
         <input
           ref={ref}
           id={inputId}
+          required={required}
           style={{
             ...inputStyle,
             ...(error ? { borderColor: 'var(--color-error)' } : {}),
@@ -68,7 +75,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           onFocus={(e) => {
             if (!error) {
               (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-primary)';
-              (e.currentTarget as HTMLInputElement).style.boxShadow = '0 0 0 3px var(--color-primary-subtle)';
+              (e.currentTarget as HTMLInputElement).style.boxShadow =
+                '0 0 0 3px var(--color-primary-subtle)';
             }
           }}
           onBlur={(e) => {
