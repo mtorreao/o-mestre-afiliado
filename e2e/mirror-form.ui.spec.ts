@@ -30,6 +30,14 @@ const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '
 
 const EVIDENCE_DIR = 'test-results/mirror-form-evidence';
 const FORM_CARD_TITLES = ['📋 Informações Básicas', '🔗 Grupos de Origem', '🎯 Grupos de Destino'];
+const MOCK_GROUPS = [
+  { jid: '120363000000000001@g.us', name: 'Ofertas Premium' },
+  { jid: '120363000000000002@g.us', name: 'Grupo VIP Compras' },
+  { jid: '120363@g.us', name: 'Ofertas Tech Brasil' },
+  { jid: '120364@g.us', name: 'Promoções do Dia' },
+  { jid: '120365@g.us', name: 'Grupo VIP Ofertas' },
+  { jid: '120366@g.us', name: 'Achadinhos Shopee' },
+];
 
 /**
  * Helper: registra + configura token no localStorage (login instantâneo).
@@ -88,13 +96,7 @@ async function mockWhatsAppGroups(page: Page) {
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        groups: [
-          { jid: '120363000000000001@g.us', name: 'Ofertas Premium' },
-          { jid: '120363000000000002@g.us', name: 'Grupo VIP Compras' },
-        ],
-      }),
+      body: JSON.stringify({ success: true, groups: MOCK_GROUPS }),
     });
   });
 }
@@ -311,18 +313,14 @@ test.describe('MirrorFormPage — Acessibilidade', () => {
     // Seleciona grupo de origem via combobox (opção do listbox)
     const origemInput = page.locator('#mirror-form-origem-input');
     await origemInput.focus();
-    const origemOption = page.locator(
-      '#mirror-form-origem-input-listbox [role="option"]',
-    );
+    const origemOption = page.locator('#mirror-form-origem-input-listbox [role="option"]');
     await origemOption.first().waitFor({ state: 'visible', timeout: 5000 });
     await origemOption.first().click();
 
     // Seleciona grupo de destino via combobox
     const destinoInput = page.locator('#mirror-form-destino-input');
     await destinoInput.focus();
-    const destinoOption = page.locator(
-      '#mirror-form-destino-input-listbox [role="option"]',
-    );
+    const destinoOption = page.locator('#mirror-form-destino-input-listbox [role="option"]');
     await destinoOption.first().waitFor({ state: 'visible', timeout: 5000 });
     await destinoOption.first().click();
 
@@ -335,10 +333,10 @@ test.describe('MirrorFormPage — Acessibilidade', () => {
 
     // Verifica document.activeElement apontando para o título
     await expect
-      .poll(
-        () => page.evaluate(() => document.activeElement?.id),
-        { timeout: 2000, intervals: [50, 100, 200] },
-      )
+      .poll(() => page.evaluate(() => document.activeElement?.id), {
+        timeout: 2000,
+        intervals: [50, 100, 200],
+      })
       .toBe('mirror-form-success-title');
   });
 
@@ -924,5 +922,394 @@ test.describe('MirrorsPage — sem regressão nos cards (sticky dev)', () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(1);
 
     await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-mirrors-cards.png` });
+  });
+});
+
+function makeMockMirror(id: number, name: string) {
+  return {
+    id,
+    name,
+    userId: 1,
+    status: 'active',
+    sourceGroups: [{ jid: '120363@g.us', name: 'Ofertas Tech Brasil' }],
+    targetGroups: [{ jid: '120366@g.us', name: 'Achadinhos Shopee' }],
+    messageTemplate: null,
+    subRateLimitMaxMsgs: null,
+    subRateLimitWindowSec: null,
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z',
+  };
+}
+
+async function selectFirstGroup(page: Page, autocompleteName: 'sourceGroups' | 'targetGroups') {
+  const placeholder =
+    autocompleteName === 'targetGroups' ? 'Buscar grupo de destino...' : 'Buscar grupo...';
+  const trigger = page.locator(`input[placeholder="${placeholder}"]`);
+  await trigger.click();
+
+  // Aguarda dropdown abrir (item com cursor:pointer visível)
+  const item = page.locator('div[style*="cursor: pointer"]').first();
+  await item.waitFor({ state: 'visible', timeout: 5_000 });
+  await item.click();
+}
+
+test.describe('MirrorForm — Skeleton shimmer no loading (edit mode)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('4.0 — Modo edição: skeleton (não spinner) aparece durante o fetch', async ({ page }) => {
+    const _token = await loginDirect(page);
+
+    // Mocka GET /api/mirrors/:id com delay CONTROLADO: o estado inicial do
+    // form é loading=false; a UI só mostra o skeleton depois de
+    // setLoading(true) ser chamado dentro de fetchMirror. Capturamos a
+    // primeira resposta e só a liberamos após o teste inspecionar o
+    // skeleton.
+    let resolveFetch: (() => void) | null = null;
+    const fetchBlocker = new Promise<void>((r) => {
+      resolveFetch = r;
+    });
+
+    await page.route('**/api/mirrors/*', async (route) => {
+      const request = route.request();
+      if (request.method() !== 'GET') return route.continue();
+      await fetchBlocker;
+      const url = new URL(request.url());
+      const id = parseInt(url.pathname.split('/').pop() ?? '1', 10);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, mirror: makeMockMirror(id, 'Teste Skeleton') }),
+      });
+    });
+
+    await page.goto(`${WEB}/mirror-form/1`);
+
+    // Antes da resposta: skeleton visível, spinner ausente
+    const skeleton = page.locator('[role="status"][aria-busy="true"]');
+    await expect(skeleton).toBeVisible({ timeout: 5_000 });
+
+    // Pelo menos 1 .skeleton-block dentro do status
+    const skeletonBlocks = page.locator('.skeleton-block');
+    expect(await skeletonBlocks.count()).toBeGreaterThan(0);
+
+    // Garantia: NÃO é o spinner antigo ("Carregando dados do espelhamento...")
+    await expect(page.locator('text=Carregando dados do espelhamento...')).toHaveCount(0);
+
+    // Skeleton computa shimmer animation (keyframe ativo)
+    const animName = await skeletonBlocks
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationName);
+    expect(animName).toBe('shimmer');
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-skeleton-edit.png` });
+
+    // Libera o fetch e valida o form carregado
+    resolveFetch!();
+    await expect(page.locator('form')).toBeVisible({ timeout: 5_000 });
+    await expect(skeleton).toHaveCount(0);
+
+    // Mostra o nome carregado
+    await expect(page.locator('input[value="Teste Skeleton"]')).toBeVisible();
+  });
+});
+
+test.describe('MirrorForm — Success sem auto-redirect (modo novo)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('5.0 — Após salvar, success NÃO redireciona (aguarda >1.5s)', async ({ page }) => {
+    await loginDirect(page);
+    await mockWhatsAppGroups(page);
+
+    // Mocka POST /api/mirrors para retornar sucesso sem fazer nada
+    let postedBody: unknown = null;
+    await page.route('**/api/mirrors', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      postedBody = JSON.parse(route.request().postData() ?? '{}');
+      await new Promise((r) => setTimeout(r, 300));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          mirror: makeMockMirror(99, 'Teste Sem Redirect'),
+        }),
+      });
+    });
+
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+
+    // Preenche nome e seleciona grupos
+    await page
+      .locator('input[placeholder="Ex: Ofertas Diárias → Grupo VIP"]')
+      .fill('Teste Sem Redirect');
+    await selectFirstGroup(page, 'sourceGroups');
+    await selectFirstGroup(page, 'targetGroups');
+
+    // Submit
+    await page.locator('button:has-text("Criar Espelhamento")').click();
+
+    // Success deve aparecer (sem auto-redirect)
+    await expect(page.locator('text=Espelhamento criado com sucesso!')).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // AGUARDA >1.5s — se houvesse auto-redirect, a URL mudaria para /mirrors
+    await page.waitForTimeout(2000);
+
+    // URL NÃO mudou
+    expect(page.url()).toContain('/mirror-form');
+    expect(page.url()).not.toContain('/mirrors');
+
+    // Success AINDA visível
+    await expect(page.locator('text=Espelhamento criado com sucesso!')).toBeVisible();
+
+    // Body do POST teve sourceGroups e targetGroups (validação backend)
+    const body = postedBody as { sourceGroups: unknown[]; targetGroups: unknown[] } | null;
+    expect(body).toBeTruthy();
+    expect(body!.sourceGroups).toHaveLength(1);
+    expect(body!.targetGroups).toHaveLength(1);
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-success-no-redirect.png` });
+  });
+
+  test('5.1 — Modo novo: botões "Criar outro espelhamento" e "Ver espelhamentos" são exibidos', async ({
+    page,
+  }) => {
+    await loginDirect(page);
+    await mockWhatsAppGroups(page);
+
+    await page.route('**/api/mirrors', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          mirror: makeMockMirror(99, 'Teste Acções'),
+        }),
+      });
+    });
+
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+
+    await page.locator('input[placeholder="Ex: Ofertas Diárias → Grupo VIP"]').fill('Teste Acções');
+    await selectFirstGroup(page, 'sourceGroups');
+    await selectFirstGroup(page, 'targetGroups');
+    await page.locator('button:has-text("Criar Espelhamento")').click();
+
+    await expect(page.locator('text=Espelhamento criado com sucesso!')).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // Os DOIS botões do modo novo
+    await expect(page.locator('button:has-text("Criar outro espelhamento")')).toBeVisible();
+    await expect(page.locator('button:has-text("Ver espelhamentos")')).toBeVisible();
+
+    // E o título "Novo Espelhamento" no header (não "Editar Espelhamento")
+    await expect(page.locator('text=Novo Espelhamento').first()).toBeVisible();
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-success-acoes-novo.png` });
+  });
+
+  test('5.2 — Modo novo: "Criar outro espelhamento" reseta o form (campos vazios)', async ({
+    page,
+  }) => {
+    await loginDirect(page);
+    await mockWhatsAppGroups(page);
+
+    await page.route('**/api/mirrors', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          mirror: makeMockMirror(99, 'Teste Reset'),
+        }),
+      });
+    });
+
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+
+    // Preenche
+    await page.locator('input[placeholder="Ex: Ofertas Diárias → Grupo VIP"]').fill('Meu Mirror');
+    await selectFirstGroup(page, 'sourceGroups');
+    await selectFirstGroup(page, 'targetGroups');
+    await page.locator('button:has-text("Criar Espelhamento")').click();
+
+    await expect(page.locator('text=Espelhamento criado com sucesso!')).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // Clica "Criar outro espelhamento"
+    await page.locator('button:has-text("Criar outro espelhamento")').click();
+    await page.waitForSelector('form', { timeout: 5_000 });
+
+    // Form resetado: campo nome vazio
+    const nameInput = page.locator('input[placeholder="Ex: Ofertas Diárias → Grupo VIP"]');
+    await expect(nameInput).toHaveValue('');
+
+    // Tags de grupos (sourceGroups/targetGroups) sumiram — o nome do grupo
+    // mockado (ex: "Ofertas Tech Brasil") não aparece mais no DOM
+    await expect(page.locator('text=Ofertas Tech Brasil')).toHaveCount(0);
+    await expect(page.locator('text=Achadinhos Shopee')).toHaveCount(0);
+
+    // Os botões "×" de remoção também sumiram (não há tags para remover)
+    await expect(page.locator('button[title="Remover"]')).toHaveCount(0);
+
+    // Título segue "Novo Espelhamento"
+    await expect(page.locator('text=Novo Espelhamento').first()).toBeVisible();
+
+    // Success sumiu
+    await expect(page.locator('text=Espelhamento criado com sucesso!')).toHaveCount(0);
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-form-reset.png` });
+  });
+
+  test('5.3 — Modo novo: "Ver espelhamentos" navega para /mirrors', async ({ page }) => {
+    await loginDirect(page);
+    await mockWhatsAppGroups(page);
+
+    await page.route('**/api/mirrors', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          mirror: makeMockMirror(99, 'Teste Nav'),
+        }),
+      });
+    });
+
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+
+    await page.locator('input[placeholder="Ex: Ofertas Diárias → Grupo VIP"]').fill('Teste Nav');
+    await selectFirstGroup(page, 'sourceGroups');
+    await selectFirstGroup(page, 'targetGroups');
+    await page.locator('button:has-text("Criar Espelhamento")').click();
+
+    await expect(page.locator('text=Espelhamento criado com sucesso!')).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // Clica "Ver espelhamentos"
+    await page.locator('button:has-text("Ver espelhamentos")').click();
+
+    // Navegou para /mirrors
+    await page.waitForURL(/\/mirrors$/, { timeout: 5_000 });
+    await expect(page.locator('text=📋 Espelhamentos')).toBeVisible({ timeout: 5_000 });
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-success-nav-mirrors.png` });
+  });
+});
+
+test.describe('MirrorForm — Success sem auto-redirect (modo edição)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('6.0 — Modo edição: botões "Ver espelhamentos" e "Fechar" são exibidos', async ({
+    page,
+  }) => {
+    const _token = await loginDirect(page);
+
+    // Mock GET /api/mirrors/:id + PUT /api/mirrors/:id
+    await page.route('**/api/mirrors/*', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        const url = new URL(request.url());
+        const id = parseInt(url.pathname.split('/').pop() ?? '1', 10);
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, mirror: makeMockMirror(id, 'Edit Mode Test') }),
+        });
+        return;
+      }
+      if (request.method() === 'PUT') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            mirror: makeMockMirror(1, 'Edit Mode Test'),
+          }),
+        });
+        return;
+      }
+      return route.continue();
+    });
+
+    await page.goto(`${WEB}/mirror-form/1`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+    await expect(page.locator('input[value="Edit Mode Test"]')).toBeVisible();
+
+    // Submit (PUT) — o botão usa o label "Atualizar Espelhamento" no edit mode
+    await page.locator('button:has-text("Atualizar Espelhamento")').click();
+
+    // Success do modo edição
+    await expect(page.locator('text=Espelhamento atualizado com sucesso!')).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // Botões do modo edição
+    await expect(page.locator('button:has-text("Ver espelhamentos")')).toBeVisible();
+    await expect(page.locator('button:has-text("Fechar")')).toBeVisible();
+
+    // Botão do modo novo NÃO aparece
+    await expect(page.locator('button:has-text("Criar outro espelhamento")')).toHaveCount(0);
+
+    // Aguarda >1.5s — sem auto-redirect
+    await page.waitForTimeout(2000);
+    expect(page.url()).toContain('/mirror-form/1');
+    expect(page.url()).not.toContain('/mirrors');
+
+    await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-success-edit.png` });
+  });
+
+  test('6.1 — Modo edição: "Ver espelhamentos" navega para /mirrors', async ({ page }) => {
+    const _token = await loginDirect(page);
+
+    await page.route('**/api/mirrors/*', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        const url = new URL(request.url());
+        const id = parseInt(url.pathname.split('/').pop() ?? '1', 10);
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, mirror: makeMockMirror(id, 'Edit Nav') }),
+        });
+        return;
+      }
+      if (request.method() === 'PUT') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            mirror: makeMockMirror(1, 'Edit Nav'),
+          }),
+        });
+        return;
+      }
+      return route.continue();
+    });
+
+    await page.goto(`${WEB}/mirror-form/1`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+
+    await page.locator('button:has-text("Atualizar Espelhamento")').click();
+
+    await expect(page.locator('text=Espelhamento atualizado com sucesso!')).toBeVisible({
+      timeout: 5_000,
+    });
+
+    await page.locator('button:has-text("Ver espelhamentos")').click();
+    await page.waitForURL(/\/mirrors$/, { timeout: 5_000 });
+    await expect(page.locator('text=📋 Espelhamentos')).toBeVisible({ timeout: 5_000 });
   });
 });
