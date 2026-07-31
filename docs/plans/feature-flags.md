@@ -1,6 +1,8 @@
 # Plano: Feature Flags (admin-only) + Modo Manutenção
 
-> **Status:** Fases 1–4 (fundação admin + DB + package + API) e Fase 6 (UI `FeatureFlagsPage` + `MaintenancePage`) **entregues**. Fases 5 (kill switch ingestor) e 7 (E2E dedicado) ainda pendentes. Ver [`docs/roadmap.md`](../roadmap.md) para o status operacional.
+> **Status:** Fases 1–6 (fundação admin + DB + package + API + Dispatcher + UI) **entregues**. Fases 5 (kill switch ingestor) e 7 (E2E dedicado) ainda pendentes. Ver [`docs/roadmap.md`](../roadmap.md) para o status operacional.
+>
+> **Bootstrap admin fechado em 2026-07-31** (rev 0.2.0): `users.is_admin` + migration `0019` + `ADMIN_EMAILS` no `auth.routes.ts` (register/login) + JWT com `isAdmin` + `/me` retornando `isAdmin`. Dívida crítica D do roadmap liquidada.
 >
 > **Este arquivo é a fonte de detalhe das Fases pendentes** (5 + 7). Para o que já foi entregue, ver o resumo do item 8 em [`docs/roadmap.md`](../roadmap.md#-entregue-com-link-para-spec).
 
@@ -564,9 +566,8 @@ Cada fase = commit próprio (conventional commits: `feat(db):`, `feat(api):`, `f
 4. **Client no dispatcher usa conexão PG** — o dispatcher hoje já depende de `@omestre/db` (resolve mirrorId), então não há dependência nova. Confirmar na implementação que `getDb()` está inicializado no startup do dispatcher.
 5. **Auditoria**: por ora, `updated_by/updated_at` (última alteração) + log estruturado no stdout. Histórico completo de alterações (tabela de audit) fica de fora — YAGNI.
 
-
 ## Revision history
 
-| Date       | Version | Change                                | Reason                           |
-| ---------- | ------- | ------------------------------------- | -------------------------------- |
-| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |
+| Date       | Version | Change                       | Reason                           |
+| ---------- | ------- | ---------------------------- | -------------------------------- |
+| 2026-07-28 | 0.1.0   | Adopted spec-driven template | Bootstrap of `spec-driven` skill |
