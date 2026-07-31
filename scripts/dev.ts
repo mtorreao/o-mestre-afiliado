@@ -64,8 +64,8 @@ const hasReliableTunnelConfig = NAMED_TUNNEL_HINTS.some((candidate) => existsSyn
 // Modo do tunnel: 'named' (default), 'quick' (trycloudflare), 'named' ou 'off'.
 // Em main (sem GIT_WORKTREE) usamos o tunnel nomeado. Em worktrees secundários
 // preferimos o quick tunnel para evitar resetar o CNAME do domínio principal.
-const tunnelMode = (process.env.DEV_TUNNEL_MODE
-  ?? (process.env.GIT_WORKTREE === undefined ? 'named' : 'quick')
+const tunnelMode = (
+  process.env.DEV_TUNNEL_MODE ?? (process.env.GIT_WORKTREE === undefined ? 'named' : 'quick')
 ).toLowerCase();
 
 const composeFile = path.join(REPO_ROOT, 'docker-compose.dev.yml');
@@ -80,7 +80,16 @@ let stackStarted = false;
 let currentPorts: PortMap | null = null;
 let tunnelProfileEnabled = false;
 
-const services = ['postgres', 'redis', 'evolution-api', 'api', 'ingestor', 'dispatcher', 'web'];
+const services = [
+  'postgres',
+  'redis',
+  'evolution-api',
+  'api',
+  'ingestor',
+  'dispatcher',
+  'catalog-worker',
+  'web',
+];
 
 type PortMap = {
   web: number;
@@ -90,6 +99,7 @@ type PortMap = {
   redis: number;
   ingestor: number;
   dispatcher: number;
+  catalog: number;
 };
 
 type PersistedState = {
@@ -103,7 +113,11 @@ type PersistedState = {
 };
 
 function text(value: Uint8Array | string | undefined): string {
-  return value === undefined ? '' : value instanceof Uint8Array ? new TextDecoder().decode(value) : String(value);
+  return value === undefined
+    ? ''
+    : value instanceof Uint8Array
+      ? new TextDecoder().decode(value)
+      : String(value);
 }
 
 function runGit(args: string[]): string {
@@ -131,7 +145,9 @@ function findMainWorktree(): string | null {
 }
 
 const worktreePath = runGit(['rev-parse', '--show-toplevel']) || REPO_ROOT;
-const branch = runGit(['branch', '--show-current']) || `detached-${runGit(['rev-parse', '--short', 'HEAD']) || 'head'}`;
+const branch =
+  runGit(['branch', '--show-current']) ||
+  `detached-${runGit(['rev-parse', '--short', 'HEAD']) || 'head'}`;
 const worktreeName = process.env.WORKTREE_NAME ?? path.basename(worktreePath);
 
 function hashString(value: string): number {
@@ -161,12 +177,14 @@ const containerPrefix = `omestre_dev_${slug}`;
 const networkName = `omestre-dev-${slug}-net`;
 const tunnelName = process.env.TUNNEL_NAME ?? `omestre-afiliado-${slug}`;
 const tunnelHostname = process.env.TUNNEL_HOSTNAME ?? `dev-${slug}.${tunnelDomain}`;
-const appEnvFile = process.env.DEV_APP_ENV_FILE
-  ?? (existsSync(path.join(worktreePath, '.env'))
+const appEnvFile =
+  process.env.DEV_APP_ENV_FILE ??
+  (existsSync(path.join(worktreePath, '.env'))
     ? path.join(worktreePath, '.env')
     : path.join(findMainWorktree() ?? REPO_ROOT, '.env'));
-const composeEnvFile = process.env.DEV_COMPOSE_ENV_FILE
-  ?? (existsSync(path.join(worktreePath, '.env')) ? path.join(worktreePath, '.env') : undefined);
+const composeEnvFile =
+  process.env.DEV_COMPOSE_ENV_FILE ??
+  (existsSync(path.join(worktreePath, '.env')) ? path.join(worktreePath, '.env') : undefined);
 const statePath = path.join(lockRoot, `dev-${slug}.json`);
 
 function portMap(base: number): PortMap {
@@ -178,6 +196,7 @@ function portMap(base: number): PortMap {
     redis: base + 5,
     ingestor: base + 6,
     dispatcher: base + 7,
+    catalog: base + 8,
   };
 }
 
@@ -201,7 +220,8 @@ function isPortInUse(host: string, port: number): Promise<boolean> {
 
 async function isPortFree(port: number): Promise<boolean> {
   if (await isPortInUse(bindHost, port)) return false;
-  if (bindHost !== '::1' && bindHost !== '0.0.0.0' && await isPortInUse('::1', port)) return false;
+  if (bindHost !== '::1' && bindHost !== '0.0.0.0' && (await isPortInUse('::1', port)))
+    return false;
   return true;
 }
 
@@ -220,7 +240,8 @@ function readPersistedState(): PersistedState | null {
       parsed.tunnelMode !== tunnelMode ||
       !parsed.ports ||
       allPorts(parsed.ports).some((port) => !Number.isInteger(port))
-    ) return null;
+    )
+      return null;
     return parsed;
   } catch {
     return null;
@@ -242,6 +263,7 @@ function composeEnvironment(ports: PortMap): void {
     DEV_REDIS_HOST_PORT: `${bindHost}:${ports.redis}:6379`,
     DEV_INGESTOR_HOST_PORT: `${bindHost}:${ports.ingestor}:9092`,
     DEV_DISPATCHER_HOST_PORT: `${bindHost}:${ports.dispatcher}:9093`,
+    DEV_CATALOG_HOST_PORT: `${bindHost}:${ports.catalog}:9094`,
   };
   const publicUrl = tunnelPublicUrl();
   const values: Record<string, string> = {
@@ -254,9 +276,13 @@ function composeEnvironment(ports: PortMap): void {
     DEV_APP_ENV_FILE: appEnvFile,
     DEV_CACHE_PREFIX: `evolution_${slug}`,
     DEV_DATABASE_CLIENT_NAME: `omestre_afiliado_${slug}`,
-    FRONTEND_URL: process.env.DEV_FRONTEND_URL ?? (skipTunnel ? `http://localhost:${ports.web}` : publicUrl),
-    ML_REDIRECT_URI: process.env.DEV_ML_REDIRECT_URI
-      ?? (skipTunnel ? `http://localhost:${ports.web}/api/ml/callback` : `${publicUrl}/api/ml/callback`),
+    FRONTEND_URL:
+      process.env.DEV_FRONTEND_URL ?? (skipTunnel ? `http://localhost:${ports.web}` : publicUrl),
+    ML_REDIRECT_URI:
+      process.env.DEV_ML_REDIRECT_URI ??
+      (skipTunnel
+        ? `http://localhost:${ports.web}/api/ml/callback`
+        : `${publicUrl}/api/ml/callback`),
     DEV_TUNNEL_HOSTNAME: tunnelHostname,
     DEV_TUNNEL_PUBLIC_URL: publicUrl,
     ...portEnv,
@@ -292,7 +318,12 @@ function compose(
 function stackIsRunning(): boolean {
   const result = compose(['ps', '--status', 'running', '--services'], true, false);
   if (result.exitCode !== 0) return false;
-  const found = new Set(result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const found = new Set(
+    result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
   return services.every((service) => found.has(service));
 }
 
@@ -311,9 +342,7 @@ async function choosePorts(): Promise<PortMap> {
     throw new Error('DEV_PORT_BASE precisa ser uma porta base entre 1024 e 64000.');
   }
 
-  const firstBase = isExplicitPortBase
-    ? configuredBase
-    : configuredBase + (identityHash % 40) * 10;
+  const firstBase = isExplicitPortBase ? configuredBase : configuredBase + (identityHash % 40) * 10;
   const attempts = isExplicitPortBase ? 1 : 80;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -324,7 +353,9 @@ async function choosePorts(): Promise<PortMap> {
   }
 
   const suffix = isExplicitPortBase ? ` em DEV_PORT_BASE=${configuredBase}` : '';
-  throw new Error(`Não encontrei um bloco de 7 portas livres${suffix}. Outra stack pode estar usando as portas candidatas.`);
+  throw new Error(
+    `Não encontrei um bloco de 7 portas livres${suffix}. Outra stack pode estar usando as portas candidatas.`,
+  );
 }
 
 async function persistState(ports: PortMap): Promise<void> {
@@ -361,9 +392,12 @@ async function cleanStaleLocks(): Promise<void> {
   if (!existsSync(lockRoot)) return;
   const entries = await readdir(lockRoot, { withFileTypes: true });
   for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.startsWith('dev-') || !entry.name.endsWith('.lockdir')) continue;
+    if (!entry.isDirectory() || !entry.name.startsWith('dev-') || !entry.name.endsWith('.lockdir'))
+      continue;
     const directory = path.join(lockRoot, entry.name);
-    const pid = Number((await readFile(path.join(directory, 'pid'), 'utf8').catch(() => '')).trim());
+    const pid = Number(
+      (await readFile(path.join(directory, 'pid'), 'utf8').catch(() => '')).trim(),
+    );
     if (!pid || !processIsAlive(pid)) await rm(directory, { recursive: true, force: true });
   }
 }
@@ -375,9 +409,13 @@ async function acquireLock(): Promise<void> {
   try {
     await mkdir(directory);
   } catch {
-    const pid = Number((await readFile(path.join(directory, 'pid'), 'utf8').catch(() => '')).trim());
+    const pid = Number(
+      (await readFile(path.join(directory, 'pid'), 'utf8').catch(() => '')).trim(),
+    );
     if (pid && processIsAlive(pid)) {
-      throw new Error(`Já existe um dev server para este worktree (PID ${pid}). Não vou derrubar o ambiente de outro agente.`);
+      throw new Error(
+        `Já existe um dev server para este worktree (PID ${pid}). Não vou derrubar o ambiente de outro agente.`,
+      );
     }
     await rm(directory, { recursive: true, force: true });
     await mkdir(directory);
@@ -395,7 +433,11 @@ async function releaseLock(): Promise<void> {
 }
 
 function dockerAvailable(): boolean {
-  const result = Bun.spawnSync(['docker', '--version'], { stdout: 'pipe', stderr: 'pipe', timeout: 10_000 });
+  const result = Bun.spawnSync(['docker', '--version'], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: 10_000,
+  });
   return result.exitCode === 0;
 }
 
@@ -420,7 +462,10 @@ function stopStack(): void {
   }
 }
 
-function cloudflared(args: string[], capture = false): { exitCode: number; stdout: string; stderr: string } {
+function cloudflared(
+  args: string[],
+  capture = false,
+): { exitCode: number; stdout: string; stderr: string } {
   const result = Bun.spawnSync([cloudflaredBin, ...args], {
     cwd: REPO_ROOT,
     stdout: capture ? 'pipe' : 'inherit',
@@ -443,9 +488,12 @@ async function cloudflareRequest<T>(pathName: string, init?: RequestInit): Promi
       ...init?.headers,
     },
   });
-  const data = await response.json() as CloudflareResponse<T>;
+  const data = (await response.json()) as CloudflareResponse<T>;
   if (!response.ok || !data.success) {
-    const reason = data.errors?.map((error) => error.message).filter(Boolean).join('; ');
+    const reason = data.errors
+      ?.map((error) => error.message)
+      .filter(Boolean)
+      .join('; ');
     throw new Error(`Cloudflare API ${response.status}: ${reason || 'falha desconhecida'}`);
   }
   return data.result;
@@ -470,10 +518,10 @@ async function ensureTunnelDns(tunnelUuid: string): Promise<void> {
       { method: 'PUT', body: payload },
     );
   } else {
-    await cloudflareRequest<CloudflareDnsRecord>(
-      `/zones/${cloudflareZoneId}/dns_records`,
-      { method: 'POST', body: payload },
-    );
+    await cloudflareRequest<CloudflareDnsRecord>(`/zones/${cloudflareZoneId}/dns_records`, {
+      method: 'POST',
+      body: payload,
+    });
   }
   console.log(`  ✓ [tunnel] DNS configurado: ${tunnelHostname}`);
 }
@@ -498,7 +546,9 @@ function resolveTunnelId(): string {
   console.log(`  🚇 [tunnel] Criando tunnel Cloudflare: ${tunnelName}`);
   const created = cloudflared(['tunnel', 'create', tunnelName], true);
   if (created.exitCode !== 0) {
-    throw new Error(`Não foi possível criar o tunnel ${tunnelName}: ${created.stderr || created.stdout}`);
+    throw new Error(
+      `Não foi possível criar o tunnel ${tunnelName}: ${created.stderr || created.stdout}`,
+    );
   }
 
   const createdId = `${created.stdout}\n${created.stderr}`.match(
@@ -524,8 +574,9 @@ async function prepareNamedTunnel(): Promise<void> {
     return;
   }
 
-  const credentialsFile = process.env.TUNNEL_CREDENTIALS_FILE
-    ?? path.join(HOME, '.cloudflared', `${resolvedTunnelId}.json`);
+  const credentialsFile =
+    process.env.TUNNEL_CREDENTIALS_FILE ??
+    path.join(HOME, '.cloudflared', `${resolvedTunnelId}.json`);
   if (!existsSync(credentialsFile)) {
     throw new Error(`Credencial do tunnel não encontrada: ${credentialsFile}`);
   }
@@ -558,7 +609,9 @@ async function prepareNamedTunnel(): Promise<void> {
     console.log(`  ℹ [tunnel] DNS via API habilitado para ${tunnelHostname}`);
   } else {
     console.log(`  ℹ [tunnel] DNS automático desativado para ${tunnelHostname}.`);
-    console.log('    Configure o CNAME no dashboard Cloudflare ou informe CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID da zona correta.');
+    console.log(
+      '    Configure o CNAME no dashboard Cloudflare ou informe CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID da zona correta.',
+    );
   }
 
   await ensureTunnelDns(resolvedTunnelId);
@@ -567,7 +620,9 @@ async function prepareNamedTunnel(): Promise<void> {
 
 async function prepareQuickTunnel(): Promise<void> {
   if (requestedDryRun) {
-    console.log(`  ℹ [tunnel] Dry-run: subiria um quick tunnel ${tunnelMode === 'quick' ? 'forçado' : 'automático'}`);
+    console.log(
+      `  ℹ [tunnel] Dry-run: subiria um quick tunnel ${tunnelMode === 'quick' ? 'forçado' : 'automático'}`,
+    );
     return;
   }
   const url = currentPorts ? `http://127.0.0.1:${currentPorts.web}` : 'http://127.0.0.1:5441';
@@ -602,7 +657,9 @@ async function prepareQuickTunnel(): Promise<void> {
               console.log('');
               console.log('  ┌──────────────────────────────────────────────────────────────');
               console.log(`  │  URL pública (quick tunnel): ${quickTunnelUrl}`);
-              console.log(`  │  URL local:                 http://localhost:${currentPorts?.web ?? 5441}`);
+              console.log(
+                `  │  URL local:                 http://localhost:${currentPorts?.web ?? 5441}`,
+              );
               console.log('  └──────────────────────────────────────────────────────────────');
               console.log('');
               composeEnvironment(currentPorts!);
@@ -660,10 +717,14 @@ function printConfiguration(ports: PortMap): void {
   console.log(`  Worktree:  ${worktreeName}`);
   console.log(`  Slug:      ${slug}`);
   console.log(`  Compose:   ${composeProject}`);
-  console.log(`  Modo:      ${tunnelMode === 'quick' ? 'quick tunnel (trycloudflare)' : 'tunnel nomeado'}`);
+  console.log(
+    `  Modo:      ${tunnelMode === 'quick' ? 'quick tunnel (trycloudflare)' : 'tunnel nomeado'}`,
+  );
   console.log(`  Tunnel:    ${skipTunnel ? 'SKIP' : tunnelPublicUrl()}`);
   if (!skipTunnel && tunnelMode === 'named' && (!cloudflareApiToken || !cloudflareZoneId)) {
-    console.log('              DNS automático desativado (configure CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID)');
+    console.log(
+      '              DNS automático desativado (configure CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID)',
+    );
   }
   console.log(`  Web:       http://localhost:${ports.web}`);
   console.log(`  API:       http://localhost:${ports.api}`);
@@ -672,10 +733,13 @@ function printConfiguration(ports: PortMap): void {
   console.log(`  Redis:     localhost:${ports.redis}`);
   console.log(`  Ingestor:  localhost:${ports.ingestor}`);
   console.log(`  Dispatcher: localhost:${ports.dispatcher}`);
+  console.log(`  Catalog:   localhost:${ports.catalog}`);
   console.log(`  Env:       ${appEnvFile}`);
   console.log('');
   if (!skipTunnel && tunnelMode === 'quick') {
-    console.log('  ℹ A URL pública do quick tunnel aparece logo abaixo assim que o cloudflared conectar.');
+    console.log(
+      '  ℹ A URL pública do quick tunnel aparece logo abaixo assim que o cloudflared conectar.',
+    );
     console.log('');
   }
 }
@@ -687,8 +751,12 @@ async function waitForever(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  process.on('SIGINT', () => { void cleanup(130); });
-  process.on('SIGTERM', () => { void cleanup(143); });
+  process.on('SIGINT', () => {
+    void cleanup(130);
+  });
+  process.on('SIGTERM', () => {
+    void cleanup(143);
+  });
   process.on('uncaughtException', (error) => {
     console.error('\nErro não capturado:', error);
     void cleanup(1);
@@ -703,7 +771,9 @@ async function main(): Promise<void> {
     return;
   }
   if (!existsSync(appEnvFile)) {
-    throw new Error(`Arquivo de ambiente não encontrado: ${appEnvFile}. Crie .env no worktree ou defina DEV_APP_ENV_FILE.`);
+    throw new Error(
+      `Arquivo de ambiente não encontrado: ${appEnvFile}. Crie .env no worktree ou defina DEV_APP_ENV_FILE.`,
+    );
   }
   if (!existsSync(composeFile)) throw new Error(`Compose não encontrado: ${composeFile}`);
   if (!dockerAvailable()) throw new Error('Docker Desktop não está disponível.');

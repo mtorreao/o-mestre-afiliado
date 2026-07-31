@@ -59,9 +59,9 @@ services:
     volumes:
       - omestre_dev_postgres_data:/var/lib/postgresql/data
     ports:
-      - "${DEV_POSTGRES_HOST_PORT:-127.0.0.1:5453:5432}"
+      - '${DEV_POSTGRES_HOST_PORT:-127.0.0.1:5453:5432}'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U evolution -d omestre_db"]
+      test: ['CMD-SHELL', 'pg_isready -U evolution -d omestre_db']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -76,9 +76,9 @@ services:
     volumes:
       - omestre_dev_redis_data:/data
     ports:
-      - "${DEV_REDIS_HOST_PORT:-127.0.0.1:5455:6379}"
+      - '${DEV_REDIS_HOST_PORT:-127.0.0.1:5455:6379}'
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -95,7 +95,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "${DEV_EVOLUTION_HOST_PORT:-127.0.0.1:5454:8080}"
+      - '${DEV_EVOLUTION_HOST_PORT:-127.0.0.1:5454:8080}'
     volumes:
       - omestre_dev_evolution_instances:/evolution/instances
     environment:
@@ -104,13 +104,13 @@ services:
       DATABASE_CONNECTION_URI: >-
         postgresql://evolution:${POSTGRES_PASSWORD:-evolution_pass}@postgres:5432/omestre_db?schema=evolution_api
       DATABASE_CONNECTION_CLIENT_NAME: ${DEV_DATABASE_CLIENT_NAME:-omestre_afiliado_dev}
-      DATABASE_SAVE_DATA_INSTANCE: "true"
-      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
-      DATABASE_SAVE_MESSAGE_UPDATE: "true"
-      DATABASE_SAVE_DATA_CONTACTS: "true"
-      DATABASE_SAVE_DATA_CHATS: "true"
-      DATABASE_SAVE_DATA_LABELS: "true"
-      DATABASE_SAVE_DATA_HISTORIC: "true"
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      DATABASE_SAVE_DATA_CONTACTS: 'true'
+      DATABASE_SAVE_DATA_CHATS: 'true'
+      DATABASE_SAVE_DATA_LABELS: 'true'
+      DATABASE_SAVE_DATA_HISTORIC: 'true'
 
       # ── Server ────────────────────────────────────────────────────────
       SERVER_NAME: evolution
@@ -119,25 +119,25 @@ services:
       SERVER_URL: http://localhost:8080
 
       # ── Cache (Redis) ─────────────────────────────────────────────────
-      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_ENABLED: 'true'
       CACHE_REDIS_URI: redis://redis:6379/6
       CACHE_REDIS_TTL: 604800
       CACHE_REDIS_PREFIX_KEY: ${DEV_CACHE_PREFIX:-evolution_omestre_dev}
 
       # ── Auth ──────────────────────────────────────────────────────────
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-dev-api-key}
-      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'true'
 
       # ── Webhook Global ────────────────────────────────────────────────
       # Aponta para o container api na rede Docker (porta 5442)
-      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: 'true'
       WEBHOOK_GLOBAL_URL: http://api:5442/webhook/message
-      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
-      WEBHOOK_EVENTS_CONNECTION_UPDATE: "true"
-      WEBHOOK_EVENTS_QRCODE_UPDATED: "true"
-      WEBHOOK_EVENTS_GROUPS_UPSERT: "true"
-      WEBHOOK_EVENTS_GROUPS_UPDATE: "true"
-      WEBHOOK_EVENTS_GROUP_PARTICIPANTS_UPDATE: "true"
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: 'true'
+      WEBHOOK_EVENTS_CONNECTION_UPDATE: 'true'
+      WEBHOOK_EVENTS_QRCODE_UPDATED: 'true'
+      WEBHOOK_EVENTS_GROUPS_UPSERT: 'true'
+      WEBHOOK_EVENTS_GROUPS_UPDATE: 'true'
+      WEBHOOK_EVENTS_GROUP_PARTICIPANTS_UPDATE: 'true'
 
       # ── Logs ──────────────────────────────────────────────────────────
       LOG_LEVEL: ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS,WEBSOCKET
@@ -145,29 +145,29 @@ services:
 
       # ── QR Code ───────────────────────────────────────────────────────
       QRCODE_LIMIT: 30
-      QRCODE_COLOR: "#175197"
+      QRCODE_COLOR: '#175197'
 
       # ── Misc ──────────────────────────────────────────────────────────
-      DEL_INSTANCE: "false"
+      DEL_INSTANCE: 'false'
       LANGUAGE: pt-BR
-      CONFIG_SESSION_PHONE_CLIENT: "O Mestre Afiliado (Dev)"
+      CONFIG_SESSION_PHONE_CLIENT: 'O Mestre Afiliado (Dev)'
       CONFIG_SESSION_PHONE_NAME: Chrome
-      CORS_ORIGIN: "*"
-      CORS_CREDENTIALS: "true"
+      CORS_ORIGIN: '*'
+      CORS_CREDENTIALS: 'true'
 
       # ── Desabilitar integrações não utilizadas ────────────────────────
-      TYPEBOT_ENABLED: "false"
-      CHATWOOT_ENABLED: "false"
-      OPENAI_ENABLED: "false"
-      DIFY_ENABLED: "false"
-      N8N_ENABLED: "false"
-      EVOAI_ENABLED: "false"
-      S3_ENABLED: "false"
-      RABBITMQ_ENABLED: "false"
-      KAFKA_ENABLED: "false"
-      SQS_ENABLED: "false"
-      PUSHER_ENABLED: "false"
-      WEBSOCKET_ENABLED: "false"
+      TYPEBOT_ENABLED: 'false'
+      CHATWOOT_ENABLED: 'false'
+      OPENAI_ENABLED: 'false'
+      DIFY_ENABLED: 'false'
+      N8N_ENABLED: 'false'
+      EVOAI_ENABLED: 'false'
+      S3_ENABLED: 'false'
+      RABBITMQ_ENABLED: 'false'
+      KAFKA_ENABLED: 'false'
+      SQS_ENABLED: 'false'
+      PUSHER_ENABLED: 'false'
+      WEBSOCKET_ENABLED: 'false'
     networks:
       - omestre-dev-net
 
@@ -188,14 +188,14 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "${DEV_API_HOST_PORT:-127.0.0.1:5452:5442}"
+      - '${DEV_API_HOST_PORT:-127.0.0.1:5452:5442}'
     env_file:
       - ${DEV_APP_ENV_FILE:-.env}
     environment:
       # Sobrescreve .env para apontar para os containers Docker
-      API_PORT: "5442"
+      API_PORT: '5442'
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      POSTGRES_PORT: '5432'
       POSTGRES_USERNAME: evolution
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
       POSTGRES_DATABASE: omestre_db
@@ -214,7 +214,13 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       METRICS_API_KEY: ${METRICS_API_KEY}
     healthcheck:
-      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)"]
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)",
+        ]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -229,7 +235,7 @@ services:
     container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_ingestor
     restart: unless-stopped
     ports:
-      - "${DEV_INGESTOR_HOST_PORT:-127.0.0.1:9092:9092}"
+      - '${DEV_INGESTOR_HOST_PORT:-127.0.0.1:9092:9092}'
     depends_on:
       api:
         condition: service_healthy
@@ -237,7 +243,7 @@ services:
       - ${DEV_APP_ENV_FILE:-.env}
     environment:
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      POSTGRES_PORT: '5432'
       POSTGRES_USERNAME: evolution
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
       POSTGRES_DATABASE: omestre_db
@@ -249,7 +255,7 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       BLACKLIST_PATH: /app/blacklist.json
       WHITELIST_PATH: /app/whitelist.json
-      METRICS_PORT: "9092"
+      METRICS_PORT: '9092'
     volumes:
       - ./blacklist.json:/app/blacklist.json:ro
       - ./whitelist.json:/app/whitelist.json:ro
@@ -263,7 +269,7 @@ services:
     container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_dispatcher
     restart: unless-stopped
     ports:
-      - "${DEV_DISPATCHER_HOST_PORT:-127.0.0.1:9093:9093}"
+      - '${DEV_DISPATCHER_HOST_PORT:-127.0.0.1:9093:9093}'
     depends_on:
       api:
         condition: service_healthy
@@ -271,7 +277,7 @@ services:
       - ${DEV_APP_ENV_FILE:-.env}
     environment:
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      POSTGRES_PORT: '5432'
       POSTGRES_USERNAME: evolution
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
       POSTGRES_DATABASE: omestre_db
@@ -281,7 +287,46 @@ services:
       REDIS_URL: redis://redis:6379
       METRICS_API_KEY: ${METRICS_API_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      METRICS_PORT: "9093"
+      METRICS_PORT: '9093'
+    networks:
+      - omestre-dev-net
+
+  catalog-worker:
+    build:
+      context: .
+      dockerfile: apps/catalog-worker/Dockerfile
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_catalog_worker
+    restart: unless-stopped
+    ports:
+      - '${DEV_CATALOG_HOST_PORT:-127.0.0.1:5456:9094}'
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - ${DEV_APP_ENV_FILE:-.env}
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      REDIS_URL: redis://redis:6379
+      METRICS_API_KEY: ${METRICS_API_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      METRICS_PORT: '9094'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r=await fetch('http://localhost:9094/health');process.exit(r.ok?0:1)",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
     networks:
       - omestre-dev-net
 
@@ -295,7 +340,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${DEV_WEB_HOST_PORT:-127.0.0.1:5451:5441}"
+      - '${DEV_WEB_HOST_PORT:-127.0.0.1:5451:5441}'
     environment:
       # Já tem default api:5442 no Dockerfile, mas explícito é mais seguro
       API_UPSTREAM: api:5442
@@ -318,8 +363,8 @@ services:
         condition: service_started
     command: tunnel --config /etc/cloudflared/config.yml run
     volumes:
-      - "${DEV_TUNNEL_CONFIG_HOST_PATH:-./deploy/cloudflared/config.yml}:/etc/cloudflared/config.yml:ro"
-      - "${DEV_TUNNEL_CREDENTIALS_HOST_PATH:-${HOME}/.cloudflared/f1437a45-faee-4b13-ba05-04a87bbecbae.json}:/etc/cloudflared/${DEV_TUNNEL_ID:-f1437a45-faee-4b13-ba05-04a87bbecbae}.json:ro"
+      - '${DEV_TUNNEL_CONFIG_HOST_PATH:-./deploy/cloudflared/config.yml}:/etc/cloudflared/config.yml:ro'
+      - '${DEV_TUNNEL_CREDENTIALS_HOST_PATH:-${HOME}/.cloudflared/f1437a45-faee-4b13-ba05-04a87bbecbae.json}:/etc/cloudflared/${DEV_TUNNEL_ID:-f1437a45-faee-4b13-ba05-04a87bbecbae}.json:ro'
     networks:
       - omestre-dev-net
 
