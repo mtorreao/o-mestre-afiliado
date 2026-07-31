@@ -19,6 +19,7 @@ import {
   ChevronRight,
   GitFork,
   Flag,
+  TrendingUp,
 } from 'lucide-react';
 
 export type NavItem =
@@ -28,7 +29,8 @@ export type NavItem =
   | 'mirror-logs'
   | 'mirror-form'
   | 'worker-status'
-  | 'feature-flags';
+  | 'feature-flags'
+  | 'historico-precos';
 
 interface AppShellLayoutProps {
   userName: string;
@@ -48,6 +50,7 @@ function pathToNav(pathname: string): NavItem {
       'mirror-logs',
       'worker-status',
       'feature-flags',
+      'historico-precos',
     ].includes(path)
   ) {
     return path as NavItem;
@@ -64,6 +67,7 @@ const pageTitles: Record<NavItem, string> = {
   'mirror-form': 'Novo Espelhamento',
   'worker-status': 'Status do Worker',
   'feature-flags': 'Feature Flags',
+  'historico-precos': 'Histórico de Preços',
 };
 
 export function AppShellLayout({ userName, onLogout, isAdmin }: AppShellLayoutProps) {
@@ -76,6 +80,7 @@ export function AppShellLayout({ userName, onLogout, isAdmin }: AppShellLayoutPr
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { id: 'mirrors', label: 'Espelhamentos', icon: <GitFork size={18} /> },
     { id: 'feature-flags', label: 'Feature Flags', icon: <Flag size={18} /> },
+    { id: 'historico-precos', label: 'Histórico de Preços', icon: <TrendingUp size={18} /> },
     { id: 'settings', label: 'Configurações', icon: <Settings size={18} /> },
     { id: 'mirror-logs', label: 'Logs de espelhamento', icon: <Repeat2 size={18} /> },
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
@@ -83,7 +88,7 @@ export function AppShellLayout({ userName, onLogout, isAdmin }: AppShellLayoutPr
 
   // Filtra itens admin se não for admin
   const visibleNavItems = navItems.filter((item) => {
-    if (item.id === 'feature-flags') return !!isAdmin;
+    if (item.id === 'feature-flags' || item.id === 'historico-precos') return !!isAdmin;
     return true;
   });
 

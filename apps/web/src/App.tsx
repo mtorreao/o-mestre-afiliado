@@ -11,6 +11,7 @@
  *   /settings       → SettingsPage (protegida)
  *   /mirror-logs    → MirrorLogsPage (protegida)
  *   /worker-status  → WorkerStatusPage (protegida)
+ *   /historico-precos → ProductHistoryPage (protegida, admin)
  */
 import { useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
@@ -25,6 +26,7 @@ import { SettingsPage } from './pages/SettingsPage.tsx';
 import { MirrorsPage } from './pages/MirrorsPage.tsx';
 import { MirrorFormPage } from './pages/MirrorFormPage.tsx';
 import { FeatureFlagsPage } from './pages/FeatureFlagsPage.tsx';
+import { ProductHistoryPage } from './pages/ProductHistoryPage.tsx';
 import { MaintenancePage } from './pages/MaintenancePage.tsx';
 import { AppShellLayout } from './components/layout/AppShell.tsx';
 import { ToastProvider } from './components/ui/index.ts';
@@ -174,6 +176,7 @@ function App() {
             element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
           />
           <Route path="feature-flags" element={<FeatureFlagsPage />} />
+          <Route path="historico-precos" element={<ProductHistoryPage />} />
         </Route>
 
         {/* Manutenção (sem AppShell) */}
