@@ -10,6 +10,7 @@ export interface UserPublic {
   id: number;
   email: string;
   name: string;
+  isAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,6 +23,7 @@ export function toUserPublic(user: {
   id: number;
   email: string;
   name: string;
+  isAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
   passwordHash: string;
@@ -30,7 +32,25 @@ export function toUserPublic(user: {
     id: user.id,
     email: user.email,
     name: user.name,
+    isAdmin: user.isAdmin === true,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
+}
+
+/**
+ * Decide se um email deve virar admin baseado no env ADMIN_EMAILS (CSV).
+ *
+ * - Match exato, case-insensitive, trimmed.
+ * - Emails vazios na lista são ignorados.
+ * - Lista vazia / undefined → ninguém é admin via env (retorna false).
+ */
+export function isEmailAdminAllowed(email: string, adminEmailsCsv: string | undefined): boolean {
+  if (!adminEmailsCsv) return false;
+  const allowed = adminEmailsCsv
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e.length > 0);
+  if (allowed.length === 0) return false;
+  return allowed.includes(email.trim().toLowerCase());
 }

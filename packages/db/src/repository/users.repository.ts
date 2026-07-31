@@ -56,4 +56,19 @@ export class UserRepository {
     const user = await this.findByEmail(email);
     return user ? toUserPublic(user) : null;
   }
+
+  /**
+   * Promove um usuário a admin (idempotente).
+   * Chamado pelo bootstrap de ADMIN_EMAILS no login/register.
+   * Retorna o user atualizado, ou null se não encontrado.
+   */
+  async promoteToAdmin(email: string): Promise<User | null> {
+    const db = getDb();
+    const [row] = await db
+      .update(users)
+      .set({ isAdmin: true })
+      .where(eq(users.email, email))
+      .returning();
+    return row ?? null;
+  }
 }
