@@ -86,8 +86,11 @@ CREATE TABLE omestre.price_history (
   message_id       text                                 -- msgId original (rastreabilidade)
 );
 -- Dedup de corrida + janela de 1h (Melhoria 2): conflitos não inserem
+-- NULLS NOT DISTINCT (PG15+): sem ele, list_price NULL (Shopee/Amazon) nunca
+-- conflita num índice UNIQUE — o dedup de 1h não funcionaria para esses casos.
 CREATE UNIQUE INDEX IF NOT EXISTS price_history_dedup_idx
-  ON omestre.price_history (variation_id, price_bucket, price, list_price, available);
+  ON omestre.price_history (variation_id, price_bucket, price, list_price, available)
+  NULLS NOT DISTINCT;
 CREATE INDEX IF NOT EXISTS price_history_variation_idx
   ON omestre.price_history (variation_id, captured_at);
 ```
@@ -135,10 +138,12 @@ Novo `apps/catalog-worker/src/catalog-worker.ts` (mesmo padrão do v2: Redis Str
    - **ML**: `GET https://api.mercadolibre.com/items/{id}` (público, sem auth) → `title`, `pictures[0].url`, `variations[]` (`id`, `price`, `original_price`, `available_quantity`, `attribute_combinations`).
    - **Shopee**: `getProductOffer(resolvedUrl, creds)` (GraphQL) → `productName`, `imageUrl`, `price`. _creds_: o worker precisa resolver o `userId` a partir do `sourceGroupJid` (cache de sourceGroup → `affiliateId` → `userId`) OU receber `userId` no job. **Decisão**: incluir `userId` no `CatalogJob` (preencido pelo ingestor a partir do `SourceGroupConfig` que ele já tem no fan-out) — assim o worker não refaz a resolução.
    - **Amazon/outros**: `title` do `TemplateContext`/`text` (se vier no job), `price = null` (deixa pra fase futura).
+   - **Sem dado útil** (fetch falhou, sem creds Shopee, marketplace não suportado): descarta o job com ACK (`kind: 'none'` + reason) — a DLQ é para falhas REAIS (infra/DB), não para produto sem oferta ativa.
 2. **Upsert `products`**: `INSERT ... ON CONFLICT (product_key) DO UPDATE SET last_seen_at=now(), title=EXCLUDED.title, image_url=EXCLUDED.image_url`. Retorna `productId`.
 3. **Resolver variações** (do dado fresco buscado no passo 1):
    - ML: `variation_key = ${product_key}:${v.id}`, `variation_name` de `attribute_combinations[].value_name`, `list_price = v.original_price`, `stock = v.available_quantity`, `available = v.available_quantity > 0`.
    - Shopee/Amazon/outros: variação **única implícita** (`variation_key = ${product_key}:default`, `variation_name = title`, `price = shopeeOffer?.price`).
+   - **Decisão**: variação do ML sem `price` é **pulada** (filtrada), não vira erro — uma variação ruim não pode mandar o job inteiro pra DLQ. Se sobrarem 0 variações úteis, o job é descartado com ACK.
 4. **Upsert `product_variations`** (`ON CONFLICT (variation_key) DO UPDATE SET last_seen_at=now()`).
 5. **Append de preço** (sempre INSERT, dedup via índice único):
    ```ts
@@ -238,7 +243,7 @@ Webhook → Queue A (omestre:mirror:raw) → Ingestor (converte + envia) → Que
 
 ### 8.2. Contratos
 
-- **Queue C**: `omestre:mirror:catalog` (Redis Stream). Consumer group `omestre:mirror:catalog:cg` (1 consumer; escala com mais consumers se precisar).
+- **Queue C**: `omestre:mirror:catalog` (Redis Stream). Consumer group `mirror-catalog` (constante `MIRROR_CATALOG_CONSUMER_GROUP` em `packages/shared/src/index.ts`, mesmo padrão `mirror-raw`/`mirror-send`; 1 consumer, escala com mais consumers se precisar).
 - **`CatalogJob`** (tipo em `packages/shared/src/mirror-message.ts`, seção 3.1) — **só identidade + contexto**: `productKey`, `marketplace`, `itemId`, `resolvedUrl`, `sourceGroupJid`, `messageId`, `capturedAt`, e `userId` (preencido pelo ingestor a partir do `SourceGroupConfig` do fan-out, pra o worker Shopee resolver `creds` sem refazer a resolução). **Nenhum dado de preço/variação/imagem** — o worker busca tudo fresco na fonte.
 - **DLQ** via `packages/worker-common` (mesmo `pushToDLQ` do v2). Job falho vai pra DLQ, não trava a fila.
 
@@ -285,9 +290,9 @@ Webhook → Queue A (omestre:mirror:raw) → Ingestor (converte + envia) → Que
 - **Gestão de admins via UI** (promover/rebaixar) — hoje é só `ADMIN_EMAILS` (env).
 - **Heartbeat diário** (Melhoria 4): subir `price_bucket` pra truncagem diária e inserir 1 snapshot/dia mesmo sem mudança de preço (mostrar "estável há N dias"). Opcional — o único índice de 1h já cobre dedup; se quiser heartbeat, trocar `date_trunc('hour')` por `date_trunc('day')` no `CatalogJob`.
 
-
 ## Revision history
 
-| Date       | Version | Change                                | Reason                           |
-| ---------- | ------- | ------------------------------------- | -------------------------------- |
-| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |
+| Date       | Version | Change                                                                                                                                       | Reason                                                            |
+| ---------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 2026-07-28 | 0.1.0   | Adopted spec-driven template                                                                                                                 | Bootstrap of `spec-driven` skill                                  |
+| 2026-07-31 | 0.2.0   | Rev C3 (CatalogWorker): documentado skip de variação ML sem price, política de descarte sem dado útil e consumer group real `mirror-catalog` | Decisões tomadas na implementação do worker (apps/catalog-worker) |
