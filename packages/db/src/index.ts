@@ -122,3 +122,13 @@ export {
   buildSingleVariationFromShopee,
   ensureCatalogFetchResult,
 } from './repository/catalog-pure.ts';
+export type {
+  CatalogMarketplace,
+  CatalogListFilters,
+  CatalogProductSummary,
+  CatalogListResponse,
+  CatalogVariation,
+  CatalogPricePoint,
+  CatalogProductDetail,
+  CatalogVariationWithHistory,
+} from './repository/catalog.repository.ts';
