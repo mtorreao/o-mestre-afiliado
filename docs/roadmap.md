@@ -1,6 +1,6 @@
 # Roadmap — O Mestre Afiliado
 
-**Last updated:** 2026-07-28
+**Last updated:** 2026-07-31
 **Owner:** Matheus Torreão
 
 How to read this file:
@@ -20,21 +20,24 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 
 ## ⚠️ Dívida crítica (corrigir antes de novas features)
 
-### D — Bootstrap admin quebrado
+### ~~D — Bootstrap admin quebrado~~ ✅ FECHADO em 2026-07-31
 
-**Why this is critical:** without `is_admin` in `users` + `ADMIN_EMAILS` in config + JWT assignment on login, **no user becomes admin through the normal flow**. The `FeatureFlagsPage` UI is drawn but inaccessible. Blocks catalog (admin-only UI), operational feature flags, and any new kill switch.
+**Why this was critical:** without `is_admin` in `users` + `ADMIN_EMAILS` in config + JWT assignment on login, **no user becomes admin through the normal flow**. The `FeatureFlagsPage` UI is drawn but inaccessible. Blocks catalog (admin-only UI), operational feature flags, and any new kill switch.
 
-- 📋 Plan: `docs/plans/feature-flags.md` §Fases 1+ (foundation); admin bootstrap prerequisite documented in `docs/plans/historico-precos.md` §5.5.
+- ✅ Plan: `docs/plans/feature-flags.md` §Fase 1 (fundação admin) — entregue. Plan `docs/plans/historico-precos.md` §5.5 ainda referencia o mesmo desenho.
 
 **Acceptance criteria:**
-- [ ] `users.is_admin` column exists; admin bootstrap via `ADMIN_EMAILS` env works.
-- [ ] JWT carries `isAdmin` claim; login/register pass it.
-- [ ] A real admin can log in and reach `FeatureFlagsPage`.
-- [ ] Toggling `evolution_send_enabled` actually pauses the dispatcher.
+
+- [x] `users.is_admin` column exists; admin bootstrap via `ADMIN_EMAILS` env works. (Migration `0019_add_users_is_admin.sql`, aplicada.)
+- [x] JWT carries `isAdmin` claim; login/register pass it. (`apps/api/src/modules/auth/auth.routes.ts` — `jwt.sign({ userId, userEmail, isAdmin })`.)
+- [x] A real admin can log in and reach `FeatureFlagsPage`. (Validado E2E manual: register `admin@omestreafiliado.com.br` → JWT com `isAdmin=true` → `GET /api/admin/feature-flags` retorna as 2 flags.)
+- [x] Toggling `evolution_send_enabled` actually pauses the dispatcher. (Validado E2E manual: PATCH `false` → log `"Envio pausado por feature flag"` no dispatcher em ~5s; PATCH `true` → mainLoop retoma.)
+
+**O que falta:** E2E specs (`e2e/feature-flags.api.spec.ts` + `e2e/feature-flags.ui.spec.ts`) — coberto na Phase 8.
 
 ---
 
-## Phase 1: Bootstrap admin + feature flags operacionais
+## Phase 1: ~~Bootstrap admin + feature flags operacionais~~ ✅ FECHADO em 2026-07-31
 
 **Objective:** any user in `ADMIN_EMAILS` can log in as admin, reach the feature-flags UI, and flip operational kill switches end-to-end.
 
@@ -42,16 +45,17 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 
 **Dependencies:** none.
 
-**Expected output:** admin login works via env-defined emails; `FeatureFlagsPage` reachable; `evolution_send_enabled` toggle actually pauses/resumes the dispatcher; E2E test that drives the full toggle.
+**Expected output:** ✅ entregue — admin login funciona via env; `FeatureFlagsPage` alcançável; `evolution_send_enabled` toggle pausa/retoma o dispatcher; gate de manutenção corrige bug original (agora só admin bypassa).
 
-- 📋 `docs/plans/feature-flags.md` (Fases 1+ foundation + dispatcher kill switch + E2E)
-- 📋 `docs/plans/historico-precos.md` §5.5 (admin foundation reuses the same `is_admin` + `ADMIN_EMAILS` design)
+- 📋 `docs/plans/feature-flags.md` (Fases 1–4 + 5+6 entregues — só Fases 5-ingestor-kill-switch e 7-E2E-dedicado pendentes, em Phase 8)
+- 📋 `docs/plans/historico-precos.md` §5.5 (admin foundation entregue e reusada pelo catálogo)
 
 **Acceptance criteria:**
-- [ ] `users.is_admin` migration applied; `ADMIN_EMAILS` env documented in `.env.example`.
-- [ ] JWT carries `isAdmin`; backend guards use it.
-- [ ] Dispatcher reads `evolution_send_enabled` flag in `mainLoop` before XREADGROUP (pause behavior).
-- [ ] E2E: admin logs in → opens `FeatureFlagsPage` → toggles `evolution_send_enabled` → asserts no message leaves Queue B for the paused window.
+
+- [x] `users.is_admin` migration applied; `ADMIN_EMAILS` env documented in `.env.example`.
+- [x] JWT carries `isAdmin`; backend guards use it.
+- [x] Dispatcher reads `evolution_send_enabled` flag in `mainLoop` before XREADGROUP (pause behavior).
+- [x] E2E: admin logs in → opens `FeatureFlagsPage` → toggles `evolution_send_enabled` → asserts no message leaves Queue B for the paused window. _(manual E2E validado em 2026-07-31; spec automatizado entra na Phase 8.)_
 
 ---
 
@@ -68,6 +72,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 - 📋 `docs/plans/magalu.md`
 
 **Acceptance criteria:**
+
 - [ ] `magalu_affiliates` table (per `ml_affiliates` shape) + repository.
 - [ ] `convertMagaluUrl()` returns a `ConversionResult` (pure function) — never throws.
 - [ ] `POST /api/magalu/convert` endpoint following the same pattern as `/api/ml/convert`.
@@ -90,6 +95,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 - 📋 `docs/plans/historico-precos.md`
 
 **Acceptance criteria:**
+
 - [ ] `apps/catalog-worker` consumes Queue C `omestre:mirror:catalog`.
 - [ ] `products`, `variations`, `price_points` tables populated by CatalogWorker.
 - [ ] Admin UI: catalog browse + price history chart per variation.
@@ -110,6 +116,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 - 📋 `docs/plans/melhorias-ml.md` (cross-cutting ML patterns to apply to Amazon)
 
 **Acceptance criteria:**
+
 - [ ] All Amazon E2E green (`e2e/amazon.api.spec.ts`, `e2e/amazon.ui.spec.ts`).
 - [ ] Per-marketplace counters exposed in `WorkerStatusPage`.
 - [ ] Link verifier cron runs against all known Amazon shortlinks.
@@ -129,6 +136,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 - 📋 plan TBD (`docs/plans/tenant-and-invites.md`)
 
 **Acceptance criteria:**
+
 - [ ] `affiliate_accounts`, `affiliate_members` tables + repository.
 - [ ] Invite flow: owner sends invite email → recipient accepts → account-scoped JWT.
 - [ ] Per-member per-marketplace permission matrix enforced at the API layer.
@@ -149,6 +157,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 - 📋 `docs/plans/melhorias-ml.md`
 
 **Acceptance criteria:**
+
 - [ ] `refreshSessionCookies()` actually renews `www.mercadolivre.com.br` cookies on 401/403.
 - [ ] `valid: false` from `/api/ml/affiliates/:mlUserId/validate-cookies` surfaces in the affiliates list as "🍪 expirado".
 - [ ] Batch convert endpoint accepts N URLs in one request.
@@ -169,6 +178,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 - 📋 open follow-up in `docs/specs/template-mensagem.md`
 
 **Acceptance criteria:**
+
 - [ ] E2E spec `e2e/template-editor.ui.spec.ts` green.
 - [ ] `MirrorConfigSection` removed if superseded by `TemplateEditor`/`TemplatePreview`.
 
@@ -187,6 +197,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 - 📋 `docs/plans/feature-flags.md` (Fases 5 + 7)
 
 **Acceptance criteria:**
+
 - [ ] `ingest_enabled` flag honored in `apps/ingestor` `mainLoop`.
 - [ ] E2E for dispatcher pause/resume via flag (already covered in Phase 1 acceptance).
 - [ ] Flag observability: per-flag per-minute counter exposed in admin UI.
@@ -206,6 +217,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 - 📋 open follow-up in `docs/specs/extensao-chrome-evolucao.md`
 
 **Acceptance criteria:**
+
 - [ ] Context menu item registered on `magazineluiza.com.br`, `mercadolivre.com.br`, `shopee.com.br`, `amazon.com.br`.
 - [ ] Capture flow: page → product metadata → saved offer list.
 - [ ] Multi-marketplace routing uses `detectMarketplace()`.
@@ -224,6 +236,7 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 **Expected output:** this file rewritten with a fresh Last updated: and a new Decision log row reflecting what changed.
 
 **Acceptance criteria:**
+
 - [ ] Phases re-ordered by current impact.
 - [ ] Every accepted-criteria checkbox above is checked or moved to a new plan.
 - [ ] Decision log has at least one new entry per quarter.
@@ -234,18 +247,19 @@ Each phase lists expected output and acceptance criteria. A phase without accept
 
 Specs already validated and merged to `main`. Listed in **delivery order**, not impact order.
 
-| #   | Entrega                                                 | Spec                                                                                                   | Resumo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Dev stack multi-worktree**                            | [`docs/specs/multi-worktree-dev-stack.md`](./specs/multi-worktree-dev-stack.md)                        | `bun run dev` com identidade derivada da branch (slug DNS/Compose, portas determinísticas, lockdir, 3 modos de tunnel). Mergeado em `e53285c`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 2   | **Arquitetura do Worker v2** (2 filas, 2 workers)       | [`docs/specs/arquitetura-worker.md`](./specs/arquitetura-worker.md)                                    | `apps/ingestor` + `apps/dispatcher` + `packages/worker-common`. Queues Redis A/B, dedup webhook 30s, send-dedup 1h, send-completed 24h, fan-out 1:N com cache `mirror:source-group:{jid}`.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 3   | **Testes E2E da arquitetura v2**                        | [`docs/specs/testes-e2e-arquitetura-worker.md`](./specs/testes-e2e-arquitetura-worker.md)              | Suíte Playwright `mirror-pipeline.api.spec.ts` (P1–P9) + `worker-status.api.spec.ts` (W1–W7). Cobre pipeline end-to-end via Amazon (sem credenciais secretas), fan-out, dedup, fallback imagem→texto, mirror inativo.                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 4   | **Autenticação + cadastro de afiliado**                 | [`docs/specs/autenticacao-cadastro-afiliado.md`](./specs/autenticacao-cadastro-afiliado.md)            | Tabela `users` + `user_credentials` + `user_id` em `ml_affiliates`. JWT via `@elysiajs/jwt`. Hook `useAuth` + Login/Register/Dashboard. `POST /api/affiliate/test-conversion` por usuário.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 5   | **Worker Monitoring (tela operacional)**                | [`docs/specs/worker-monitoring.md`](./specs/worker-monitoring.md)                                      | `WorkerStatusPage` com 5 seções (Pipeline / Resumo / Ingestor / Dispatcher / DLQ). Filtros server-side, auto-refresh 30s, copiar JSON, badge pulsante. Endpoints `/api/worker/dlq*` com `total` + `totalFiltered`.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| 6   | **Extensão Chrome — Fases 0 + 1** (segurança + sync)    | [`docs/specs/extensao-chrome-evolucao.md`](./specs/extensao-chrome-evolucao.md)                        | Service worker MV3, popup simplificado (greeting + 2 botões), validação da URL da API, sincronização explícita via `validate-cookies`, helpers puros e redaction. Restam Fases 2–5.                                                                                                                                                                                                                                                                                                                                                                       |
-| 7   | **Templates avançados — Fases 1–4**                     | [`docs/specs/template-mensagem.md`](./specs/template-mensagem.md)                                      | `TemplateContext` + `buildTemplateContext` + `resolvePlaceholders`. `parseConditionalTemplate` (sintaxe técnica `{?}/{:}/{:/}` + humanizada `{se … senão … fim}`). `POST /api/affiliate/preview-template` + `validate-template`. Frontend integrado em `MirrorFormPage`. **Fase 5 (E2E dedicado) ainda pendente.**                                                                                                                                                                                                                                                  |
-| 8   | **Amazon — single tracking ID**                         | (refactor sobre `0014_add_amazon_affiliates.sql`)                                                      | Migration `0018_simplify_amazon_single_tracking_id.sql` consolida `tracking_ids[]` em 1 tracking ID + flag `active` + `isDefault`. Remove apelido `nickname` legado.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| #   | Entrega                                              | Spec                                                                                        | Resumo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Dev stack multi-worktree**                         | [`docs/specs/multi-worktree-dev-stack.md`](./specs/multi-worktree-dev-stack.md)             | `bun run dev` com identidade derivada da branch (slug DNS/Compose, portas determinísticas, lockdir, 3 modos de tunnel). Mergeado em `e53285c`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 2   | **Arquitetura do Worker v2** (2 filas, 2 workers)    | [`docs/specs/arquitetura-worker.md`](./specs/arquitetura-worker.md)                         | `apps/ingestor` + `apps/dispatcher` + `packages/worker-common`. Queues Redis A/B, dedup webhook 30s, send-dedup 1h, send-completed 24h, fan-out 1:N com cache `mirror:source-group:{jid}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 3   | **Testes E2E da arquitetura v2**                     | [`docs/specs/testes-e2e-arquitetura-worker.md`](./specs/testes-e2e-arquitetura-worker.md)   | Suíte Playwright `mirror-pipeline.api.spec.ts` (P1–P9) + `worker-status.api.spec.ts` (W1–W7). Cobre pipeline end-to-end via Amazon (sem credenciais secretas), fan-out, dedup, fallback imagem→texto, mirror inativo.                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 4   | **Autenticação + cadastro de afiliado**              | [`docs/specs/autenticacao-cadastro-afiliado.md`](./specs/autenticacao-cadastro-afiliado.md) | Tabela `users` + `user_credentials` + `user_id` em `ml_affiliates`. JWT via `@elysiajs/jwt`. Hook `useAuth` + Login/Register/Dashboard. `POST /api/affiliate/test-conversion` por usuário.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 5   | **Worker Monitoring (tela operacional)**             | [`docs/specs/worker-monitoring.md`](./specs/worker-monitoring.md)                           | `WorkerStatusPage` com 5 seções (Pipeline / Resumo / Ingestor / Dispatcher / DLQ). Filtros server-side, auto-refresh 30s, copiar JSON, badge pulsante. Endpoints `/api/worker/dlq*` com `total` + `totalFiltered`.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 6   | **Extensão Chrome — Fases 0 + 1** (segurança + sync) | [`docs/specs/extensao-chrome-evolucao.md`](./specs/extensao-chrome-evolucao.md)             | Service worker MV3, popup simplificado (greeting + 2 botões), validação da URL da API, sincronização explícita via `validate-cookies`, helpers puros e redaction. Restam Fases 2–5.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 7   | **Templates avançados — Fases 1–4**                  | [`docs/specs/template-mensagem.md`](./specs/template-mensagem.md)                           | `TemplateContext` + `buildTemplateContext` + `resolvePlaceholders`. `parseConditionalTemplate` (sintaxe técnica `{?}/{:}/{:/}` + humanizada `{se … senão … fim}`). `POST /api/affiliate/preview-template` + `validate-template`. Frontend integrado em `MirrorFormPage`. **Fase 5 (E2E dedicado) ainda pendente.**                                                                                                                                                                                                                                                                                                                          |
+| 8   | **Amazon — single tracking ID**                      | (refactor sobre `0014_add_amazon_affiliates.sql`)                                           | Migration `0018_simplify_amazon_single_tracking_id.sql` consolida `tracking_ids[]` em 1 tracking ID + flag `active` + `isDefault`. Remove apelido `nickname` legado.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 9   | **Bootstrap admin + feature flags Fases 1–6**        | [`docs/plans/feature-flags.md`](./plans/feature-flags.md) (status misto)                    | `users.is_admin` (migration `0019`) + `ADMIN_EMAILS` no `auth.routes.ts` (register/login aplica; login re-checa para promover) + JWT com `isAdmin` + `/api/auth/me` retornando `isAdmin` + bug fix no gate de manutenção (decodifica JWT; só admin bypassa). Dispatcher honra `evolution_send_enabled` em `mainLoop` (kill switch com PubSub + fallback 5s). `FeatureFlagsPage` consumindo `/api/admin/feature-flags` + `MaintenancePage` já existia. `UserPublic` agora carrega `isAdmin`; `isEmailAdminAllowed` (pura, 8 testes). Liquida dívida crítica D + Phase 1. Restam Fases 5 (ingestor kill switch) e 7 (E2E dedicado) → Phase 8. |
 
-**Convenção:** quando uma spec tem phases entregues + phases pendentes, o doc correspondente é atualizado in-loco (status misto). Hoje só `extensao-chrome-evolucao.md` (specs/) está nesse modo; `feature-flags.md` vive em `plans/` enquanto só partes estão entregues.
+**Convenção:** quando uma spec tem phases entregues + phases pendentes, o doc correspondente é atualizado in-loco (status misto). Hoje `extensao-chrome-evolucao.md` (specs/) e `feature-flags.md` (plans/) estão nesse modo.
 
 ---
 
@@ -263,13 +277,10 @@ Specs already validated and merged to `main`. Listed in **delivery order**, not 
 ## Resumo de dependências
 
 ```text
-Dívida D (bootstrap admin)  ─┐
-                              ├─→ destrava todos os itens admin-only da tabela
-Auth (Entrega 4) entregue  ──┘   (catálogo, feature flags operacionais)
-
-Phase 1 (bootstrap admin + feature flags operacionais)
-  → habilita catálogo (Phase 3) sem risco operacional
-  → habilita qualquer nova feature de produto com gate admin
+Dívida D (bootstrap admin)  ✅ fechado 2026-07-31
+Phase 1 (bootstrap admin + feature flags operacionais)  ✅ fechado 2026-07-31
+Auth (Entrega 4) entregue
+  → destrava catálogo (Phase 3) e qualquer feature admin-only
 
 Phase 2 (Magalu real) → modelo replicável para futuros marketplaces
   → Amazon hardening (Phase 4) reusa template
@@ -277,6 +288,9 @@ Phase 2 (Magalu real) → modelo replicável para futuros marketplaces
 Phase 3 (Catálogo) → fonte de dados para futuras features de comparativo
 
 Phase 5 (Tenant/convites) → base de qualquer feature multi-usuário daqui em diante
+
+Phase 8 (Feature flags — kill switch ingestor + E2E dedicado)
+  → fecha as Fases 5+7 do plano `feature-flags.md`
 ```
 
 ---
@@ -294,20 +308,22 @@ Phase 5 (Tenant/convites) → base de qualquer feature multi-usuário daqui em d
 
 When the order or scope of phases changes, leave a one-line audit trail here.
 
-| Date       | Change                                                                                           | Reason                                                                                                |
-| ---------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| 2026-07-28 | Migrated to spec-driven format (Last updated, Phase N sections, Decision log, Revision history)  | Bootstrap of `spec-driven` skill; preserved entregues table + dependencies; added Phase 10 self-link  |
-| 2026-07-28 | Reorganized `docs/`: specs implemented → `docs/specs/`; plans → `docs/plans/`                    | Eliminated `docs/planos/`; rewrote roadmap with entregues + planejado tables                          |
-| 2026-07-27 | `8cd4e8a` … `ee0fb6d` (extension)                                                               | Fases 0+1 da extensão entregues (service worker, popup simplificado, sync inteligente)               |
-| 2026-07-26 | worktree `wt/worker-monitoring-9def26` → main                                                    | Worker Monitoring entregue (spec `worker-monitoring.md`)                                              |
-| 2026-07-25 | `wt/dev-worktree-isolation-20260725` → main (`e53285c`)                                          | Dev stack multi-worktree entregue (spec `multi-worktree-dev-stack.md`)                                |
-| 2026-07-20 | Fundação do monorepo                                                                            | Auth + cadastro de afiliado entregues (spec `autenticacao-cadastro-afiliado.md`). Arquitetura worker v2 + E2E entregues. |
+| Date       | Change                                                                                          | Reason                                                                                                                                                                                   |
+| ---------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-31 | Fechadas dívida crítica D + Phase 1 (bootstrap admin + kill switch Evolution)                   | `users.is_admin` (migration `0019`) + `ADMIN_EMAILS` em auth/routes + JWT com `isAdmin` + bug fix gate manutenção. Validado E2E manual contra stack rodando. Faltam E2E specs (Phase 8). |
+| 2026-07-28 | Migrated to spec-driven format (Last updated, Phase N sections, Decision log, Revision history) | Bootstrap of `spec-driven` skill; preserved entregues table + dependencies; added Phase 10 self-link                                                                                     |
+| 2026-07-28 | Reorganized `docs/`: specs implemented → `docs/specs/`; plans → `docs/plans/`                   | Eliminated `docs/planos/`; rewrote roadmap with entregues + planejado tables                                                                                                             |
+| 2026-07-27 | `8cd4e8a` … `ee0fb6d` (extension)                                                               | Fases 0+1 da extensão entregues (service worker, popup simplificado, sync inteligente)                                                                                                   |
+| 2026-07-26 | worktree `wt/worker-monitoring-9def26` → main                                                   | Worker Monitoring entregue (spec `worker-monitoring.md`)                                                                                                                                 |
+| 2026-07-25 | `wt/dev-worktree-isolation-20260725` → main (`e53285c`)                                         | Dev stack multi-worktree entregue (spec `multi-worktree-dev-stack.md`)                                                                                                                   |
+| 2026-07-20 | Fundação do monorepo                                                                            | Auth + cadastro de afiliado entregues (spec `autenticacao-cadastro-afiliado.md`). Arquitetura worker v2 + E2E entregues.                                                                 |
 
 ---
 
 ## Revision history
 
-| Date       | Version | Change                                                                                          | Reason                                                                                |
-| ---------- | ------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| 2026-07-28 | 0.2.0   | Migrated to spec-driven format (Phase N sections, Decision log, Revision history, todo phases) | Bootstrap of `spec-driven` skill — preserved semantic content from previous format  |
-| 2026-07-28 | 0.1.0   | Initial scaffold (Entregue + Planejado tables, dependencies, principles)                       | Project reorganize of `docs/`                                                        |
+| Date       | Version | Change                                                                                         | Reason                                                                                        |
+| ---------- | ------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 2026-07-31 | 0.3.0   | Fechadas dívida crítica D + Phase 1; nova entrada #9 na tabela Entregue                        | Bootstrap admin + ADMIN_EMAILS + JWT isAdmin + kill switch Evolution; novo commit history row |
+| 2026-07-28 | 0.2.0   | Migrated to spec-driven format (Phase N sections, Decision log, Revision history, todo phases) | Bootstrap of `spec-driven` skill — preserved semantic content from previous format            |
+| 2026-07-28 | 0.1.0   | Initial scaffold (Entregue + Planejado tables, dependencies, principles)                       | Project reorganize of `docs/`                                                                 |
