@@ -34,6 +34,7 @@ export type UserFixableType =
   | 'invalid_shopee_creds'
   | 'invalid_amazon_tracking_id'
   | 'ml_account_not_linked'
+  | 'magalu_account_not_linked'
   | 'evolution_api_offline';
 
 export type SilentType = 'network_timeout' | 'dedup' | 'blacklist';
@@ -63,6 +64,9 @@ export const NOTIFICATION_MESSAGES: Record<UserFixableType, string> = {
     'Cadastre seu tracking ID no painel para receber comissões de ofertas Amazon.',
   ml_account_not_linked:
     '🔗 Nenhuma conta do Mercado Livre vinculada.\n' + 'Conecte-se primeiro no painel.',
+  magalu_account_not_linked:
+    '🛍️ Afiliado Magalu sem slug configurado.\n' +
+    'Configure seu slug da loja em Configurações → Magalu.',
   evolution_api_offline:
     '📡 Evolution API está offline.\n' + 'Verifique se o container da Evolution API está rodando.',
 };
@@ -73,6 +77,7 @@ export const NOTIFICATION_LABELS: Record<UserFixableType, string> = {
   invalid_shopee_creds: 'credenciais Shopee inválidas',
   invalid_amazon_tracking_id: 'tracking Amazon não configurado',
   ml_account_not_linked: 'conta ML não vinculada',
+  magalu_account_not_linked: 'afiliado Magalu sem slug',
   evolution_api_offline: 'Evolution API offline',
 };
 

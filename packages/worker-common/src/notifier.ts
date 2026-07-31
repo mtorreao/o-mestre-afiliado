@@ -12,6 +12,7 @@
  *   - invalid_shopee_creds          → 'Verifique credenciais Shopee'
  *   - invalid_amazon_tracking_id    → 'Configure seu tracking ID da Amazon'
  *   - ml_account_not_linked         → 'Conecte-se primeiro'
+ *   - magalu_account_not_linked     → 'Configure o slug Magalu em Configurações'
  *   - evolution_api_offline         → 'Evolution API está offline — verifique o container'
  *
  * Tipos que NUNCA geram notificação (silenciosos):
@@ -51,6 +52,7 @@ export type UserFixableType =
   | 'invalid_shopee_creds'
   | 'invalid_amazon_tracking_id'
   | 'ml_account_not_linked'
+  | 'magalu_account_not_linked'
   | 'evolution_api_offline';
 
 export type SilentType = 'network_timeout' | 'dedup' | 'blacklist';
@@ -233,6 +235,7 @@ export function getNotifiableType(type: FailureType): UserFixableType | null {
     'invalid_shopee_creds',
     'invalid_amazon_tracking_id',
     'ml_account_not_linked',
+    'magalu_account_not_linked',
     'evolution_api_offline',
   ]);
   return notifiable.has(type) ? (type as UserFixableType) : null;
