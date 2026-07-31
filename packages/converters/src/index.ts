@@ -10,6 +10,8 @@ export {
 } from './shopee.ts';
 export type { ShopeeCredentials, ShopeeProductOffer } from './shopee.ts';
 
+export { extractShopeeItemIdFromUrl } from './shopee-pure.ts';
+
 export {
   getCredentials,
   getAccessToken,
