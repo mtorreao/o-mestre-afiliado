@@ -218,7 +218,7 @@ export function buildMlVariations(
       row: {
         variationKey: buildVariationKey(productKey, null),
         variationId: null,
-        variationName: null,
+        variationName: item.title?.trim() || null,
         attributesJson: {},
       },
       price: {
@@ -289,7 +289,7 @@ export function buildSingleVariationFromShopee(
     row: {
       variationKey: buildVariationKey(productKey, null),
       variationId: null,
-      variationName: null,
+      variationName: offer.productName?.trim() || null,
       attributesJson: {},
     },
     price: {

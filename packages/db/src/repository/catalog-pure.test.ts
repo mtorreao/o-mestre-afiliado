@@ -220,7 +220,12 @@ describe('buildMlVariations — variação implícita :default', () => {
   it('gera UMA variação :default com price do item raiz', () => {
     const result = buildMlVariations(
       baseJob.productKey,
-      { price: 99.9, original_price: 129.9, available_quantity: 3 },
+      {
+        title: '  Tênis Nike Air Max  ',
+        price: 99.9,
+        original_price: 129.9,
+        available_quantity: 3,
+      },
       capturedAt,
       baseJob.sourceGroupJid,
       baseJob.messageId,
@@ -229,10 +234,15 @@ describe('buildMlVariations — variação implícita :default', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.row.variationKey).toBe('mercadolivre:MLB12345678:default');
     expect(result[0]?.row.variationId).toBeNull();
-    expect(result[0]?.row.variationName).toBeNull();
+    expect(result[0]?.row.variationName).toBe('Tênis Nike Air Max');
     expect(result[0]?.price.price).toBe('99.90');
     expect(result[0]?.price.listPrice).toBe('129.90');
     expect(result[0]?.price.available).toBe(true);
+  });
+
+  it('usa null quando o item raiz nao tem title', () => {
+    const result = buildMlVariations(baseJob.productKey, { price: 10 }, capturedAt, null, null);
+    expect(result[0]?.row.variationName).toBeNull();
   });
 
   it('retorna [] quando o item raiz nao tem price (sem dado util)', () => {
@@ -275,18 +285,30 @@ describe('buildProductUpsertFromShopee + buildSingleVariationFromShopee', () => 
   it('monta variação :default com price preferido', () => {
     const v = buildSingleVariationFromShopee(
       shopeeJob.productKey,
-      { price: 89.9 },
+      { productName: '  Mouse Gamer  ', price: 89.9 },
       capturedAt,
       shopeeJob.sourceGroupJid,
       shopeeJob.messageId,
     );
     expect(v).not.toBeNull();
     expect(v!.row.variationKey).toBe('shopee:22298230083:default');
+    expect(v!.row.variationName).toBe('Mouse Gamer');
     expect(v!.price.price).toBe('89.90');
     expect(v!.price.listPrice).toBeNull();
     expect(v!.price.available).toBe(true);
     expect(v!.price.stock).toBeNull();
     expect(v!.price.priceBucket.toISOString()).toBe('2026-07-31T14:00:00.000Z');
+  });
+
+  it('usa null quando o offer nao tem productName', () => {
+    const v = buildSingleVariationFromShopee(
+      shopeeJob.productKey,
+      { price: 89.9 },
+      capturedAt,
+      null,
+      null,
+    );
+    expect(v?.row.variationName).toBeNull();
   });
 
   it('fallback para priceMin e priceMax', () => {
