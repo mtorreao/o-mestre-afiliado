@@ -455,7 +455,11 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         onBack={handleBack}
       />
 
-      <form onSubmit={handleSubmit} noValidate>
+      <form
+        onSubmit={handleSubmit}
+        noValidate
+        style={{ width: '100%', maxWidth: '720px', margin: '0 auto' }}
+      >
         <Card
           title="📋 Informações Básicas"
           titleId={NAME_TITLE_ID}
@@ -708,8 +712,9 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           </div>
         )}
 
-        {/* Actions */}
+        {/* Actions — barra sticky em mobile (regra .form-actions-bar em globals.css) */}
         <div
+          className="form-actions-bar"
           style={{
             marginTop: '1.5rem',
             display: 'flex',

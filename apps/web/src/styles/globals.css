@@ -881,6 +881,39 @@ a:hover {
   }
 }
 
+/* ─── Sticky actions bar — MirrorFormPage (mobile) ────────────────
+   Barra de ações (Salvar/Cancelar) fixa no rodapé da viewport ao rolar.
+   Desktop: botões ficam inline no fim do form (position static).
+   Full-bleed: PageLayout usa padding 1rem em mobile (regra inline !important),
+   então margens negativas de -1rem estendem a barra até as bordas da viewport. */
+.form-actions-bar {
+  position: static;
+}
+
+@media (max-width: 767px) {
+  .form-actions-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding: var(--spacing-4) 1rem;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border-light);
+    box-shadow: 0 -4px 12px -2px rgba(0, 0, 0, 0.06);
+  }
+
+  .form-actions-bar > .Button {
+    flex: 1;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .form-actions-bar {
+      box-shadow: 0 -4px 12px -2px rgba(255, 255, 255, 0.06);
+    }
+  }
+}
+
 /* DLQ badge bump — pulse 3x when new DLQ item arrives via auto-refresh */
 @keyframes dlq-badge-bump {
   0%,
