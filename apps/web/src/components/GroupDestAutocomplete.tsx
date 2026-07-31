@@ -144,7 +144,7 @@ export function GroupDestAutocomplete({
     <div>
       {/* Status (loading / erro / vazio) — sempre acessível via aria-live */}
       {loading && (
-        <div role="status" style={{ padding: '0.5rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+        <div role="status" style={{ padding: '0.5rem 0', color: '#64748b', fontSize: '0.85rem' }}>
           Carregando grupos...
         </div>
       )}
@@ -153,7 +153,7 @@ export function GroupDestAutocomplete({
           role="alert"
           style={{
             padding: '0.5rem 0',
-            color: '#f87171',
+            color: '#dc2626',
             fontSize: '0.85rem',
             display: 'flex',
             alignItems: 'center',
@@ -168,7 +168,7 @@ export function GroupDestAutocomplete({
               borderRadius: '4px',
               border: '1px solid #475569',
               background: 'transparent',
-              color: '#94a3b8',
+              color: '#64748b',
               fontSize: '0.8rem',
               cursor: 'pointer',
             }}
@@ -178,7 +178,7 @@ export function GroupDestAutocomplete({
         </div>
       )}
       {!loading && !fetchError && groups.length === 0 && (
-        <div role="status" style={{ padding: '0.5rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+        <div role="status" style={{ padding: '0.5rem 0', color: '#64748b', fontSize: '0.85rem' }}>
           Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de
           grupos.
         </div>
@@ -206,7 +206,7 @@ export function GroupDestAutocomplete({
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#94a3b8',
+                color: '#64748b',
                 cursor: 'pointer',
                 padding: 0,
                 fontSize: '0.9rem',
@@ -219,7 +219,7 @@ export function GroupDestAutocomplete({
           </span>
         ))}
         {value.length > 0 && (
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8', alignSelf: 'center' }}>
+          <span style={{ fontSize: '0.75rem', color: '#64748b', alignSelf: 'center' }}>
             {value.length} selecionado(s)
           </span>
         )}
@@ -300,7 +300,7 @@ export function GroupDestAutocomplete({
                   padding: '0.5rem 0.75rem',
                   cursor: 'pointer',
                   background: highlightIndex === i ? '#334155' : 'transparent',
-                  color: highlightIndex === i ? '#e2e8f0' : '#94a3b8',
+                  color: highlightIndex === i ? '#e2e8f0' : '#64748b',
                   fontSize: '0.85rem',
                   borderBottom: i < filtered.length - 1 ? '1px solid #1e293b' : 'none',
                 }}
