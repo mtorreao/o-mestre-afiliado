@@ -1,0 +1,313 @@
+name: omestre-qa
+
+# ═════════════════════════════════════════════════════════════════════════
+# Docker Compose para testes E2E
+#
+# Uso:
+#   1. Build da Web:   bun run build:web
+#   2. Subir stack:    docker compose -f e2e/docker-compose.e2e.yml up -d --wait
+#   3. Rodar testes:   bun run test:e2e
+#   4. Derrubar:       docker compose -f e2e/docker-compose.e2e.yml down -v
+# ═════════════════════════════════════════════════════════════════════════
+
+services:
+  # ─── PostgreSQL ─────────────────────────────────────────────────────
+  postgres-e2e:
+    container_name: omestre_qa_postgres
+    image: postgres:17-alpine
+    restart: no
+    command:
+      - postgres
+      - -c
+      - max_connections=100
+      - -c
+      - listen_addresses=*
+    environment:
+      POSTGRES_DB: omestre_db
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution_pass
+    tmpfs: /var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:16443:5432'
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U evolution -d omestre_db']
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  # ─── Redis ──────────────────────────────────────────────────────────
+  redis-e2e:
+    container_name: omestre_qa_redis
+    image: redis:7-alpine
+    restart: no
+    command: redis-server --port 6379 --timeout 0
+    tmpfs: /data
+    ports:
+      - '127.0.0.1:16445:6379'
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  # ─── Evolution API ──────────────────────────────────────────────────
+  evolution-api-e2e:
+    container_name: omestre_qa_evolution
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: no
+    depends_on:
+      postgres-e2e:
+        condition: service_healthy
+      redis-e2e:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:16444:8080'
+    networks:
+      - e2e-net
+    environment:
+      # Database
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution_pass@postgres-e2e:5432/omestre_db?schema=evolution_api
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      DATABASE_SAVE_DATA_CONTACTS: 'true'
+      DATABASE_SAVE_DATA_CHATS: 'true'
+      DATABASE_SAVE_DATA_LABELS: 'true'
+      DATABASE_SAVE_DATA_HISTORIC: 'true'
+
+      # Server
+      SERVER_NAME: evolution-e2e
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: http://localhost:16444
+
+      # Cache (Redis)
+      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_URI: redis://redis-e2e:6379/6
+      CACHE_REDIS_TTL: 604800
+      CACHE_REDIS_PREFIX_KEY: evolution_e2e
+
+      # Auth
+      AUTHENTICATION_TYPE: apikey
+      AUTHENTICATION_API_KEY: e2e-evolution-api-key
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'true'
+
+      # Logs (menos verboso para E2E)
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_BAILEYS: error
+
+      # Desabilitar integrações não utilizadas
+      SQS_ENABLED: 'false'
+      WEBSOCKET_ENABLED: 'false'
+      WEBHOOK_GLOBAL_ENABLED: 'false'
+      CHATWOOT_ENABLED: 'false'
+      TYPEBOT_ENABLED: 'false'
+      OPENAI_ENABLED: 'false'
+      DIFY_ENABLED: 'false'
+      N8N_ENABLED: 'false'
+      LANGCHAIN_ENABLED: 'false'
+
+  # ─── API (O Mestre Afiliado) ────────────────────────────────────────
+  api-e2e:
+    container_name: omestre_qa_api
+    build:
+      context: ../
+      dockerfile: apps/api/Dockerfile
+    restart: no
+    ports:
+      - '127.0.0.1:16442:5442'
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      API_PORT: '5442'
+      JWT_SECRET: e2e-jwt-secret-for-testing-only
+      EVOLUTION_API_URL: http://evolution-api-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      WEBHOOK_URL: http://api-e2e:5442/webhook/message
+      REDIS_URL: redis://redis-e2e:6379
+      ML_CLIENT_ID: ''
+      ML_CLIENT_SECRET: ''
+      FRONTEND_URL: http://localhost:16441
+      ML_REDIRECT_URI: http://localhost:16442/api/ml/callback
+    depends_on:
+      postgres-e2e:
+        condition: service_healthy
+
+  # ─── Web (nginx + static) ──────────────────────────────────────────
+  web-e2e:
+    container_name: omestre_qa_web
+    build:
+      context: ../
+      dockerfile: apps/web/Dockerfile
+    restart: no
+    ports:
+      - '127.0.0.1:16441:5441'
+    networks:
+      - e2e-net
+    environment:
+      API_UPSTREAM: api-e2e:5442
+    depends_on:
+      - api-e2e
+
+  # ─── Ingestor (background — pipeline pesado) ───────────────────────
+  ingestor-e2e:
+    container_name: omestre_qa_ingestor
+    build:
+      context: ../
+      dockerfile: apps/ingestor/Dockerfile
+    restart: no
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      REDIS_URL: redis://redis-e2e:6379
+      METRICS_PORT: '9092'
+    depends_on:
+      - api-e2e
+
+  # ─── Dispatcher (background — envio de mensagens) ──────────────────
+  dispatcher-e2e:
+    container_name: omestre_qa_dispatcher
+    build:
+      context: ../
+      dockerfile: apps/dispatcher/Dockerfile
+    restart: no
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      REDIS_URL: redis://redis-e2e:6379
+      METRICS_PORT: '9093'
+    depends_on:
+      - api-e2e
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # WHATSAPP SIMULATOR — substituto da Evolution API para testes de mirror
+  # ═══════════════════════════════════════════════════════════════════════
+
+  whatsapp-simulator-e2e:
+    container_name: omestre_qa_simulator
+    build:
+      context: ../
+      dockerfile: apps/whatsapp-simulator/Dockerfile
+    restart: no
+    ports:
+      - '127.0.0.1:16446:8080'
+    networks:
+      - e2e-net
+
+  # ─── API (Mirror — aponta para o simulador) ─────────────────────────
+  api-e2e-mirror:
+    container_name: omestre_qa_api_mirror
+    build:
+      context: ../
+      dockerfile: apps/api/Dockerfile
+    restart: no
+    ports:
+      - '127.0.0.1:16447:5442'
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      API_PORT: '5442'
+      JWT_SECRET: e2e-jwt-secret-for-testing-only
+      EVOLUTION_API_URL: http://whatsapp-simulator-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      WEBHOOK_URL: http://api-e2e-mirror:5442/webhook/message
+      # Redis DB 3 isola o plano "mirror" do plano padrão (DB 0). Sem isso,
+      # os dois pares ingestor/dispatcher compartilham os mesmos streams e
+      # consumer groups (mirror-raw/mirror-send) e competem pelos SendEvents:
+      # o dispatcher padrão (→ Evolution real) rouba eventos destinados ao
+      # simulador, quebrando os testes de pipeline de forma intermitente.
+      REDIS_URL: redis://redis-e2e:6379/3
+      ML_CLIENT_ID: ''
+      ML_CLIENT_SECRET: ''
+      FRONTEND_URL: http://localhost:16441
+      ML_REDIRECT_URI: http://localhost:16447/api/ml/callback
+    depends_on:
+      postgres-e2e:
+        condition: service_healthy
+      redis-e2e:
+        condition: service_healthy
+
+  # ─── Ingestor (Mirror — pipeline pesado) ───────────────────────────
+  ingestor-e2e-mirror:
+    container_name: omestre_qa_ingestor_mirror
+    build:
+      context: ../
+      dockerfile: apps/ingestor/Dockerfile
+    restart: no
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://whatsapp-simulator-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      REDIS_URL: redis://redis-e2e:6379/3
+      METRICS_PORT: '9092'
+    depends_on:
+      api-e2e-mirror:
+        condition: service_started
+
+  # ─── Dispatcher (Mirror — envio de mensagens) ──────────────────────
+  dispatcher-e2e-mirror:
+    container_name: omestre_qa_dispatcher_mirror
+    build:
+      context: ../
+      dockerfile: apps/dispatcher/Dockerfile
+    restart: no
+    networks:
+      - e2e-net
+    environment:
+      POSTGRES_HOST: postgres-e2e
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://whatsapp-simulator-e2e:8080
+      EVOLUTION_API_KEY: e2e-evolution-api-key
+      REDIS_URL: redis://redis-e2e:6379/3
+      METRICS_PORT: '9093'
+    depends_on:
+      api-e2e-mirror:
+        condition: service_started
+
+networks:
+  e2e-net:
+    driver: bridge
