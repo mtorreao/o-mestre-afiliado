@@ -107,6 +107,12 @@ export interface ShortLinkResult {
   shortUrl?: string;
   longUrl?: string;
   error?: string;
+  /**
+   * Cookies renovados durante a chamada (401/403 → renovação via set-cookie).
+   * Preenchido quando a sessão foi renovada com sucesso — o chamador pode
+   * persistir para evitar uma nova renovação na próxima conversão.
+   */
+  renewedCookies?: string;
 }
 
 // ─── Extração de CSRF ───────────────────────────────────────────────────
@@ -142,6 +148,44 @@ export function formatLinkBuilderHttpError(scope: 'page' | 'api', status: number
   return scope === 'page'
     ? `Falha ao acessar Link Builder: HTTP ${status}`
     : `API do Link Builder retornou HTTP ${status}`;
+}
+
+// ─── Renovação de sessão / cache de CSRF ───────────────────────────────
+
+/** Status HTTP que indicam cookies de sessão expirados no Link Builder. */
+export function isSessionExpiredStatus(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+/**
+ * Fingerprint FNV-1a 32-bit dos cookies (puro, sem node:crypto).
+ * Usado como parte da chave do cache de CSRF: enquanto os cookies não
+ * mudarem, o token cacheado continua válido; ao reimportar cookies, o
+ * fingerprint muda e o cache é naturalmente invalidado.
+ */
+export function fingerprintCookies(cookies: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < cookies.length; i++) {
+    hash ^= cookies.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/** Chave do cache de CSRF: etiqueta do afiliado + fingerprint dos cookies. */
+export function buildCsrfCacheKey(tag: string, cookies: string): string {
+  return `${tag}|${fingerprintCookies(cookies)}`;
+}
+
+/**
+ * Formata o erro quando a renovação de cookies falha após 401/403 no
+ * createLink. A mensagem mantém os marcadores de erro de cookie
+ * ('HTTP 40' / 'Cookies podem estar expirados') para que os chamadores
+ * caiam no fallback de URL params e o pipeline classifique como
+ * cookie_error.
+ */
+export function formatRenewalFailedError(status: number): string {
+  return `Não foi possível renovar os cookies de sessão (HTTP ${status}). Cookies podem estar expirados.`;
 }
 
 // ─── Parsing da resposta ─────────────────────────────────────────────────

@@ -153,6 +153,16 @@ describe('mercadolivre — refreshSessionCookies', () => {
     })) as unknown as typeof fetch;
     expect(await refreshSessionCookies('session=old')).toBe('session=old');
   });
+
+  it('mescla múltiplos set-cookie via getSetCookie', async () => {
+    globalThis.fetch = mock(async () => ({
+      headers: { getSetCookie: () => ['csrftoken=new; Path=/', 'session_id=abc'] },
+    })) as unknown as typeof fetch;
+    const merged = await refreshSessionCookies('session=old');
+    expect(merged).toContain('session=old');
+    expect(merged).toContain('csrftoken=new');
+    expect(merged).toContain('session_id=abc');
+  });
 });
 
 describe('mercadolivre — convertMercadoLivreUrlWithToken', () => {

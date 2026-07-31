@@ -86,8 +86,11 @@ CREATE TABLE omestre.price_history (
   message_id       text                                 -- msgId original (rastreabilidade)
 );
 -- Dedup de corrida + janela de 1h (Melhoria 2): conflitos não inserem
+-- NULLS NOT DISTINCT (PG15+): sem ele, list_price NULL (Shopee/Amazon) nunca
+-- conflita num índice UNIQUE — o dedup de 1h não funcionaria para esses casos.
 CREATE UNIQUE INDEX IF NOT EXISTS price_history_dedup_idx
-  ON omestre.price_history (variation_id, price_bucket, price, list_price, available);
+  ON omestre.price_history (variation_id, price_bucket, price, list_price, available)
+  NULLS NOT DISTINCT;
 CREATE INDEX IF NOT EXISTS price_history_variation_idx
   ON omestre.price_history (variation_id, captured_at);
 ```
@@ -285,9 +288,8 @@ Webhook → Queue A (omestre:mirror:raw) → Ingestor (converte + envia) → Que
 - **Gestão de admins via UI** (promover/rebaixar) — hoje é só `ADMIN_EMAILS` (env).
 - **Heartbeat diário** (Melhoria 4): subir `price_bucket` pra truncagem diária e inserir 1 snapshot/dia mesmo sem mudança de preço (mostrar "estável há N dias"). Opcional — o único índice de 1h já cobre dedup; se quiser heartbeat, trocar `date_trunc('hour')` por `date_trunc('day')` no `CatalogJob`.
 
-
 ## Revision history
 
-| Date       | Version | Change                                | Reason                           |
-| ---------- | ------- | ------------------------------------- | -------------------------------- |
-| 2026-07-28    | 0.1.0   | Adopted spec-driven template          | Bootstrap of `spec-driven` skill |
+| Date       | Version | Change                       | Reason                           |
+| ---------- | ------- | ---------------------------- | -------------------------------- |
+| 2026-07-28 | 0.1.0   | Adopted spec-driven template | Bootstrap of `spec-driven` skill |
