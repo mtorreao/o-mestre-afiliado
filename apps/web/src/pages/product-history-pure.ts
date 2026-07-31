@@ -52,6 +52,21 @@ export function marketplaceOptions(): { value: string; label: string }[] {
   ];
 }
 
+// ─── Ponto mais recente do histórico ─────────────────────────────────
+
+/** Ponto mais recente do histórico de preços.
+ *
+ * Contrato da API GET /api/catalog/products/:id: `history` chega ordenado
+ * DESC (mais recente primeiro). A ordenação por capturedAt é defensiva —
+ * se a API mudar a ordem no futuro, o resultado continua correto.
+ */
+export function getLatestHistoryPoint<T extends { capturedAt: string | null | undefined }>(
+  history: readonly T[] | null | undefined,
+): T | undefined {
+  if (!history || history.length === 0) return undefined;
+  return [...history].sort((a, b) => (b.capturedAt ?? '').localeCompare(a.capturedAt ?? ''))[0];
+}
+
 // ─── Gráfico SVG (modelo puro) ────────────────────────────────────────
 
 export interface ChartPricePoint {

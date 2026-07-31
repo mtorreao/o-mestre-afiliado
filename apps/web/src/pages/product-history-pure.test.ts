@@ -8,6 +8,7 @@ import {
   marketplaceLabel,
   marketplaceOptions,
   buildPriceChart,
+  getLatestHistoryPoint,
 } from './product-history-pure.ts';
 import type { ChartPricePoint } from './product-history-pure.ts';
 
@@ -189,5 +190,59 @@ describe('buildPriceChart', () => {
     ]);
     expect(model.xLabels).toHaveLength(2);
     expect(model.xLabels[0]!.x).toBeLessThan(model.xLabels[1]!.x);
+  });
+});
+
+// ─── getLatestHistoryPoint ───────────────────────────────────────────
+
+describe('getLatestHistoryPoint', () => {
+  test('retorna o ponto mais recente quando a API devolve DESC (contrato atual)', () => {
+    const points = [
+      { capturedAt: '2026-07-31T18:27:00.000Z', price: '75.50' },
+      { capturedAt: '2026-07-30T10:00:00.000Z', price: '79.90' },
+      { capturedAt: '2026-07-29T16:27:00.000Z', price: '89.90' },
+    ];
+    expect(getLatestHistoryPoint(points)?.price).toBe('75.50');
+  });
+
+  test('robusto a ordem ASC — ainda retorna o mais recente', () => {
+    const points = [
+      { capturedAt: '2026-07-29T16:27:00.000Z', price: '89.90' },
+      { capturedAt: '2026-07-30T10:00:00.000Z', price: '79.90' },
+      { capturedAt: '2026-07-31T18:27:00.000Z', price: '75.50' },
+    ];
+    expect(getLatestHistoryPoint(points)?.price).toBe('75.50');
+  });
+
+  test('desordenado — ainda retorna o mais recente', () => {
+    const points = [
+      { capturedAt: '2026-07-30T10:00:00.000Z', price: '79.90' },
+      { capturedAt: '2026-07-31T18:27:00.000Z', price: '75.50' },
+      { capturedAt: '2026-07-29T16:27:00.000Z', price: '89.90' },
+    ];
+    expect(getLatestHistoryPoint(points)?.capturedAt).toBe('2026-07-31T18:27:00.000Z');
+  });
+
+  test('não muta o array original', () => {
+    const points = [
+      { capturedAt: '2026-07-30T10:00:00.000Z', price: '79.90' },
+      { capturedAt: '2026-07-31T18:27:00.000Z', price: '75.50' },
+    ];
+    getLatestHistoryPoint(points);
+    expect(points[0]!.capturedAt).toBe('2026-07-30T10:00:00.000Z');
+  });
+
+  test('array vazio → undefined', () => {
+    expect(getLatestHistoryPoint([])).toBeUndefined();
+  });
+
+  test('null / undefined → undefined', () => {
+    expect(getLatestHistoryPoint(null)).toBeUndefined();
+    expect(getLatestHistoryPoint(undefined)).toBeUndefined();
+  });
+
+  test('ponto único → ele mesmo', () => {
+    const points = [{ capturedAt: '2026-07-31T18:27:00.000Z', price: '75.50' }];
+    expect(getLatestHistoryPoint(points)).toEqual(points[0]);
   });
 });

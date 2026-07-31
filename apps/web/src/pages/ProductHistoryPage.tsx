@@ -25,6 +25,7 @@ import {
   marketplaceLabel,
   marketplaceOptions,
   buildPriceChart,
+  getLatestHistoryPoint,
 } from './product-history-pure.ts';
 
 // ─── Tipos (contrato GET /api/catalog/*) ─────────────────────────────
@@ -584,7 +585,7 @@ export function ProductHistoryPage() {
                     <span>
                       Atual:{' '}
                       <strong style={{ color: 'var(--color-text-primary)' }}>
-                        {formatPrice(v.history[v.history.length - 1]?.price ?? null)}
+                        {formatPrice(getLatestHistoryPoint(v.history)?.price ?? null)}
                       </strong>
                     </span>
                     <span>
@@ -612,7 +613,7 @@ export function ProductHistoryPage() {
                     <span>
                       Última captura:{' '}
                       <strong style={{ color: 'var(--color-text-primary)' }}>
-                        {formatDateTime(v.history[v.history.length - 1]?.capturedAt ?? null)}
+                        {formatDateTime(getLatestHistoryPoint(v.history)?.capturedAt ?? null)}
                       </strong>
                     </span>
                   </div>
