@@ -101,3 +101,24 @@ export { FeatureFlagRepository } from './repository/featureFlags.repository.ts';
 export type { FeatureFlagRow, NewFeatureFlagRow } from './repository/featureFlags.repository.ts';
 export { ExtensionLogRepository } from './repository/extensionLogs.repository.ts';
 export type { InsertedLogRow } from './repository/extensionLogs.repository.ts';
+
+export { CatalogRepository } from './repository/catalog.repository.ts';
+export type {
+  CatalogFetchResult,
+  ProductUpsertRow,
+  VariationUpsertRow,
+  PriceHistoryRow,
+  MlFetchedItem,
+  ShopeeFetchedOffer,
+} from './repository/catalog-pure.ts';
+export {
+  dateTruncHour,
+  normalizePrice,
+  DEFAULT_VARIATION_SUFFIX,
+  buildVariationKey,
+  buildProductUpsertFromMl,
+  buildMlVariations,
+  buildProductUpsertFromShopee,
+  buildSingleVariationFromShopee,
+  ensureCatalogFetchResult,
+} from './repository/catalog-pure.ts';
