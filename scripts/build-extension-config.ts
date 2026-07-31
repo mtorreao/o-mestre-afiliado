@@ -10,7 +10,7 @@
  * Uso:
  *   bun run scripts/build-extension-config.ts
  */
-import { writeFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..');
@@ -19,8 +19,7 @@ const CONFIG_PATH = resolve(REPO_ROOT, 'extensions/chrome-cookie-importer/lib/lo
 // Tenta ler do .env na raiz (sem dependência externa).
 function readEnvApiKey(): string {
   try {
-    const envFile = Bun.file(resolve(REPO_ROOT, '.env'));
-    const content = envFile.text();
+    const content = readFileSync(resolve(REPO_ROOT, '.env'), 'utf8');
     for (const line of content.split('\n')) {
       const m = line.match(/^\s*EXTENSION_LOGS_API_KEY\s*=\s*(.+?)\s*$/);
       if (m) return m[1]!.replace(/^['"]|['"]$/g, '');

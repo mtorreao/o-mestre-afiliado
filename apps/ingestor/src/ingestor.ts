@@ -63,7 +63,8 @@ import { fetchProductImage } from './product-image.ts';
 import { getRedis } from './redis.ts';
 import { steps } from './metrics.ts';
 import { logReflectedOffer } from './offer-logger.ts';
-import { publishCatalogJob, resolveCatalogTarget } from './catalog-publisher.ts';
+import { resolveCatalogTarget } from '@omestre/shared';
+import { publishCatalogJob } from '@omestre/worker-common';
 
 // Re-exporta funções puras de url-extraction.ts para compatibilidade
 // com testes existentes e callers externos.

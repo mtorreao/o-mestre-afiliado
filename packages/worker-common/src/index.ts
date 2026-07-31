@@ -19,11 +19,7 @@ export {
   countDLQ,
   purgeOldDLQItems,
 } from './dead-letter-queue.ts';
-export type {
-  DLQPushParams,
-  DLQListOptions,
-  DLQListResult,
-} from './dead-letter-queue.ts';
+export type { DLQPushParams, DLQListOptions, DLQListResult } from './dead-letter-queue.ts';
 
 export {
   classifyConversionError,
@@ -34,11 +30,7 @@ export {
   processFailure,
   notifyDirect,
 } from './notifier.ts';
-export type {
-  UserFixableType,
-  SilentType,
-  FailureType,
-} from './notifier.ts';
+export type { UserFixableType, SilentType, FailureType } from './notifier.ts';
 
 export {
   startMetricsServer,
@@ -58,3 +50,6 @@ export {
 export type { StepTrackers, StatusResponse } from './metrics-server.ts';
 
 export { parsePromCounter } from './metrics-parser.ts';
+
+export { publishCatalogJob, CATALOG_STREAM_MAXLEN } from './catalog-publisher.ts';
+export type { PublishCatalogJobParams } from './catalog-publisher.ts';
