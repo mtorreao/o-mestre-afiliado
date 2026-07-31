@@ -423,11 +423,17 @@ export const mlRoutes = new Elysia()
           };
         }
 
-        // Se falhou por cookie expirado (erro 401/403), tenta URL params
-        if (
-          shortResult.error?.includes('HTTP 40') ||
-          shortResult.error?.includes('Cookies podem estar expirados')
-        ) {
+        // Fallback inteligente (spec melhorias-ml.md item 9): só cai em
+        // URL params para cookie expirado (401/403) ou erro de rede. Produto
+        // inelegível (111/"URL not allowed") e tag não associada (109)
+        // retornam erro acionável — URL params não trackearia corretamente.
+        const shouldFallbackToParams =
+          shortResult.errorKind === 'cookie_expired' || shortResult.errorKind === 'network';
+        if (shouldFallbackToParams) {
+          console.warn(
+            `[ml/convert] link curto indisponível para afiliado ${mlUserId} ` +
+              `(${shortResult.errorKind}) — usando URL params. Erro: ${shortResult.error}`,
+          );
           // Continua pra estratégia 2
         } else {
           // Erro específico (tag inválida, produto inelegível) — retorna
@@ -438,6 +444,7 @@ export const mlRoutes = new Elysia()
             marketplace: 'mercadolivre' as const,
             method: 'unknown' as const,
             error: shortResult.error,
+            errorKind: shortResult.errorKind ?? 'unknown',
             mlUserId,
             nickname: affiliate.nickname,
           };
