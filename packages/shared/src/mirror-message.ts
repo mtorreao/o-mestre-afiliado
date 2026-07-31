@@ -90,8 +90,8 @@ export interface MirrorSendConfig {
 export interface MirrorDLQEntry {
   /** ID único do item na DLQ */
   id: string;
-  /** Dados originais do evento (RawMessageEvent ou SendEvent) */
-  event: RawMessageEvent | SendEvent;
+  /** Dados originais do evento (RawMessageEvent, SendEvent ou CatalogJob) */
+  event: RawMessageEvent | SendEvent | CatalogJob;
   /** Razão da falha */
   failureReason: string;
   /** Número de tentativas realizadas */
