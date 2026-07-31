@@ -27,6 +27,9 @@ export {
   userCredentials,
   userWhatsAppInstances,
   mirrors,
+  products,
+  productVariations,
+  priceHistory,
 } from './schema/index.ts';
 
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';

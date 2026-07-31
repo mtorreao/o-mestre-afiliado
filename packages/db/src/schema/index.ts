@@ -1,18 +1,10 @@
-import { boolean, integer, jsonb, pgEnum, serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, serial, text, timestamp } from 'drizzle-orm/pg-core';
 import { omestre } from './omestre.ts';
 import { users } from './users.ts';
+import { marketplaceEnum, offerStatusEnum } from './enums.ts';
 
-// ─── Enums ──────────────────────────────────────────────────────────
-
-export const marketplaceEnum = pgEnum('marketplace', [
-  'shopee',
-  'mercadolivre',
-  'amazon',
-  'magalu',
-  'unknown',
-]);
-
-export const offerStatusEnum = pgEnum('offer_status', ['sent', 'failed', 'blocked']);
+// ─── Enums (definidos em enums.ts para evitar circular dependency) ──
+export { marketplaceEnum, offerStatusEnum } from './enums.ts';
 
 // ─── Afiliados (WhatsApp Worker) ────────────────────────────────────
 
@@ -120,6 +112,11 @@ export type { AmazonTrackingId, AmazonRegion } from './amazonAffiliates.ts';
 // ─── Feature Flags ─────────────────────────────────────────
 export { featureFlags } from './featureFlags.ts';
 export { extensionLogs } from './extensionLogs.ts';
+
+// ─── Catálogo de Produtos (histórico de preços) ─────────────
+export { products } from './products.ts';
+export { productVariations } from './productVariations.ts';
+export { priceHistory } from './priceHistory.ts';
 
 // ─── Re-export dos schemas auxiliares ───────────────────────────────
 export { omestre } from './omestre.ts';
