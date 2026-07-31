@@ -23,23 +23,67 @@ const listMock = mock((filters?: { page?: number; pageSize?: number }) =>
     totalPages: 1,
   }),
 );
-const findByIdMock = mock((id: number) =>
-  Promise.resolve(
-    id === 999 ? null : { id, name: 'm', sourceGroups: [{ jid: 'g@g.us', name: 'G' }], userId: 1 },
-  ),
-);
-const createMock = mock((input: unknown) =>
-  Promise.resolve({ id: 7, sourceGroups: [], ...(input as object) }),
-);
-const updateMock = mock((id: number, _data: unknown) =>
-  Promise.resolve(
-    id === 404 ? null : { id, name: 'updated', sourceGroups: [{ jid: 'g@g.us', name: 'G' }] },
-  ),
-);
-const patchStatusMock = mock((id: number, status: string) =>
-  Promise.resolve(id === 404 ? null : { id, status, sourceGroups: [{ jid: 'g@g.us', name: 'G' }] }),
-);
-const deleteMock = mock((id: number) => Promise.resolve(id !== 404));
+
+// Store in-memory COM ESTADO: os mocks de repo se comportam como o Drizzle
+// real (update faz merge dos campos, findById lê o estado persistido),
+// permitindo testar PERSISTÊNCIA (PUT → GET reflete o que foi salvo).
+
+type MirrorRecord = {
+  id: number;
+  name: string;
+  status: string;
+  userId: number;
+  sourceGroups: { jid: string; name: string }[];
+  targetGroups: { jid: string; name: string }[];
+  messageTemplate: string | null;
+  subRateLimitMaxMsgs: number | null;
+  subRateLimitWindowSec: number | null;
+};
+
+function seedMirror(id: number, over: Partial<MirrorRecord> = {}): MirrorRecord {
+  return {
+    id,
+    name: 'm',
+    status: 'active',
+    userId: 1,
+    sourceGroups: [{ jid: 'g@g.us', name: 'G' }],
+    targetGroups: [{ jid: 't@g.us', name: 'T' }],
+    messageTemplate: null,
+    subRateLimitMaxMsgs: 5,
+    subRateLimitWindowSec: 300,
+    ...over,
+  };
+}
+
+let store = new Map<number, MirrorRecord>();
+let nextId = 100;
+
+const findByIdMock = mock((id: number) => Promise.resolve(store.get(id) ?? null));
+const createMock = mock((input: unknown) => {
+  const record = { ...seedMirror(nextId), ...(input as object) } as unknown as MirrorRecord;
+  store.set(record.id, record);
+  nextId += 1;
+  return Promise.resolve(record);
+});
+const updateMock = mock((id: number, data: Record<string, unknown>) => {
+  const current = store.get(id);
+  if (!current) return Promise.resolve(null);
+  const updated = { ...current, ...data } as MirrorRecord;
+  store.set(id, updated);
+  return Promise.resolve(updated);
+});
+const patchStatusMock = mock((id: number, status: string) => {
+  const current = store.get(id);
+  if (!current) return Promise.resolve(null);
+  const updated = { ...current, status } as MirrorRecord;
+  store.set(id, updated);
+  return Promise.resolve(updated);
+});
+const deleteMock = mock((id: number) => {
+  const existed = store.has(id);
+  store.delete(id);
+  return Promise.resolve(existed);
+});
 
 const replaceSourceGroupsMock = mock(() => Promise.resolve());
 const removeSourceGroupsMock = mock(() => Promise.resolve());
@@ -102,6 +146,13 @@ async function call(
 }
 
 beforeEach(() => {
+  // Seed inicial: mirrors 1 e 5 existem (id 404/999 não — casos de 404).
+  // messageTemplate pré-existente no mirror 1 para o cenário de edição.
+  store = new Map<number, MirrorRecord>([
+    [1, seedMirror(1, { name: 'm1', messageTemplate: 'template antigo' })],
+    [5, seedMirror(5, { name: 'm5' })],
+  ]);
+  nextId = 100;
   for (const m of [
     listMock,
     findByIdMock,
@@ -257,5 +308,79 @@ describe('DELETE /api/mirrors/:id', () => {
   it('não encontrado (delete) → 404', async () => {
     const res = await call('DELETE', '/api/mirrors/404');
     expect(res.status).toBe(404);
+  });
+});
+
+describe('PERSISTÊNCIA do template de mensagem (bug t_3652fdbd)', () => {
+  // Bug reportado: "template save API retorna success mas não persiste" —
+  // salvar o template respondia success:true, mas ao recarregar voltava ao
+  // anterior. O store COM ESTADO permite verificar o contrato completo:
+  // PUT (salvar) → GET (recarregar) → template persistido.
+
+  it('PUT salva messageTemplate e o GET (recarga) o encontra persistido', async () => {
+    const novoTemplate = '🛒 {marketplace_nome}\n{link_convertido}\n📅 {data}';
+
+    // 1. Salvar template (mesmo payload do MirrorFormPage)
+    const saveRes = await call('PUT', '/api/mirrors/1', {
+      body: { messageTemplate: novoTemplate },
+    });
+    expect(saveRes.status).toBe(200);
+    const saveJson = (await saveRes.json()) as {
+      success: boolean;
+      mirror?: { messageTemplate?: string | null };
+      error?: string;
+    };
+    expect(saveJson.success).toBe(true);
+    expect(saveJson.mirror?.messageTemplate).toBe(novoTemplate);
+
+    // 2. "Recarregar": GET no mesmo espelhamento
+    const reloadJson = (await (await call('GET', '/api/mirrors/1')).json()) as {
+      success: boolean;
+      mirror?: { messageTemplate?: string | null };
+    };
+    expect(reloadJson.success).toBe(true);
+    expect(reloadJson.mirror?.messageTemplate).toBe(novoTemplate);
+  });
+
+  it('PUT com messageTemplate null (limpar template) persiste null', async () => {
+    const saveRes = await call('PUT', '/api/mirrors/1', {
+      body: { messageTemplate: null },
+    });
+    expect(saveRes.status).toBe(200);
+    const saveJson = (await saveRes.json()) as {
+      success: boolean;
+      mirror?: { messageTemplate?: string | null };
+    };
+    expect(saveJson.mirror?.messageTemplate).toBeNull();
+
+    const reloadJson = (await (await call('GET', '/api/mirrors/1')).json()) as {
+      success: boolean;
+      mirror?: { messageTemplate?: string | null };
+    };
+    expect(reloadJson.mirror?.messageTemplate).toBeNull();
+  });
+
+  it('POST cria espelhamento com messageTemplate e o GET o encontra persistido', async () => {
+    const template = '{texto_original}\n\n🔗 {link_convertido}';
+    const createRes = await call('POST', '/api/mirrors', {
+      body: {
+        name: 'Novo com template',
+        messageTemplate: template,
+      },
+    });
+    expect(createRes.status).toBe(200);
+    const createJson = (await createRes.json()) as {
+      success: boolean;
+      mirror?: { id: number; messageTemplate?: string | null };
+    };
+    expect(createJson.success).toBe(true);
+    const createdId = createJson.mirror!.id;
+    expect(createJson.mirror?.messageTemplate).toBe(template);
+
+    const reloadJson = (await (await call('GET', `/api/mirrors/${createdId}`)).json()) as {
+      success: boolean;
+      mirror?: { messageTemplate?: string | null };
+    };
+    expect(reloadJson.mirror?.messageTemplate).toBe(template);
   });
 });
