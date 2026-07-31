@@ -1,18 +1,17 @@
 /**
- * Testes do catalog-publisher (Queue C).
+ * Testes do catalog-publisher (Queue C) — movido de apps/ingestor para
+ * @omestre/worker-common (onde o publicador passou a viver, reutilizado
+ * pelo Ingestor e pelo backfill do CatalogWorker).
  *
- * `resolveCatalogTarget` é pura (parse de URL, sem rede). `publishCatalogJob`
- * usa Redis injetado (fake) — nenhuma conexão real nos testes.
+ * `resolveCatalogTarget` é pura (parse de URL, sem rede) e agora mora em
+ * @omestre/shared. `publishCatalogJob` usa Redis injetado (fake) — nenhuma
+ * conexão real nos testes.
  */
 import { describe, expect, it } from 'bun:test';
 import type Redis from 'ioredis';
-import { MIRROR_CATALOG_STREAM } from '@omestre/shared';
+import { MIRROR_CATALOG_STREAM, resolveCatalogTarget } from '@omestre/shared';
 import type { CatalogJob } from '@omestre/shared';
-import {
-  CATALOG_STREAM_MAXLEN,
-  publishCatalogJob,
-  resolveCatalogTarget,
-} from './catalog-publisher.ts';
+import { CATALOG_STREAM_MAXLEN, publishCatalogJob } from './catalog-publisher.ts';
 
 describe('resolveCatalogTarget', () => {
   describe('shopee', () => {
