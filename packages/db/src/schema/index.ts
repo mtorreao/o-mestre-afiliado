@@ -117,6 +117,9 @@ export { mirrors } from './mirrors.ts';
 export { amazonAffiliates } from './amazonAffiliates.ts';
 export type { AmazonTrackingId, AmazonRegion } from './amazonAffiliates.ts';
 
+// ─── Afiliados Magalu (store slug único) ────────────────────────────
+export { magaluAffiliates } from './magaluAffiliates.ts';
+
 // ─── Feature Flags ─────────────────────────────────────────
 export { featureFlags } from './featureFlags.ts';
 export { extensionLogs } from './extensionLogs.ts';
