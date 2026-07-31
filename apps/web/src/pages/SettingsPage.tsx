@@ -1,13 +1,13 @@
 /**
- * SettingsPage — Página de configurações com 4 abas
+ * SettingsPage — Página de configurações com 5 abas
  *
- * Abas: WhatsApp, Shopee, Mercado Livre, Amazon
+ * Abas: WhatsApp, Shopee, Mercado Livre, Amazon, Magalu
  * Reutiliza seções existentes do dashboard.
  *
  * Loading por seção: cada seção carrega independentemente.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Smartphone, Store, Package, ShoppingBag } from 'lucide-react';
+import { Smartphone, Store, Package, ShoppingBag, ShoppingCart } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
 import { Card, Loading, Tabs } from '../components/ui/index.ts';
@@ -16,6 +16,7 @@ import { WppConnection } from '../components/WppConnection.tsx';
 import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
 import { MlConfigSection } from './sections/MlConfigSection.tsx';
 import { AmazonConfigSection } from './sections/AmazonConfigSection.tsx';
+import { MagaluConfigSection, type MagaluAffiliateInfo } from './sections/MagaluConfigSection.tsx';
 import { TestConversionSection } from './sections/TestConversionSection.tsx';
 
 interface AmazonTrackingId {
@@ -39,6 +40,7 @@ interface ProfileData {
   shopeeAppId: string | null;
   amazonTrackingId: string | null;
   amazon?: { connected: false } | AmazonAffiliateInfo;
+  magalu?: { connected: false } | MagaluAffiliateInfo;
   mercadoLivre:
     | { connected: false }
     | {
@@ -78,6 +80,7 @@ const tabs = [
   { value: 'shopee', label: 'Shopee', icon: <Store size={16} /> },
   { value: 'mercadolivre', label: 'Mercado Livre', icon: <Package size={16} /> },
   { value: 'amazon', label: 'Amazon', icon: <ShoppingBag size={16} /> },
+  { value: 'magalu', label: 'Magalu', icon: <ShoppingCart size={16} /> },
 ];
 
 export function SettingsPage({ user, token }: SettingsPageProps) {
@@ -115,6 +118,9 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
 
   const amazonConnected = profile?.amazon?.connected === true;
   const amazon = amazonConnected ? (profile!.amazon as AmazonAffiliateInfo) : null;
+
+  const magaluConnected = profile?.magalu?.connected === true;
+  const magalu = magaluConnected ? (profile!.magalu as MagaluAffiliateInfo) : null;
 
   return (
     <PageLayout maxWidth="960px">
@@ -224,6 +230,20 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
             <AmazonConfigSection
               token={token}
               initialAffiliate={amazon}
+              onUpdate={refreshProfile}
+            />
+            <TestConversionSection token={token} />
+          </div>
+        )}
+
+        {/* Aba 5: Magalu */}
+        {loading ? (
+          <Loading text="Carregando perfil..." size="sm" />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-5)' }}>
+            <MagaluConfigSection
+              token={token}
+              initialAffiliate={magalu}
               onUpdate={refreshProfile}
             />
             <TestConversionSection token={token} />
