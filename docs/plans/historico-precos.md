@@ -7,6 +7,8 @@
 ---
 
 > **Decisão de arquitetura:** catálogo roda em **worker isolado** (`apps/catalog-worker`) consumindo **Queue C `omestre:mirror:catalog`**. O Ingestor **só publica a identidade** do produto (`XADD` O(1), fire-and-forget, fora do hot path). O CatalogWorker é **dono de buscar o dado fresco** (preço/variação/imagem) na fonte e gravar. Isso garante zero impacto no fluxo de espelhamento (Ingestor→Queue B→Dispatcher).
+>
+> **Decisões do backfill (rev 0.3.0):** `publishCatalogJob`/`resolveCatalogTarget` vivem em `@omestre/worker-common`/`@omestre/shared` (compartilhados entre Ingestor e backfill — sem duplicação); `parseAffiliateUserId` centralizado em `@omestre/shared`; backfill usa `messageId = backfill:<rowId>` (rastreabilidade de volta ao `reflected_offers`) e `capturedAt = reflected_at` (bucket histórico real); userId vem de `affiliates.evolution_instance_id` (`user-<id>`); comando **explícito** (`bun run backfill`), nunca automático.
 
 ---
 
@@ -185,8 +187,8 @@ O ingestor preenche `productKey` (já resolvido em 3.1) no `SendEvent` do fan-ou
 3. **`catalog-worker`** (NOVO app, isolado) — `apps/catalog-worker/` consumindo **Queue C `omestre:mirror:catalog`** (Redis Stream + consumer group + ACK + DLQ, padrão v2 de `packages/worker-common`). Grava via `catalog.repository.ts` (upsert `products`/`product_variations` + append `price_history` com `ON CONFLICT DO NOTHING` no índice único). Busca ML `GET items/{id}` aqui (isolado).
 4. **`catalog-api`** — `apps/api/src/modules/catalog/catalog.routes.ts` (rotas read-only, gate `isAdmin`) + `catalog.repository.ts`; `ADMIN_EMAILS` (env) + `isAdmin` no JWT/`/me`/`useAuth`.
 5. **`catalog-ui`** — `AppShell` filtra nav por `isAdmin`; rota `historico-precos` → `ProductHistoryPage` (tabela + drawer com gráfico de linha).
-6. **`backfill`** (Melhoria 5) — script `apps/catalog-worker/src/backfill.ts` (ou CLI) que varre `reflected_offers` existente e publica `CatalogJob` pra cada `original_link` normalizável, populando o histórico de imediato. Rodar 1x após o deploy.
-7. **`infra`** — registrar `catalog-worker` no `docker-compose.yml` / `docker-compose.dev.yml` (porta `:9094`), no `scripts/dev.ts` (start/stop/lock), e no `deploy-local.sh` (gate). Reusar `worker-common` (metrics, DLQ, step-tracker).
+6. **`backfill`** (Melhoria 5) — ✅ **entregue** (t_4b9d46cd): `apps/catalog-worker/src/backfill.ts` + `backfill-pure.ts` (CLI `bun run backfill`, flags `--limit N` / `--dry-run`; varre `reflected_offers` por keyset pagination e publica `CatalogJob` via `publishCatalogJob` do worker-common; `messageId = backfill:<rowId>`, `capturedAt = reflected_at` — preserva o bucket histórico; userId resolvido de `affiliates.evolution_instance_id`).
+7. **`infra`** — ✅ **entregue** (t_4b9d46cd): `catalog-worker` registrado no `docker-compose.yml` e `docker-compose.dev.yml` (metrics `:9094`; host `5456` no dev, `base+8` via dev.ts), no `scripts/dev.ts` (services/ports/env/banner), no `deploy-local.sh` (gate de build) e no `bun run build` da raiz (`build:catalog-worker`). Reusa `worker-common` (metrics, DLQ, step-tracker, `catalog-publisher`).
 8. **`verify`** — subir stack dev, enviar (ou simular) 2 msgs com o mesmo link Shopee+ML; checar: `products` tem 1 linha; `price_history` tem pontos distintos; re-envio na mesma hora **não** duplica (índice único); CatalogWorker isolado não afeta ingestor/dispatcher (latência/DLQ próprios).
 
 ### 5.5. Admin + UI de consulta (oculta para usuário comum)
@@ -292,7 +294,8 @@ Webhook → Queue A (omestre:mirror:raw) → Ingestor (converte + envia) → Que
 
 ## Revision history
 
-| Date       | Version | Change                                                                                                                                       | Reason                                                            |
-| ---------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| 2026-07-28 | 0.1.0   | Adopted spec-driven template                                                                                                                 | Bootstrap of `spec-driven` skill                                  |
-| 2026-07-31 | 0.2.0   | Rev C3 (CatalogWorker): documentado skip de variação ML sem price, política de descarte sem dado útil e consumer group real `mirror-catalog` | Decisões tomadas na implementação do worker (apps/catalog-worker) |
+| Date       | Version | Change                                                                                                                                                                                         | Reason                                                            |
+| ---------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 2026-07-28 | 0.1.0   | Adopted spec-driven template                                                                                                                                                                   | Bootstrap of `spec-driven` skill                                  |
+| 2026-07-31 | 0.2.0   | Rev C3 (CatalogWorker): documentado skip de variação ML sem price, política de descarte sem dado útil e consumer group real `mirror-catalog`                                                   | Decisões tomadas na implementação do worker (apps/catalog-worker) |
+| 2026-07-31 | 0.3.0   | Backfill + infra entregues (commits 6-7): `bun run backfill`, catalog-worker no compose/dev.ts/deploy, `publishCatalogJob`→worker-common, `resolveCatalogTarget`/`parseAffiliateUserId`→shared | Execução t_4b9d46cd                                               |
