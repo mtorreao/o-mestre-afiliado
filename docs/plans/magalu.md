@@ -848,3 +848,6 @@ Fase 0 (Fundação admin)
 | ---------- | ------- | ----------------------------------------------------------------------------------- | -------------------------------- |
 | 2026-07-31 | 0.1.1   | DB layer delivered via commit `c4883a2`; converter, API and pipeline remain pending | Roadmap Phase 2                  |
 | 2026-07-28 | 0.1.0   | Adopted spec-driven template                                                        | Bootstrap of `spec-driven` skill |
+| Date       | Version | Change                       | Reason                           |
+| ---------- | ------- | ---------------------------- | -------------------------------- |
+| 2026-07-28 | 0.1.0   | Adopted spec-driven template | Bootstrap of `spec-driven` skill |

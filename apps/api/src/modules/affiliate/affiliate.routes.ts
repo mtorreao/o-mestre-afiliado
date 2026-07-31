@@ -5,12 +5,14 @@ import {
   MlAffiliateRepository,
   MirrorLogRepository,
   AmazonAffiliateRepository,
+  MagaluAffiliateRepository,
   AffiliatesRepository,
 } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import {
   convertShopeeUrlWithCredentials,
   convertAmazonUrlWithAffiliate,
+  convertMagaluUrlWithStoreSlug,
 } from '@omestre/converters';
 import type { ShopeeCredentials } from '@omestre/converters';
 import {
@@ -29,6 +31,7 @@ const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
 const mlRepo = new MlAffiliateRepository();
 const amazonRepo = new AmazonAffiliateRepository();
+const magaluRepo = new MagaluAffiliateRepository();
 const mirrorLogRepo = new MirrorLogRepository();
 const affiliatesRepo = new AffiliatesRepository();
 
@@ -51,6 +54,7 @@ export const affiliateRoutes = new Elysia()
     const creds = await credentialsRepo.findByUserId(auth.userId);
     const mlAffiliate = await mlRepo.findByPlatformUserId(auth.userId);
     const amazonAffiliate = await amazonRepo.findByUserId(auth.userId);
+    const magaluAffiliate = await magaluRepo.findByUserId(auth.userId);
 
     const mlInfo = mlAffiliate
       ? {
@@ -74,6 +78,15 @@ export const affiliateRoutes = new Elysia()
         }
       : { connected: false };
 
+    const magaluInfo = magaluAffiliate
+      ? {
+          connected: true,
+          nickname: magaluAffiliate.nickname,
+          storeSlug: magaluAffiliate.storeSlug,
+          active: magaluAffiliate.active,
+        }
+      : { connected: false };
+
     return {
       success: true,
       profile: {
@@ -91,6 +104,7 @@ export const affiliateRoutes = new Elysia()
           : null,
         mercadoLivre: mlInfo,
         amazon: amazonInfo,
+        magalu: magaluInfo,
         // Configuração de notificações proativas
         notificationConfig: {
           channel: null,
@@ -137,7 +151,7 @@ export const affiliateRoutes = new Elysia()
 
     // Usa a plataforma fornecida ou detecta automaticamente
     const marketplace =
-      platform && ['shopee', 'mercadolivre', 'amazon'].includes(platform)
+      platform && ['shopee', 'mercadolivre', 'amazon', 'magalu'].includes(platform)
         ? platform
         : detectMarketplace(url);
 
@@ -153,11 +167,15 @@ export const affiliateRoutes = new Elysia()
       return handleAmazonConversion(auth.userId, url, (body as { tag?: string }).tag);
     }
 
+    if (marketplace === 'magalu') {
+      return handleMagaluConversion(auth.userId, url);
+    }
+
     set.status = 400;
     return {
       success: false,
       originalUrl: url,
-      error: 'Marketplace não suportado. Aceito: Shopee, Mercado Livre, Amazon',
+      error: 'Marketplace não suportado. Aceito: Shopee, Mercado Livre, Amazon, Magalu',
     };
   })
 
@@ -416,4 +434,32 @@ async function handleAmazonConversion(
   return convertAmazonUrlWithAffiliate(url, amazonAffiliate.trackingIds ?? [], {
     preferredTag: preferredTag ?? null,
   });
+}
+
+/**
+ * Converte URL da Magalu usando o storeSlug do afiliado.
+ * Sem afiliado configurado (ou inativo), retorna erro de negócio
+ * (sem 5xx) orientando a configuração no painel.
+ */
+async function handleMagaluConversion(userId: number, url: string): Promise<ConversionResult> {
+  const magaluAffiliate = await magaluRepo.findByUserId(userId);
+
+  if (!magaluAffiliate || !magaluAffiliate.active) {
+    return {
+      success: false,
+      originalUrl: url,
+      affiliateUrl: null,
+      marketplace: 'magalu',
+      method: 'unknown',
+      error: 'Afiliado Magalu sem slug configurado. Configure em Configurações → Magalu.',
+    };
+  }
+
+  const result = await convertMagaluUrlWithStoreSlug(url, magaluAffiliate.storeSlug);
+
+  if (result.success) {
+    await magaluRepo.touch(userId);
+  }
+
+  return result;
 }
