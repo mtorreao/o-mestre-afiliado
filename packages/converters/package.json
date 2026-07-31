@@ -9,7 +9,8 @@
     "shopee": "bun run src/cli-shopee.ts",
     "mercadolivre": "bun run src/cli-mercadolivre.ts",
     "ml": "bun run src/cli-mercadolivre.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "magalu": "bun run src/cli-magalu.ts"
   },
   "dependencies": {
     "@omestre/shared": "workspace:*"

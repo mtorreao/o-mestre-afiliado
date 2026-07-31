@@ -27,8 +27,8 @@ describe('selectConverter', () => {
     expect(selectConverter('unknown')).toBeNull();
   });
 
-  it('retorna null para magalu (sem conversor dedicado ainda)', () => {
-    expect(selectConverter('magalu')).toBeNull();
+  it('mapeia magalu → convertMagaluUrl', () => {
+    expect(selectConverter('magalu')).toBeTypeOf('function');
   });
 });
 
