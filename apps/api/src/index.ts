@@ -22,6 +22,7 @@ import { whatsAppRoutes } from './modules/whatsapp/whatsapp.routes.ts';
 import { webhookRoutes } from './modules/webhook/webhook.routes.ts';
 import { mlRoutes } from './modules/ml/ml.routes.ts';
 import { amazonRoutes } from './modules/amazon/amazon.routes.ts';
+import { magaluRoutes } from './modules/magalu/magalu.routes.ts';
 import { extensionRoutes } from './modules/extension/extension.routes.ts';
 import { extensionLogRoutes } from './modules/extension/extension-log.routes.ts';
 import { featureFlagsRoutes } from './modules/admin/feature-flags.routes.ts';
@@ -49,7 +50,8 @@ const app = new Elysia()
       documentation: {
         info: {
           title: 'O Mestre Afiliado — API',
-          description: 'API para conversão de links de afiliados (Shopee, Mercado Livre, Amazon)',
+          description:
+            'API para conversão de links de afiliados (Shopee, Mercado Livre, Amazon, Magalu)',
           version: '1.0.0',
         },
       },
@@ -65,6 +67,7 @@ const app = new Elysia()
   .use(webhookRoutes)
   .use(mlRoutes)
   .use(amazonRoutes)
+  .use(magaluRoutes)
   .use(extensionRoutes)
   .use(extensionLogRoutes)
   .use(featureFlagsRoutes)

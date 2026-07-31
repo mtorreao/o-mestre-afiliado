@@ -1,8 +1,8 @@
 # Magalu — Integração de Afiliados para Tenants
 
-> **Status:** camada de banco de dados **entregue** em 2026-07-31 via commit `c4883a2` (migration `0020`, schema Drizzle e repository). Conversor, API e pipeline permanecem **pendentes** na Fase 2 do [`docs/roadmap.md`](../roadmap.md).
+> **Status:** **FASE 2.5 ENTREGUE** em 2026-07-31 — Magalu é o quarto marketplace funcional (DB + conversor + ingestor + API + UI + E2E + docs). Phase 2 fechada no [`docs/roadmap.md`](../roadmap.md); referência de API em [`docs/marketplaces/magalu/api-reference.md`](../marketplaces/magalu/api-reference.md).
 >
-> **Entregue:** DB multi-tenant para afiliados Magalu. **Pendente:** conversão de links, endpoints/perfil e integração no pipeline/painel.
+> **Entregue (4 tasks filhos):** `t_f319d3a6` (ingestor + notifier), `t_ac661608` (API + spec E2E), `t_b9eed8f1` (web), `t_5982d0c8` (E2E P11 + docs). Plano mantido em `plans/` aguardando estabilização antes de migrar para `docs/specs/`.
 >
 > **Objetivo:** tornar o **Magalu** (Magazine Luiza) o **quarto marketplace real** do `O Mestre Afiliado`, multi-tenant e operável pelo painel, espelhando o que já existe para Shopee / Mercado Livre / Amazon.
 >
@@ -250,18 +250,34 @@ validateMagaluStoreSlug(slug: string): { valid: boolean; reason?: string }   // 
 Atualizar `packages/converters/src/index.ts`:
 
 ```ts
+// Implementado (commit de integração wt/t_b1d054a8). Os helpers de detecção/
+// extração/build vivem em magalu-pure.ts e seguem a convenção de sufixo
+// `Pure` do repo (ex: extractMagaluProductIdPure, isMagaluShortlinkPure,
+// buildMagaluAffiliateLinkPure) — não existe versão sem sufixo.
 export {
-  extractMagaluProductId,
-  isMagaluShortlink,
-  isMagazineluizaProductUrl,
-  isMagazinevoceProductUrl,
-  isMagaluProductUrl,
-  extractMagazinevoceStoreSlug,
   resolveMagaluShortlink,
-  buildMagaluAffiliateLink,
+  resolvePromozoneMagaluUrl,
+  generateMagaluOneLink,
   convertMagaluUrlWithStoreSlug,
   convertMagaluUrl,
 } from './magalu.ts';
+
+export {
+  isMagaluShortlinkPure,
+  isMagazineluizaProductUrlPure,
+  isMagazinevoceProductUrlPure,
+  isPromozoneMagaluUrlPure,
+  isMagaluOnelinkUrlPure,
+  isMagaluProductUrlPure,
+  extractPromozoneMagaluIdPure,
+  extractMagaluProductIdPure,
+  extractMagazinevoceStoreSlugPure,
+  extractMagaluShortlinkIdPure,
+  validateMagaluStoreSlugPure,
+  buildMagaluAffiliateLinkPure,
+  buildMagaluAffiliateLinkPureSafe,
+} from './magalu-pure.ts';
+export type { BuildMagaluLinkInput, SlugValidation } from './magalu-pure.ts';
 
 export function selectConverter(marketplace): (...) | null {
   switch (marketplace) {
@@ -649,22 +665,22 @@ Após aplicar mudanças, **verificar visualmente** no browser (conforme preferê
 
 ### 9.1 `e2e/magalu.api.spec.ts` (espelha `e2e/amazon.api.spec.ts`)
 
-Cenários obrigatórios:
+Cenários obrigatórios (✅ cobertos em `e2e/magalu.api.spec.ts` — 2026-07-31):
 
-- [ ] `GET /api/magalu/affiliate` sem config → `{ configured: false }`
-- [ ] `PUT /api/magalu/affiliate` com slug válido → 200
-- [ ] `PUT /api/magalu/affiliate` com slug inválido (`"A"` muito curto) → 400 com erro claro
-- [ ] `GET /api/magalu/affiliate` com config → retorna slug
-- [ ] `DELETE /api/magalu/affiliate` → 200 + affiliation removida
-- [ ] `POST /api/magalu/convert` com URL `magazineluiza.com.br/p/123` + slug configurado → 200, affiliateUrl começa com `magazinevoce.com.br/{slug}/`
-- [ ] `POST /api/magalu/convert` sem slug configurado → 404 com erro descritivo
-- [ ] `POST /api/magalu/convert` com URL fora do padrão → 400
+- [x] `GET /api/magalu/affiliate` sem config → `{ configured: false }`
+- [x] `PUT /api/magalu/affiliate` com slug válido → 200
+- [x] `PUT /api/magalu/affiliate` com slug inválido (`"A"` muito curto) → 400 com erro claro
+- [x] `GET /api/magalu/affiliate` com config → retorna slug
+- [x] `DELETE /api/magalu/affiliate` → 200 + affiliation removida
+- [x] `POST /api/magalu/convert` com URL `magazineluiza.com.br/p/123` + slug configurado → 200, affiliateUrl começa com `magazinevoce.com.br/{slug}/`
+- [x] `POST /api/magalu/convert` sem slug configurado → 404 com erro descritivo
+- [x] `POST /api/magalu/convert` com URL fora do padrão → 400
 
 ### 9.2 `e2e/mirror-pipeline.api.spec.ts` (estende o existente)
 
-Cenário novo:
+Cenário novo (✅ coberto em `e2e/mirror-pipeline.api.spec.ts` — 2026-07-31):
 
-- [ ] P11: oferta Magalu `/p/123` em grupo fonte → grupo destino, com `affiliateUrl` apontando para `magazinevoce.com.br/{slugAfiliadoTeste}/.../p/123/`
+- [x] P11: oferta Magalu `/p/123` em grupo fonte → grupo destino, com `affiliateUrl` apontando para `magazinevoce.com.br/{slugAfiliadoTeste}/.../p/123/`
 
 ### 9.3 Testes unitários (resumo)
 
@@ -828,7 +844,8 @@ Fase 0 (Fundação admin)
 
 ## Revision history
 
-| Date       | Version | Change                                                                              | Reason                           |
-| ---------- | ------- | ----------------------------------------------------------------------------------- | -------------------------------- |
-| 2026-07-31 | 0.1.1   | DB layer delivered via commit `c4883a2`; converter, API and pipeline remain pending | Roadmap Phase 2                  |
-| 2026-07-28 | 0.1.0   | Adopted spec-driven template                                                        | Bootstrap of `spec-driven` skill |
+| Date       | Version | Change                                                                              | Reason                                                                    |
+| ---------- | ------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 2026-07-31 | 0.2.0   | Fase 2.5 entregue (DB + conversor + ingestor + API + UI + E2E + docs)               | Execução das tasks `t_f319d3a6`, `t_ac661608`, `t_b9eed8f1`, `t_5982d0c8` |
+| 2026-07-31 | 0.1.1   | DB layer delivered via commit `c4883a2`; converter, API and pipeline remain pending | Roadmap Phase 2                                                           |
+| 2026-07-28 | 0.1.0   | Adopted spec-driven template                                                        | Bootstrap of `spec-driven` skill                                          |

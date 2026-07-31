@@ -42,6 +42,14 @@ interface ProfileData {
         trackingIds: { tag: string; isDefault: boolean; active: boolean }[];
         activeTrackingCount: number;
       };
+  magalu?:
+    | { connected: false }
+    | {
+        connected: true;
+        nickname: string | null;
+        storeSlug: string;
+        active: boolean;
+      };
   mercadoLivre:
     | { connected: false }
     | {
@@ -360,6 +368,8 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
   const mlConnected = profile?.mercadoLivre.connected === true;
   const amazonConnected =
     profile?.amazon?.connected === true && (profile.amazon.activeTrackingCount ?? 0) > 0;
+  const magaluConnected = profile?.magalu?.connected === true && profile.magalu.active;
+  const configuredMarketplaces = [shopeeConfigured, mlConnected, amazonConnected, magaluConnected];
   const wppConnected = wppStatus?.connected === true;
 
   // ─── Render ────────────────────────────────────────
@@ -404,15 +414,20 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
               ? '…'
               : !profile
                 ? '—'
-                : [shopeeConfigured && 'Shopee', mlConnected && 'ML', amazonConnected && 'Amazon']
+                : [
+                    shopeeConfigured && 'Shopee',
+                    mlConnected && 'ML',
+                    amazonConnected && 'Amazon',
+                    magaluConnected && 'Magalu',
+                  ]
                     .filter(Boolean)
                     .join(' + ') || 'Nenhum'
           }
           badge={
             !profileLoading && profile
-              ? [shopeeConfigured, mlConnected, amazonConnected].filter(Boolean).length > 0
+              ? configuredMarketplaces.filter(Boolean).length > 0
                 ? {
-                    label: `${[shopeeConfigured, mlConnected, amazonConnected].filter(Boolean).length} configurado(s)`,
+                    label: `${configuredMarketplaces.filter(Boolean).length} configurado(s)`,
                     variant: 'success' as const,
                   }
                 : { label: 'Nenhum configurado', variant: 'neutral' as const }
