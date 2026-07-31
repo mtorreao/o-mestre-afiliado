@@ -93,7 +93,7 @@ const app = new Elysia()
   .use(featureFlagsRoutes)
 
   // ─── Gate de manutenção (feature flag global) ────────────────────
-  .onBeforeHandle(async ({ request }) => {
+  .onBeforeHandle(async ({ request, jwt }) => {
     if (await isFeatureEnabled('maintenance_mode')) {
       const path = new URL(request.url).pathname;
       const isExempt =
@@ -104,12 +104,16 @@ const app = new Elysia()
         path === '/docs' ||
         path.startsWith('/swagger');
       if (!isExempt) {
+        // Se tem token, verifica se é admin — só admin bypassa manutenção.
         const authHeader = request.headers.get('authorization');
         if (authHeader?.startsWith('Bearer ')) {
-          // Se tem token, verifica se é admin
-          return; // não bloqueia — deixa a rota decidir
+          const token = authHeader.slice(7);
+          const payload = (await jwt.verify(token)) as { isAdmin?: boolean } | null | false;
+          if (payload && typeof payload === 'object' && payload.isAdmin === true) {
+            return; // admin continua navegando durante manutenção
+          }
         }
-        // Sem token → bloqueia
+        // Sem token, ou token não-admin → bloqueia
         return {
           success: false,
           error: 'Sistema em manutenção. Tente novamente em instantes.',
