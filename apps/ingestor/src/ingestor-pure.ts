@@ -173,16 +173,11 @@ export function resolveSendDedupKey(mirrorId: number | string, messageId: string
 
 /**
  * Extrai o userId de plataforma de um instanceName no formato `user-<id>`.
- * Retorna null se não casar (ex.: instâncias de dispatcher, `dispatch-x`).
- * Função PURO.
+ * Implementação única em @omestre/shared (convenção `user-<id>` usada também
+ * pela API e pelo backfill do CatalogWorker) — re-export mantém os
+ * consumidores deste módulo intactos.
  */
-export function parseAffiliateUserId(instanceName: string): number | null {
-  const match = instanceName.match(/^user-(\d+)$/);
-  if (match && match[1]) {
-    return parseInt(match[1], 10);
-  }
-  return null;
-}
+export { parseAffiliateUserId } from '@omestre/shared';
 
 // ─── Detecção de URL de social commerce (ML) ─────────────────────────────
 

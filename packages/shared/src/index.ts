@@ -254,6 +254,20 @@ export type {
   MirrorSendConfig,
 } from './mirror-message.ts';
 
+// ─── Identidade de produto (catálogo — Queue C) ─────────────────────
+
+export {
+  extractShopeeItemIdFromUrl,
+  extractMlItemIdFromUrl,
+  extractAmazonAsinFromUrl,
+  resolveCatalogTarget,
+} from './catalog-target.ts';
+export type { CatalogTarget } from './catalog-target.ts';
+
+// ─── Instâncias Evolution (padrão user-<id>) ───────────────────────
+
+export { parseAffiliateUserId } from './affiliate-instance.ts';
+
 // ─── Constantes do pipeline ────────────────────────────────────────────
 
 // ─── Offer Validator ──────────────────────────────────────────────────

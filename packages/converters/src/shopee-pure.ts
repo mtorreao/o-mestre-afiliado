@@ -60,18 +60,12 @@ export function buildShopeeAuthHeaders(
 
 // ─── Extração de itemId / slug ─────────────────────────────────────────
 
-/** Extrai o itemId (segundo número no padrão -i.SHOPID.ITEMID) de uma URL. */
-export function extractShopeeItemIdFromUrl(url: string): number | null {
-  const m = url.match(/-i\.(\d+)\.(\d+)/i);
-  if (m?.[2]) return parseInt(m[2], 10);
-  // Tenta formato /product/{shopid}/{itemid}
-  const productMatch = url.match(/\/product\/(\d+)\/(\d+)/i);
-  if (productMatch?.[2]) return parseInt(productMatch[2], 10);
-  // Novo formato de short link: /opaanlp/{shopid}/{itemid}
-  const opaanlpMatch = url.match(/\/opaanlp\/(\d+)\/(\d+)/i);
-  if (opaanlpMatch?.[2]) return parseInt(opaanlpMatch[2], 10);
-  return null;
-}
+/**
+ * Extrai o itemId (segundo número no padrão -i.SHOPID.ITEMID) de uma URL Shopee.
+ * Implementação única em @omestre/shared (usada também pelo catálogo/backfill) —
+ * este re-export mantém a API pública do converters estável.
+ */
+export { extractShopeeItemIdFromUrl } from '@omestre/shared';
 
 /** Extrai o shopId (primeiro número no padrão -i.SHOPID.ITEMID) de uma URL. */
 export function extractShopeeShopIdFromUrl(url: string): number | null {
