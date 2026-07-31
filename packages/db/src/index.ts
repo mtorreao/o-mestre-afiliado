@@ -101,3 +101,15 @@ export { FeatureFlagRepository } from './repository/featureFlags.repository.ts';
 export type { FeatureFlagRow, NewFeatureFlagRow } from './repository/featureFlags.repository.ts';
 export { ExtensionLogRepository } from './repository/extensionLogs.repository.ts';
 export type { InsertedLogRow } from './repository/extensionLogs.repository.ts';
+
+export { CatalogRepository } from './repository/catalog.repository.ts';
+export type {
+  CatalogMarketplace,
+  CatalogListFilters,
+  CatalogProductSummary,
+  CatalogListResponse,
+  CatalogVariation,
+  CatalogPricePoint,
+  CatalogProductDetail,
+  CatalogVariationWithHistory,
+} from './repository/catalog.repository.ts';

@@ -25,6 +25,7 @@ import { amazonRoutes } from './modules/amazon/amazon.routes.ts';
 import { extensionRoutes } from './modules/extension/extension.routes.ts';
 import { extensionLogRoutes } from './modules/extension/extension-log.routes.ts';
 import { featureFlagsRoutes } from './modules/admin/feature-flags.routes.ts';
+import { catalogRoutes } from './modules/catalog/catalog.routes.ts';
 import { isFeatureEnabled, initFlagInvalidation } from '@omestre/feature-flags';
 import { warmSourceGroupCache } from './services/group-cache.ts';
 import {
@@ -91,6 +92,7 @@ const app = new Elysia()
   .use(extensionRoutes)
   .use(extensionLogRoutes)
   .use(featureFlagsRoutes)
+  .use(catalogRoutes)
 
   // ─── Gate de manutenção (feature flag global) ────────────────────
   .onBeforeHandle(async ({ request, jwt }) => {
