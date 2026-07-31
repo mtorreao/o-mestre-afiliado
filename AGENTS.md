@@ -267,7 +267,7 @@ Cada `docs/plans/<feature>.md` deve cobrir, **sem deixar nada em aberto**:
 
 | ❌ Evite                                                                             | ✅ Prefira                                                                                    |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| "Ver issue #123 para detalhes"                                                       | Citar o achado técnico concreto inline (ex: "migration `0017_add_magalu_affiliates.sql`")     |
+| "Ver issue #123 para detalhes"                                                       | Citar o achado técnico concreto inline (ex: "migration `0020_add_magalu_affiliates.sql`")     |
 | "Implementar depois" ou "TODO: ver com owner"                                        | Não escrever a parte — se não há decisão, a spec não está pronta, **não implemente ainda**    |
 | "Seguir padrão de X" sem dizer qual padrão                                           | Linkar arquivo concreto: `mesmo padrão de apps/api/src/modules/affiliate/affiliate.routes.ts` |
 | "Fácil de testar" ou "trivial"                                                       | Listar os casos de teste concretos: caminho do `*.test.ts`, input, output esperado            |
