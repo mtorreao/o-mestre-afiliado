@@ -145,50 +145,49 @@ export function GroupOfferAutocomplete({
     [isOpen, filtered, highlightIndex, handleSelect, query, value],
   );
 
-  // Estados
-  if (loading) {
-    return (
-      <div style={{ padding: '0.75rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-        Carregando grupos...
-      </div>
-    );
-  }
-
-  if (fetchError) {
-    return (
-      <div>
-        <div style={{ padding: '0.75rem 0', color: '#f87171', fontSize: '0.85rem' }}>
-          ❌ {fetchError}
-        </div>
-        <button
-          onClick={() => refresh()}
-          style={{
-            padding: '0.3rem 0.6rem',
-            borderRadius: '4px',
-            border: '1px solid #475569',
-            background: 'transparent',
-            color: '#94a3b8',
-            fontSize: '0.8rem',
-            cursor: 'pointer',
-          }}
-        >
-          🔄 Tentar novamente
-        </button>
-      </div>
-    );
-  }
-
-  if (groups.length === 0) {
-    return (
-      <div style={{ padding: '0.75rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-        Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de
-        grupos.
-      </div>
-    );
-  }
-
   return (
     <div>
+      {/* Status (loading / erro / vazio) — sempre acessível via aria-live */}
+      {loading && (
+        <div role="status" style={{ padding: '0.5rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+          Carregando grupos...
+        </div>
+      )}
+      {!loading && fetchError && (
+        <div
+          role="alert"
+          style={{
+            padding: '0.5rem 0',
+            color: '#f87171',
+            fontSize: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          <span>❌ {fetchError}</span>
+          <button
+            onClick={() => refresh()}
+            style={{
+              padding: '0.2rem 0.5rem',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              background: 'transparent',
+              color: '#94a3b8',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+            }}
+          >
+            🔄 Tentar novamente
+          </button>
+        </div>
+      )}
+      {!loading && !fetchError && groups.length === 0 && (
+        <div role="status" style={{ padding: '0.5rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+          Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de
+          grupos.
+        </div>
+      )}
       {/* Tags selecionadas */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
         {value.map((g) => (

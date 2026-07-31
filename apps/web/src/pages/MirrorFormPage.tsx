@@ -338,7 +338,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         onBack={onBack}
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} noValidate>
         <Card
           title="📋 Informações Básicas"
           titleId={NAME_TITLE_ID}

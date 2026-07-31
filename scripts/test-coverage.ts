@@ -40,7 +40,10 @@ function hasTestFiles(dir: string): boolean {
       const full = resolve(dir, entry.name);
       if (entry.isDirectory()) {
         if (hasTestFiles(full)) return true;
-      } else if (entry.isFile() && entry.name.endsWith('.test.ts')) {
+      } else if (
+        entry.isFile() &&
+        (entry.name.endsWith('.test.ts') || entry.name.endsWith('.test.tsx'))
+      ) {
         return true;
       }
     }
@@ -82,7 +85,7 @@ const subprojects = [
 ].sort();
 
 if (subprojects.length === 0) {
-  console.log('⚠️  Nenhum subprojeto com *.test.ts encontrado — nada a medir.');
+  console.log('⚠️  Nenhum subprojeto com *.test.ts/tsx encontrado — nada a medir.');
   process.exit(0);
 }
 
