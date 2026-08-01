@@ -155,6 +155,7 @@ describe('fetchGroups', () => {
         {
           id: '1@g.us',
           subject: 'G1',
+          pictureUrl: 'https://example.com/g1.jpg',
           participants: [{ phoneNumber: '5511999999999@s.whatsapp.net', admin: 'admin' }],
         },
         {
@@ -167,8 +168,8 @@ describe('fetchGroups', () => {
     const res = await (await import('./evolution.ts')).fetchGroups('user-1');
     expect(res.success).toBe(true);
     expect(res.groups).toEqual([
-      { jid: '1@g.us', name: 'G1', isAdmin: true },
-      { jid: '2@g.us', name: 'G2', isAdmin: false },
+      { jid: '1@g.us', name: 'G1', isAdmin: true, pictureUrl: 'https://example.com/g1.jpg' },
+      { jid: '2@g.us', name: 'G2', isAdmin: false, pictureUrl: null },
     ]);
   });
 

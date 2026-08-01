@@ -13,6 +13,8 @@
 export interface GroupItem {
   jid: string;
   name: string;
+  isAdmin?: boolean;
+  pictureUrl?: string | null;
 }
 
 export const MAX_SELECTION = 3;

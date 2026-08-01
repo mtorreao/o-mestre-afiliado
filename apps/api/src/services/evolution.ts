@@ -238,7 +238,7 @@ async function fetchInstanceOwnerJid(instanceName: string): Promise<string | nul
  */
 export async function fetchGroups(instanceName: string): Promise<{
   success: boolean;
-  groups?: { jid: string; name: string; isAdmin: boolean }[];
+  groups?: { jid: string; name: string; isAdmin: boolean; pictureUrl: string | null }[];
   error?: string;
 }> {
   try {

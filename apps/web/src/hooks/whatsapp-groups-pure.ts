@@ -2,6 +2,7 @@ export interface WhatsAppGroupWithAdmin {
   jid: string;
   name: string;
   isAdmin: boolean;
+  pictureUrl: string | null;
 }
 
 export function filterWhatsAppGroupsByAdmin(

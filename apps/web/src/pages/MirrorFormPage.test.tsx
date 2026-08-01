@@ -12,23 +12,25 @@ mock.module('react-router-dom', () => ({
 }));
 
 mock.module('../components/GroupOfferAutocomplete.tsx', () => ({
-  GroupOfferAutocomplete: ({ inputId, ariaLabel, error }: any) => (
+  GroupOfferAutocomplete: ({ inputId, ariaLabel, error, refreshSignal }: any) => (
     <div
       data-component="GroupOfferAutocomplete"
       data-input-id={inputId}
       data-aria-label={ariaLabel}
       data-error={error ?? ''}
+      data-refresh-signal={refreshSignal ?? 0}
     />
   ),
 }));
 
 mock.module('../components/GroupDestAutocomplete.tsx', () => ({
-  GroupDestAutocomplete: ({ inputId, ariaLabel, error }: any) => (
+  GroupDestAutocomplete: ({ inputId, ariaLabel, error, refreshSignal }: any) => (
     <div
       data-component="GroupDestAutocomplete"
       data-input-id={inputId}
       data-aria-label={ariaLabel}
       data-error={error ?? ''}
+      data-refresh-signal={refreshSignal ?? 0}
     />
   ),
 }));
@@ -73,6 +75,17 @@ describe('MirrorFormPage (modo criação)', () => {
     const html = renderToString(<MirrorFormPage token="x" onBack={() => {}} />);
     expect(html).toContain('id="mirror-form-nome"');
     expect(html).toContain('maxLength="255"');
+  });
+
+  it('passa o mesmo refreshSignal para origem e destino', () => {
+    const html = renderToString(<MirrorFormPage token="x" onBack={() => {}} />);
+    expect(html).toMatch(/data-component="GroupOfferAutocomplete"[^>]*data-refresh-signal="0"/);
+    expect(html).toMatch(/data-component="GroupDestAutocomplete"[^>]*data-refresh-signal="0"/);
+  });
+
+  it('renderiza o botão Atualizar grupos no header', () => {
+    const html = renderToString(<MirrorFormPage token="x" onBack={() => {}} />);
+    expect(html).toContain('Atualizar grupos');
   });
 
   it('rótulo do nome exibe asterisco visual indicando obrigatoriedade', () => {

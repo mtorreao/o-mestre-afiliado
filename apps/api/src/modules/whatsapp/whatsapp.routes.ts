@@ -352,14 +352,17 @@ export const whatsAppRoutes = new Elysia()
 
       const instanceName = instanceNameFromUserId(auth.userId);
 
-      const cacheKey = `whatsapp:groups:v2:${instanceName}`;
+      const cacheKey = `whatsapp:groups:v3:${instanceName}`;
 
       const force = query?.force === 'true';
 
       // Tenta cache primeiro (a menos que force=true)
 
       if (!force) {
-        const cached = await cacheGet<{ jid: string; name: string; isAdmin: boolean }[]>(cacheKey);
+        const cached =
+          await cacheGet<
+            { jid: string; name: string; isAdmin: boolean; pictureUrl: string | null }[]
+          >(cacheKey);
 
         if (cached) {
           return { success: true, groups: cached, fromCache: true };
@@ -381,8 +384,9 @@ export const whatsAppRoutes = new Elysia()
       const groups = result.groups || [];
 
       // Atualiza cache (mesmo em force=true, para popular com dados frescos)
-
-      await cacheSet(cacheKey, groups, 300);
+      // TTL 1 dia: dados de admin/foto de grupo não mudam frequentemente;
+      // o usuário pode forçar refresh manual pelo botão "Atualizar grupos".
+      await cacheSet(cacheKey, groups, 86400);
 
       return {
         success: true,

@@ -2,8 +2,8 @@ import { describe, it, expect, mock } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 let state = {
   groups: [
-    { jid: 'a@g.us', name: 'Alpha', isAdmin: true },
-    { jid: 'b@g.us', name: 'Beta', isAdmin: false },
+    { jid: 'a@g.us', name: 'Alpha', isAdmin: true, pictureUrl: 'https://example.com/a.png' },
+    { jid: 'b@g.us', name: 'Beta', isAdmin: false, pictureUrl: null },
   ],
   loading: false,
   error: null as string | null,
@@ -43,7 +43,7 @@ describe('GroupDestAutocomplete', () => {
 
   it('informa quando existem grupos, mas o usuário não administra nenhum', () => {
     state = {
-      groups: [{ jid: 'b@g.us', name: 'Beta', isAdmin: false }],
+      groups: [{ jid: 'b@g.us', name: 'Beta', isAdmin: false, pictureUrl: null }],
       loading: false,
       error: null,
       refresh: () => {},
@@ -51,5 +51,23 @@ describe('GroupDestAutocomplete', () => {
     expect(
       renderToString(<GroupDestAutocomplete token="x" value={[]} onChange={() => {}} />),
     ).toContain('Você precisa ser administrador do grupo');
+  });
+
+  it('tags selecionadas mostram apenas o nome, sem JID e sem avatar', () => {
+    state = {
+      groups: [
+        { jid: 'a@g.us', name: 'Alpha', isAdmin: true, pictureUrl: 'https://example.com/a.png' },
+      ],
+      loading: false,
+      error: null,
+      refresh: () => {},
+    };
+    const html = renderToString(
+      <GroupDestAutocomplete token="x" value={[state.groups[0]!]} onChange={() => {}} />,
+    );
+    // Nome aparece na tag.
+    expect(html).toContain('Alpha');
+    // O JID não aparece na tag (apenas em campos internos/seleção invisível).
+    expect(html).not.toContain('a@g.us');
   });
 });

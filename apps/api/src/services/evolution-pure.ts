@@ -209,6 +209,7 @@ export interface NormalizedWhatsAppGroup {
   jid: string;
   name: string;
   isAdmin: boolean;
+  pictureUrl: string | null;
 }
 
 function participantMatchesInstance(
@@ -239,7 +240,12 @@ export function normalizeGroupsForInstance(
         : undefined;
       const admin = (participant as Record<string, unknown> | undefined)?.admin;
 
-      return { jid, name, isAdmin: admin === 'admin' || admin === 'superadmin' };
+      return {
+        jid,
+        name,
+        isAdmin: admin === 'admin' || admin === 'superadmin',
+        pictureUrl: typeof item.pictureUrl === 'string' && item.pictureUrl ? item.pictureUrl : null,
+      };
     })
     .filter((group) => group.jid && group.name);
 }

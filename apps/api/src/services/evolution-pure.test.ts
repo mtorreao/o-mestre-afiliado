@@ -328,10 +328,57 @@ describe('normalizeGroupsForInstance', () => {
   ];
 
   it('marca apenas grupos em que o dono da instância é admin ou superadmin', () => {
+    const groups = [
+      {
+        id: 'admin@g.us',
+        subject: 'Administrado',
+        pictureUrl: 'https://example.com/admin.png',
+        participants: [
+          { phoneNumber: '558193970733@s.whatsapp.net', admin: 'admin' },
+          { phoneNumber: '5511999999999@s.whatsapp.net', admin: null },
+        ],
+      },
+      {
+        id: 'superadmin@g.us',
+        subject: 'Criado pelo usuário',
+        pictureUrl: 'https://example.com/super.png',
+        participants: [{ phoneNumber: '558193970733@s.whatsapp.net', admin: 'superadmin' }],
+      },
+      {
+        id: 'member@g.us',
+        subject: 'Somente membro',
+        participants: [{ phoneNumber: '558193970733@s.whatsapp.net', admin: null }],
+      },
+    ];
     expect(normalizeGroupsForInstance(groups, '558193970733@s.whatsapp.net')).toEqual([
-      { jid: 'admin@g.us', name: 'Administrado', isAdmin: true },
-      { jid: 'superadmin@g.us', name: 'Criado pelo usuário', isAdmin: true },
-      { jid: 'member@g.us', name: 'Somente membro', isAdmin: false },
+      {
+        jid: 'admin@g.us',
+        name: 'Administrado',
+        isAdmin: true,
+        pictureUrl: 'https://example.com/admin.png',
+      },
+      {
+        jid: 'superadmin@g.us',
+        name: 'Criado pelo usuário',
+        isAdmin: true,
+        pictureUrl: 'https://example.com/super.png',
+      },
+      { jid: 'member@g.us', name: 'Somente membro', isAdmin: false, pictureUrl: null },
+    ]);
+  });
+
+  it('devolve pictureUrl=null quando ausente ou vazio', () => {
+    expect(
+      normalizeGroupsForInstance(
+        [
+          { id: 'a@g.us', subject: 'A', participants: [] },
+          { id: 'b@g.us', subject: 'B', pictureUrl: '', participants: [] },
+        ],
+        null,
+      ),
+    ).toEqual([
+      { jid: 'a@g.us', name: 'A', isAdmin: false, pictureUrl: null },
+      { jid: 'b@g.us', name: 'B', isAdmin: false, pictureUrl: null },
     ]);
   });
 
@@ -341,7 +388,7 @@ describe('normalizeGroupsForInstance', () => {
         [{ id: 'lid@g.us', subject: 'LID', participants: [{ id: '123@lid', admin: 'admin' }] }],
         '123@lid',
       ),
-    ).toEqual([{ jid: 'lid@g.us', name: 'LID', isAdmin: true }]);
+    ).toEqual([{ jid: 'lid@g.us', name: 'LID', isAdmin: true, pictureUrl: null }]);
   });
 
   it('não concede administração quando a identidade da instância está ausente', () => {

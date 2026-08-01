@@ -13,6 +13,7 @@ interface WhatsAppGroup {
   jid: string;
   name: string;
   isAdmin: boolean;
+  pictureUrl: string | null;
 }
 
 interface UseWhatsAppGroupsResult {

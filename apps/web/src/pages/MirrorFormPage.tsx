@@ -18,7 +18,7 @@ import { TemplatePreview } from '../components/TemplatePreview.tsx';
 import { validateMirrorForm } from '../lib/mirror-form-pure.ts';
 import type { MirrorFormErrors } from '../lib/mirror-form-pure.ts';
 import { createEmptyMirrorFormState } from '../lib/mirror-form-reset-pure.ts';
-import { AlertTriangle, Save, ArrowLeft, Loader2, Plus } from 'lucide-react';
+import { AlertTriangle, Save, ArrowLeft, Loader2, Plus, RotateCw } from 'lucide-react';
 import { EMPTY_SNAPSHOT, isFormDirty, serializeFormSnapshot } from '../lib/dirty-guard-pure.ts';
 
 // ─── A11y: ids estaveis para foco e aria-describedby ──
@@ -111,6 +111,13 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  /**
+   * Refresh manual dos grupos do WhatsApp. Bumpando este número,
+   * os autocompletes de origem e destino re-baixam a lista com
+   * `?force=true`, ignorando o cache de 1 dia.
+   */
+  const [groupsRefreshSignal, setGroupsRefreshSignal] = useState(0);
 
   // ─── Refs (foco/scroll no primeiro campo com erro) ─
   const nameRef = useRef<HTMLInputElement>(null);
@@ -453,6 +460,17 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
             : 'Configure o espelhamento de ofertas entre grupos'
         }
         onBack={handleBack}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setGroupsRefreshSignal((n) => n + 1)}
+            icon={<RotateCw size={14} />}
+            title="Recarregar a lista de grupos do WhatsApp, ignorando o cache"
+          >
+            Atualizar grupos
+          </Button>
+        }
       />
 
       <form onSubmit={handleSubmit} noValidate style={{ width: '100%' }}>
@@ -519,6 +537,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
             errorId={SOURCE_ERROR_ID}
             onBlur={() => validateField('sourceGroups')}
             inputRef={sourceRef}
+            refreshSignal={groupsRefreshSignal}
           />
           {sourceError && (
             <p
@@ -573,6 +592,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
             errorId={TARGET_ERROR_ID}
             onBlur={() => validateField('targetGroups')}
             inputRef={targetRef}
+            refreshSignal={groupsRefreshSignal}
           />
           {targetError && (
             <p
