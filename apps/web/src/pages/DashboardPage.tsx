@@ -42,14 +42,15 @@ interface ProfileData {
         trackingIds: { tag: string; isDefault: boolean; active: boolean }[];
         activeTrackingCount: number;
       };
-  magalu?:
-    | { connected: false }
-    | {
-        connected: true;
-        nickname: string | null;
-        storeSlug: string;
-        active: boolean;
-      };
+  // Magalu desativado temporariamente (2026-08-01)
+  // magalu?:
+  //   | { connected: false }
+  //   | {
+  //       connected: true;
+  //       nickname: string | null;
+  //       storeSlug: string;
+  //       active: boolean;
+  //     };
   mercadoLivre:
     | { connected: false }
     | {
@@ -368,8 +369,9 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
   const mlConnected = profile?.mercadoLivre.connected === true;
   const amazonConnected =
     profile?.amazon?.connected === true && (profile.amazon.activeTrackingCount ?? 0) > 0;
-  const magaluConnected = profile?.magalu?.connected === true && profile.magalu.active;
-  const configuredMarketplaces = [shopeeConfigured, mlConnected, amazonConnected, magaluConnected];
+  // Magalu desativado temporariamente (2026-08-01)
+  // const magaluConnected = profile?.magalu?.connected === true && profile.magalu.active;
+  const configuredMarketplaces = [shopeeConfigured, mlConnected, amazonConnected];
   const wppConnected = wppStatus?.connected === true;
 
   // ─── Render ────────────────────────────────────────
@@ -418,7 +420,7 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
                     shopeeConfigured && 'Shopee',
                     mlConnected && 'ML',
                     amazonConnected && 'Amazon',
-                    magaluConnected && 'Magalu',
+                    // magaluConnected && 'Magalu',
                   ]
                     .filter(Boolean)
                     .join(' + ') || 'Nenhum'

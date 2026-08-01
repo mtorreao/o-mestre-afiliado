@@ -125,7 +125,8 @@ function authHeaders() {
 
 function setupEvents() {
   $('importBtn').addEventListener('click', importCookies);
-  $('magaluSyncBtn').addEventListener('click', syncMagaluCookies);
+  // Magalu desativado temporariamente (2026-08-01)
+  // $('magaluSyncBtn').addEventListener('click', syncMagaluCookies);
 
   // Auto-update: re-renderiza quando o SW grava novo authState/authToken.
   // Resolve o problema de abrir o popup antes do SW terminar o verify-auth.
