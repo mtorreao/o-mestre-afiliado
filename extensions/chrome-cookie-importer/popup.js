@@ -64,6 +64,22 @@ async function init() {
     /* SW não respondeu — fica com o que tinha no storage */
   }
 
+  // O logout do painel remove o token do localStorage da página, mas a
+  // extensão mantém uma cópia em chrome.storage. Sincroniza diretamente
+  // com a aba ativa antes de validar, evitando usar token obsoleto.
+  await syncTokenFromActivePanel();
+
+  // Revalida o token contra a API antes de renderizar, para não confiar
+  // em authState obsoleto do storage (ex: usuario deslogou em outra aba).
+  try {
+    await chrome.runtime.sendMessage({ type: 'check-auth' });
+    const refreshed = await chrome.runtime.sendMessage({ action: 'get-auth-state' });
+    if (refreshed?.authState) authState = refreshed.authState;
+    if (refreshed?.authToken !== undefined) authToken = refreshed.authToken;
+  } catch (e) {
+    log.warn('popup.init.check-auth.failed', { error: String(e) });
+  }
+
   log.info('popup.init', {
     apiUrl,
     hasToken: Boolean(authToken),
@@ -79,11 +95,34 @@ async function init() {
   setupEvents();
 }
 
+async function syncTokenFromActivePanel() {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs[0];
+    if (!tab?.id || !tab.url?.startsWith('https://dev.omestreafiliado.com.br/')) return;
+
+    const [{ result: token } = {}] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => localStorage.getItem('omestre_auth_token') || '',
+    });
+
+    await chrome.runtime.sendMessage({ type: 'set-auth-token', token: token || '' });
+    const fresh = await chrome.runtime.sendMessage({ action: 'get-auth-state' });
+    if (fresh?.authState) authState = fresh.authState;
+    if (fresh?.authToken !== undefined) authToken = fresh.authToken;
+  } catch (e) {
+    log.warn('popup.sync-active-panel.failed', { error: String(e) });
+  }
+}
+
 function renderGreeting() {
-  const name = authState?.name || authState?.email?.split('@')[0];
   const greeting = $('greeting');
   if (!greeting) return;
-  greeting.textContent = name ? `Olá, ${name} 👋` : 'Olá 👋';
+
+  const isLoggedIn = authState?.status === 'valid';
+  const name = authState?.name || authState?.email?.split('@')[0];
+  greeting.textContent = isLoggedIn ? (name ? `Olá, ${name} \u{1F44B}` : 'Olá') : '';
+  greeting.hidden = !isLoggedIn;
 }
 
 function renderAuthState() {
@@ -150,24 +189,16 @@ function setupEvents() {
 }
 
 async function loadMlAffiliate() {
-  if (!apiUrl) return;
-
-  try {
-    const res = await fetch(`${apiUrl}/api/affiliate/profile`, { headers: authHeaders() });
-    const data = await res.json();
-
-    if (!data.success || !data.profile?.mercadoLivre?.connected) {
-      mlUserId = null;
-      $('importBtn').disabled = true;
-      return;
-    }
-
-    mlUserId = data.profile.mercadoLivre.mlUserId;
-    $('importBtn').disabled = false;
-  } catch {
-    mlUserId = null;
+  // Não depende mais do OAuth do ML. Apenas verifica se o usuário está
+  // logado no app para habilitar a importação de cookies.
+  if (!authToken) {
     $('importBtn').disabled = true;
+    showStatus('sessionStatus', 'Faça login no painel para importar cookies.', 'error');
+    return;
   }
+
+  $('importBtn').disabled = false;
+  $('sessionStatus').textContent = '';
 }
 
 function showStatus(id, msg, type) {
@@ -176,8 +207,20 @@ function showStatus(id, msg, type) {
   el.className = `status ${type}`;
 }
 
+function extractMlUserIdFromCookies(cookies) {
+  // O ML armazena o user ID em cookies como _d2id ou _d_id
+  for (const cookie of cookies) {
+    if (cookie.name === '_d2id' || cookie.name === '_d_id') {
+      const value = String(cookie.value || '');
+      // Extrair apenas dígitos (o ID numérico do usuário)
+      const match = value.match(/(\d+)/);
+      if (match) return match[1];
+    }
+  }
+  return null;
+}
+
 async function importCookies() {
-  if (!mlUserId) return;
   if (!apiUrl) return showStatus('sessionStatus', 'URL da API inválida', 'error');
 
   $('importBtn').disabled = true;
@@ -192,8 +235,9 @@ async function importCookies() {
       return;
     }
 
-    const res = await fetch(`${apiUrl}/api/ml/affiliates/${encodeURIComponent(mlUserId)}`, {
-      method: 'PUT',
+    // Envia cookies para o novo endpoint que extrai mlUserId automaticamente
+    const res = await fetch(`${apiUrl}/api/ml/affiliates/import-cookies`, {
+      method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ sessionCookies: serializeCookies(cookies) }),
     });

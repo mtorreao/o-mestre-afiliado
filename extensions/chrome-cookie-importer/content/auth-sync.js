@@ -41,7 +41,26 @@
   // `silent=true` suprime logs de polling sem mudança — evita encher
   // o buffer do sink com 6 entradas/min inuteis.
   let lastSentToken = null;
+  let contextInvalidated = false;
+
+  // Detecta se o contexto da extensão foi invalidado (ex: extensão
+  // recarregada em chrome://extensions/ enquanto a aba ficou aberta).
+  // Nesse caso qualquer chamada a chrome.runtime.* estoura
+  // "Extension context invalidated". Guardamos e paramos o polling.
+  function isContextValid() {
+    try {
+      return Boolean(chrome.runtime?.id);
+    } catch {
+      return false;
+    }
+  }
+
   function syncToken(reason, silent = false) {
+    if (contextInvalidated || !isContextValid()) {
+      contextInvalidated = true;
+      stopPolling();
+      return false;
+    }
     const token = readToken();
     if (token === lastSentToken) {
       // Nada mudou — no-op silencioso.

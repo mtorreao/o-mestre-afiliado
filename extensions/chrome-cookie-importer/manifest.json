@@ -3,7 +3,15 @@
   "name": "O Mestre Afiliado",
   "description": "Sincroniza e valida a sessão do Mercado Livre e Magazine Você para operações de afiliado",
   "version": "1.6.26",
-  "permissions": ["alarms", "cookies", "notifications", "storage", "tabs", "activeTab"],
+  "permissions": [
+    "alarms",
+    "cookies",
+    "notifications",
+    "storage",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
   "host_permissions": [
     "https://*.mercadolivre.com.br/*",
     "https://*.magazinevoce.com.br/*",

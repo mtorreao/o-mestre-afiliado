@@ -47,6 +47,7 @@ export function useAuth() {
           } else {
             // Token inválido
             localStorage.removeItem(STORAGE_KEY);
+            window.dispatchEvent(new CustomEvent('omestre:auth-changed'));
             setState({ user: null, token: null, loading: false });
           }
         })
@@ -104,6 +105,7 @@ export function useAuth() {
 
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    window.dispatchEvent(new CustomEvent('omestre:auth-changed'));
     setState({ user: null, token: null, loading: false });
   }, []);
 

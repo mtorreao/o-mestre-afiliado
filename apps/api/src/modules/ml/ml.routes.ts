@@ -208,6 +208,127 @@ export const mlRoutes = new Elysia()
     },
   )
 
+  // ─── ML — Importar cookies sem OAuth ────────────────────────────────
+  .post(
+    '/api/ml/affiliates/import-cookies',
+    async ({ body, set, jwt, request }) => {
+      const auth = await getAuthUser(jwt, request.headers);
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: 'Não autenticado' };
+      }
+
+      const { sessionCookies } = body as { sessionCookies?: string };
+      if (!sessionCookies) {
+        set.status = 400;
+        return { success: false, error: 'sessionCookies é obrigatório' };
+      }
+
+      // Valida os cookies e extrai dados do Link Builder
+      const validation = await validateCookies(sessionCookies, null, '');
+      if (!validation.success || !validation.valid) {
+        set.status = 400;
+        return { success: false, error: validation.error || 'Cookies inválidos' };
+      }
+
+      // Extrai mlUserId do Link Builder (necessário para criar o afiliado)
+      try {
+        const res = await fetch('https://www.mercadolivre.com.br/afiliados/linkbuilder', {
+          headers: {
+            Cookie: sessionCookies,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+        });
+
+        if (!res.ok) {
+          set.status = 500;
+          return { success: false, error: 'Não foi possível extrair dados do Link Builder' };
+        }
+
+        const html = await res.text();
+
+        // Extrai user_id do HTML (formato: "user_id": 1234567890)
+        const userIdMatch = html.match(/["']user_id["']\s*:\s*(\d+)/i);
+        if (!userIdMatch?.[1]) {
+          set.status = 500;
+          return { success: false, error: 'Não foi possível extrair mlUserId dos cookies' };
+        }
+
+        const mlUserId = userIdMatch[1];
+        const melitat = validation.melitat;
+
+        // Busca ou cria o afiliado
+        const existingAffiliate = await mlRepo.findByUserId(mlUserId);
+
+        if (!existingAffiliate) {
+          // Cria novo afiliado vinculado ao usuário logado
+          await mlRepo.upsert({
+            mlUserId,
+            userId: auth.userId,
+            nickname: `user_${mlUserId}`,
+            accessToken: '',
+            refreshToken: '',
+            expiresIn: 0,
+            connectedAt: new Date(),
+            melitat: melitat ?? undefined,
+            sessionCookies,
+          });
+        } else {
+          // Verifica ownership
+          if (existingAffiliate.userId !== auth.userId) {
+            set.status = 403;
+            return {
+              success: false,
+              error: 'Acesso negado — este afiliado pertence a outro usuário',
+            };
+          }
+
+          // Atualiza cookies e melitat
+          await mlRepo.patch(mlUserId, {
+            sessionCookies,
+            melitat: melitat ?? existingAffiliate.melitat ?? undefined,
+          });
+        }
+
+        const updatedAffiliate = await mlRepo.findByUserId(mlUserId);
+        return {
+          success: true,
+          mlUserId,
+          melitat: updatedAffiliate?.melitat ?? melitat,
+          message: 'Cookies importados com sucesso!',
+        };
+      } catch (err) {
+        set.status = 500;
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Erro ao processar cookies',
+        };
+      }
+    },
+    {
+      detail: {
+        summary: 'Importar cookies ML sem OAuth',
+        tags: ['ML'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['sessionCookies'],
+                properties: {
+                  sessionCookies: {
+                    type: 'string',
+                    description: 'Cookies de sessão ML (extraídos pela extensão)',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  )
+
   // ─── ML — Converter: tenta link curto, fallback URL params ──────────
   .post(
     '/api/ml/convert',
