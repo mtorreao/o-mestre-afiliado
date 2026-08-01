@@ -26,8 +26,11 @@ import {
   mlRepo,
   validateCookies,
 } from './ml.service.ts';
+import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
+import { toMlSummaryPure } from '@omestre/db';
 
 export const mlRoutes = new Elysia()
+  .use(createJwtPlugin())
   // ─── ML OAuth — Iniciar fluxo ────────────────────────────────────────
   .get('/api/ml/auth', async ({ query, redirect }) => {
     if (!ML_CLIENT_ID) {
@@ -76,26 +79,16 @@ export const mlRoutes = new Elysia()
     }
 
     try {
-      const tokenRes = await getAccessToken(
-        ML_CLIENT_ID,
-        ML_CLIENT_SECRET,
-        code,
-        REDIRECT_URI,
-      );
-      const mlUserId = String(
-        (tokenRes as { user_id?: number | string }).user_id ?? '',
-      );
+      const tokenRes = await getAccessToken(ML_CLIENT_ID, ML_CLIENT_SECRET, code, REDIRECT_URI);
+      const mlUserId = String((tokenRes as { user_id?: number | string }).user_id ?? '');
 
       let nickname = mlUserId;
       try {
-        const meRes = await fetch(
-          'https://api.mercadolibre.com/users/me',
-          {
-            headers: {
-              Authorization: `Bearer ${tokenRes.access_token}`,
-            },
+        const meRes = await fetch('https://api.mercadolibre.com/users/me', {
+          headers: {
+            Authorization: `Bearer ${tokenRes.access_token}`,
           },
-        );
+        });
         if (meRes.ok) {
           const me = (await meRes.json()) as { nickname?: string };
           if (me.nickname) nickname = me.nickname;
@@ -109,9 +102,7 @@ export const mlRoutes = new Elysia()
 
       // Se veio da plataforma (state = userId), vincula ao usuário
       const rawState = (query as { state?: string }).state;
-      const platformUserId = rawState
-        ? parseInt(rawState, 10)
-        : existing?.userId ?? undefined;
+      const platformUserId = rawState ? parseInt(rawState, 10) : (existing?.userId ?? undefined);
 
       await mlRepo.upsert({
         mlUserId,
@@ -120,10 +111,7 @@ export const mlRoutes = new Elysia()
         refreshToken: tokenRes.refresh_token,
         expiresIn: tokenRes.expires_in,
         connectedAt: existing?.connectedAt,
-        userId:
-          platformUserId && !isNaN(platformUserId)
-            ? platformUserId
-            : undefined,
+        userId: platformUserId && !isNaN(platformUserId) ? platformUserId : undefined,
         meliid: existing?.meliid ?? null,
         melitat: existing?.melitat ?? null,
         sessionCookies: existing?.sessionCookies ?? null,
@@ -134,23 +122,44 @@ export const mlRoutes = new Elysia()
       set.status = 500;
       return {
         success: false,
-        error:
-          err instanceof Error ? err.message : 'Erro ao trocar code por token',
+        error: err instanceof Error ? err.message : 'Erro ao trocar code por token',
       };
     }
   })
 
   // ─── ML — Listar afiliados conectados ────────────────────────────────
-  .get('/api/ml/affiliates', async () => {
-    const affiliates = await mlRepo.findAll();
+  .get('/api/ml/affiliates', async ({ jwt, request, set }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    // Lista apenas o afiliado do usuário logado (1 por user)
+    const affiliate = await mlRepo.findByPlatformUserId(auth.userId);
+    const affiliates = affiliate ? [toMlSummaryPure(affiliate)] : [];
     return { success: true, affiliates };
   })
 
   // ─── ML — Atualizar configurações do afiliado ────────────────────────
   .put(
     '/api/ml/affiliates/:mlUserId',
-    async ({ params, body, set }) => {
+    async ({ params, body, set, jwt, request }) => {
+      const auth = await getAuthUser(jwt, request.headers);
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: 'Não autenticado' };
+      }
+
       const { mlUserId } = params as { mlUserId: string };
+
+      // Verificar ownership
+      const affiliate = await mlRepo.findByUserId(mlUserId);
+      if (!affiliate || affiliate.userId !== auth.userId) {
+        set.status = 403;
+        return { success: false, error: 'Acesso negado' };
+      }
+
       const { meliid, melitat, sessionCookies } = body as {
         meliid?: string;
         melitat?: string;
@@ -188,8 +197,7 @@ export const mlRoutes = new Elysia()
                   melitat: { type: 'string' },
                   sessionCookies: {
                     type: 'string',
-                    description:
-                      'Cookies de sessão ML (para link curto)',
+                    description: 'Cookies de sessão ML (para link curto)',
                   },
                 },
               },
@@ -203,7 +211,13 @@ export const mlRoutes = new Elysia()
   // ─── ML — Converter: tenta link curto, fallback URL params ──────────
   .post(
     '/api/ml/convert',
-    async ({ body, set }) => {
+    async ({ body, set, jwt, request }) => {
+      const auth = await getAuthUser(jwt, request.headers);
+      if (!auth) {
+        set.status = 401;
+        return { success: false, error: 'Não autenticado' };
+      }
+
       const { url, mlUserId } = body as {
         url: string;
         mlUserId?: string;
@@ -219,6 +233,13 @@ export const mlRoutes = new Elysia()
         return { success: false, error: 'mlUserId é obrigatório' };
       }
 
+      // Verificar ownership
+      const affiliate = await mlRepo.findByUserId(mlUserId);
+      if (!affiliate || affiliate.userId !== auth.userId) {
+        set.status = 403;
+        return { success: false, error: 'Acesso negado' };
+      }
+
       const marketplace = detectMarketplace(url);
       if (marketplace !== 'mercadolivre') {
         set.status = 400;
@@ -227,16 +248,6 @@ export const mlRoutes = new Elysia()
           error: 'URL não é do Mercado Livre',
           originalUrl: url,
           marketplace: marketplace as string,
-        };
-      }
-
-      const affiliate = await mlRepo.findByUserId(mlUserId);
-
-      if (!affiliate) {
-        set.status = 404;
-        return {
-          success: false,
-          error: `Afiliado ${mlUserId} não encontrado. Conecte-se primeiro.`,
         };
       }
 
@@ -275,9 +286,7 @@ export const mlRoutes = new Elysia()
         // Se falhou por cookie expirado (erro 401/403), tenta URL params
         if (
           shortResult.error?.includes('HTTP 40') ||
-          shortResult.error?.includes(
-            'Cookies podem estar expirados',
-          )
+          shortResult.error?.includes('Cookies podem estar expirados')
         ) {
           // Continua pra estratégia 2
         } else {
@@ -330,10 +339,7 @@ export const mlRoutes = new Elysia()
           affiliateUrl: null,
           marketplace: 'mercadolivre' as const,
           method: 'unknown' as const,
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Erro ao gerar link de afiliado',
+          error: error instanceof Error ? error.message : 'Erro ao gerar link de afiliado',
           mlUserId,
           nickname: affiliate.nickname,
         };
@@ -342,8 +348,7 @@ export const mlRoutes = new Elysia()
     {
       detail: {
         summary: 'Converter link (multi-afiliado)',
-        description:
-          'Tenta link curto via cookies. Se falhar, usa URL params do afiliado.',
+        description: 'Tenta link curto via cookies. Se falhar, usa URL params do afiliado.',
         requestBody: {
           content: {
             'application/json': {
@@ -363,7 +368,13 @@ export const mlRoutes = new Elysia()
   )
 
   // ─── ML — Refresh manual de um afiliado ─────────────────────────────
-  .post('/api/ml/refresh', async ({ body, set }) => {
+  .post('/api/ml/refresh', async ({ body, set, jwt, request }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
     const { mlUserId } = body as { mlUserId: string };
     if (!mlUserId) {
       set.status = 400;
@@ -371,9 +382,9 @@ export const mlRoutes = new Elysia()
     }
 
     const affiliate = await mlRepo.findByUserId(mlUserId);
-    if (!affiliate) {
-      set.status = 404;
-      return { success: false, error: 'Afiliado não encontrado' };
+    if (!affiliate || affiliate.userId !== auth.userId) {
+      set.status = 403;
+      return { success: false, error: 'Acesso negado' };
     }
 
     try {
@@ -407,42 +418,55 @@ export const mlRoutes = new Elysia()
   })
 
   // ─── ML — Validar cookies e extrair melitat ──────────────────────────
-  .post(
-    '/api/ml/affiliates/:mlUserId/validate-cookies',
-    async ({ params, set }) => {
-      const { mlUserId } = params as { mlUserId: string };
-      const affiliate = await mlRepo.findByUserId(mlUserId);
+  .post('/api/ml/affiliates/:mlUserId/validate-cookies', async ({ params, set, jwt, request }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
 
-      if (!affiliate) {
-        set.status = 404;
-        return { success: false, error: 'Afiliado não encontrado' };
-      }
+    const { mlUserId } = params as { mlUserId: string };
+    const affiliate = await mlRepo.findByUserId(mlUserId);
 
-      if (!affiliate.sessionCookies) {
-        set.status = 400;
-        return {
-          success: false,
-          error: 'Nenhum cookie salvo para este afiliado',
-        };
-      }
+    if (!affiliate || affiliate.userId !== auth.userId) {
+      set.status = 403;
+      return { success: false, error: 'Acesso negado' };
+    }
 
-      // Usa o helper do service
-      const result = await validateCookies(
-        affiliate.sessionCookies,
-        affiliate.melitat,
-        mlUserId,
-      );
-
+    if (!affiliate.sessionCookies) {
+      set.status = 400;
       return {
-        ...result,
-        nickname: affiliate.nickname,
+        success: false,
+        error: 'Nenhum cookie salvo para este afiliado',
       };
-    },
-  )
+    }
+
+    // Usa o helper do service
+    const result = await validateCookies(affiliate.sessionCookies, affiliate.melitat, mlUserId);
+
+    return {
+      ...result,
+      nickname: affiliate.nickname,
+    };
+  })
 
   // ─── ML — Remover afiliado ──────────────────────────────────────────
-  .delete('/api/ml/affiliates/:mlUserId', async ({ params, set }) => {
+  .delete('/api/ml/affiliates/:mlUserId', async ({ params, set, jwt, request }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
     const { mlUserId } = params as { mlUserId: string };
+
+    // Verificar ownership
+    const affiliate = await mlRepo.findByUserId(mlUserId);
+    if (!affiliate || affiliate.userId !== auth.userId) {
+      set.status = 403;
+      return { success: false, error: 'Acesso negado' };
+    }
+
     const deleted = await mlRepo.delete(mlUserId);
     if (!deleted) {
       set.status = 404;

@@ -134,7 +134,7 @@ export const mirrorRoutes = new Elysia()
       const id = idParsed.id;
 
       const mirror = await mirrorRepo.findById(id);
-      if (!mirror) {
+      if (!mirror || mirror.userId !== auth.userId) {
         set.status = 404;
         return buildErrorResult('Espelhamento não encontrado');
       }
@@ -218,6 +218,10 @@ export const mirrorRoutes = new Elysia()
 
       // Busca o mirror ANTES de atualizar para ter a lista antiga de sourceGroups
       const currentMirror = await mirrorRepo.findById(id);
+      if (!currentMirror || currentMirror.userId !== auth.userId) {
+        set.status = 404;
+        return buildErrorResult('Espelhamento não encontrado');
+      }
       const oldSourceGroups =
         (currentMirror?.sourceGroups as { jid: string; name: string }[]) ?? [];
 
@@ -272,7 +276,7 @@ export const mirrorRoutes = new Elysia()
       }
 
       const mirror = await mirrorRepo.patchStatus(id, body.status);
-      if (!mirror) {
+      if (!mirror || mirror.userId !== auth.userId) {
         set.status = 404;
         return buildErrorResult('Espelhamento não encontrado');
       }

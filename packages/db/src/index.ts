@@ -39,6 +39,7 @@ export type { AmazonTrackingId, AmazonRegion } from './schema/index.ts';
 // ─── Repository ─────────────────────────────────────────────────────────
 
 export { MlAffiliateRepository } from './repository/mlAffiliates.repository.ts';
+export { toMlSummaryPure } from './repository/ml-affiliate-pure.ts';
 export type {
   MlAffiliate,
   NewMlAffiliate,

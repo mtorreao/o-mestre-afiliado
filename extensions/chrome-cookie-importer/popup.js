@@ -13,8 +13,8 @@ import {
 const $ = (id) => document.getElementById(id);
 const log = globalThis.extLog;
 
-let affiliates = [];
-let selectedUserId = null;
+let mlUserId = null;
+let apiUrl = '';
 let authToken = '';
 let authState = null; // { status: 'valid'|'expired'|'missing'|'pending'|'error', ... }
 
@@ -51,8 +51,7 @@ async function init() {
     'authState',
   ]);
   log.info('popup.init.after-storage-get', { keys: Object.keys(saved) });
-  const apiUrlEl = $('apiUrl');
-  if (apiUrlEl) apiUrlEl.value = saved.apiUrl || DEFAULT_API_URL;
+  apiUrl = normalizeApiUrl(saved.apiUrl || DEFAULT_API_URL);
   authToken = saved.authToken || '';
   authState = saved.authState || null;
   try {
@@ -66,7 +65,7 @@ async function init() {
   }
 
   log.info('popup.init', {
-    apiUrl: $('apiUrl')?.value || DEFAULT_API_URL,
+    apiUrl,
     hasToken: Boolean(authToken),
     authStatus: authState?.status || null,
     authEmail: authState?.email || null,
@@ -75,7 +74,7 @@ async function init() {
 
   renderGreeting();
   renderAuthState();
-  await loadAffiliates(saved.sessionState);
+  await loadMlAffiliate();
 
   setupEvents();
 }
@@ -150,32 +149,25 @@ function setupEvents() {
   });
 }
 
-async function loadAffiliates(sessionState) {
-  const apiUrlEl = $('apiUrl');
-  const apiUrl = normalizeApiUrl(apiUrlEl?.value);
+async function loadMlAffiliate() {
   if (!apiUrl) return;
+
   try {
-    const res = await fetch(`${apiUrl}/api/ml/affiliates`, { headers: authHeaders() });
+    const res = await fetch(`${apiUrl}/api/affiliate/profile`, { headers: authHeaders() });
     const data = await res.json();
-    if (!data.success || !data.affiliates?.length) return;
-    affiliates = data.affiliates;
-    const select = $('affiliateSelect');
-    select.innerHTML = '<option value="">— Selecione —</option>';
-    for (const a of affiliates)
-      select.appendChild(
-        new Option(`${a.nickname} (${a.mlUserId})${a.hasSessionCookies ? ' 🔗' : ''}`, a.mlUserId),
-      );
 
-    const remembered = sessionState?.mlUserId;
-    const only = affiliates.length === 1 ? affiliates[0].mlUserId : null;
-    selectedUserId = remembered || only || null;
-    select.value = selectedUserId || '';
-    setActionState();
-  } catch {}
-}
+    if (!data.success || !data.profile?.mercadoLivre?.connected) {
+      mlUserId = null;
+      $('importBtn').disabled = true;
+      return;
+    }
 
-function setActionState() {
-  $('importBtn').disabled = !Boolean(selectedUserId);
+    mlUserId = data.profile.mercadoLivre.mlUserId;
+    $('importBtn').disabled = false;
+  } catch {
+    mlUserId = null;
+    $('importBtn').disabled = true;
+  }
 }
 
 function showStatus(id, msg, type) {
@@ -185,8 +177,7 @@ function showStatus(id, msg, type) {
 }
 
 async function importCookies() {
-  if (!selectedUserId) return;
-  const apiUrl = normalizeApiUrl($('apiUrl')?.value);
+  if (!mlUserId) return;
   if (!apiUrl) return showStatus('sessionStatus', 'URL da API inválida', 'error');
 
   $('importBtn').disabled = true;
@@ -201,7 +192,7 @@ async function importCookies() {
       return;
     }
 
-    const res = await fetch(`${apiUrl}/api/ml/affiliates/${encodeURIComponent(selectedUserId)}`, {
+    const res = await fetch(`${apiUrl}/api/ml/affiliates/${encodeURIComponent(mlUserId)}`, {
       method: 'PUT',
       headers: authHeaders(),
       body: JSON.stringify({ sessionCookies: serializeCookies(cookies) }),
