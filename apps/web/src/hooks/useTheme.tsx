@@ -5,19 +5,24 @@
  * - Persists to localStorage key 'theme'
  * - Sets data-theme attribute on <html> element
  * - Exports ThemeProvider context and useTheme hook
+ *
+ * A lógica de decisão (resolveInitialTheme, resolveNextTheme, THEME_STORAGE_KEY)
+ * vive em `useTheme-pure.ts` para cobertura unitária sem mockar DOM/storage.
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-
-type Theme = 'light' | 'dark';
-
-const STORAGE_KEY = 'theme';
+import {
+  resolveInitialTheme,
+  resolveNextTheme,
+  THEME_STORAGE_KEY,
+  type Theme,
+} from './useTheme-pure.ts';
 
 function getInitialTheme(): Theme {
   if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'light' || stored === 'dark') return stored;
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return resolveInitialTheme(stored);
   }
-  return 'light';
+  return resolveInitialTheme(undefined);
 }
 
 function applyTheme(theme: Theme) {
@@ -41,12 +46,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = (t: Theme) => {
     setThemeState(t);
-    localStorage.setItem(STORAGE_KEY, t);
+    localStorage.setItem(THEME_STORAGE_KEY, t);
     applyTheme(t);
   };
 
   const toggleTheme = () => {
-    setTheme(theme === 'light' ? 'dark' : 'light');
+    setTheme(resolveNextTheme(theme));
   };
 
   return (
