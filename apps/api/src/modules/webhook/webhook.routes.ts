@@ -29,6 +29,16 @@ const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
 const instanceRepo = new WhatsAppInstanceRepository();
 
+/** Comparação constant-time para evitar timing attacks na API key. */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 interface WebhookEvent {
   event: string;
   instance?: string;
@@ -210,13 +220,13 @@ async function handleMessagesUpsert(
 
     // Publica RawMessageEvent CRU na Queue A — sem affiliateId/mirrorId
     const event: RawMessageEvent = {
-          messageId,
-          instanceName,
-          sourceGroupJid: remoteJid,
-          sourceGroupName: resolvedGroupName ?? '',
-          text,
-          timestamp: msg.messageTimestamp ?? Math.floor(Date.now() / 1000),
-        };
+      messageId,
+      instanceName,
+      sourceGroupJid: remoteJid,
+      sourceGroupName: resolvedGroupName ?? '',
+      text,
+      timestamp: msg.messageTimestamp ?? Math.floor(Date.now() / 1000),
+    };
 
     const id = await streamAdd(MIRROR_RAW_STREAM, event);
     if (id) {
@@ -281,8 +291,20 @@ export const webhookRoutes = new Elysia()
   // ─── POST /webhook/message ──────────────────────────────────────────
   .post(
     '/webhook/message',
-    async ({ body, set }) => {
-      void EVOLUTION_API_KEY;
+    async ({ body, request, set }) => {
+      // Validação de autenticação via apikey
+      if (!EVOLUTION_API_KEY) {
+        console.warn('🚨 EVOLUTION_API_KEY não configurada — rejeitando webhook');
+        set.status = 503;
+        return { success: false, error: 'Webhook desabilitado. Configure EVOLUTION_API_KEY.' };
+      }
+
+      const providedKey = request.headers.get('apikey');
+      if (!providedKey || !safeEqual(providedKey, EVOLUTION_API_KEY)) {
+        console.warn(`🔒 Webhook rejeitado: apikey inválida (tem=${Boolean(providedKey)})`);
+        set.status = 401;
+        return { success: false, error: 'Unauthorized' };
+      }
 
       const payload = body as WebhookEvent;
       const { event, instance: instanceName, data } = payload;
@@ -300,10 +322,7 @@ export const webhookRoutes = new Elysia()
 
         case 'messages.upsert': {
           const messageList = extractMessagesFromData(data);
-          const result = await handleMessagesUpsert(
-            instanceName ?? '',
-            messageList,
-          );
+          const result = await handleMessagesUpsert(instanceName ?? '', messageList);
           console.log(
             `📨 ${result.published} mensagem(ns) adicionada(s) ao stream, ${result.ignored} ignorada(s) em ${instanceName}`,
           );
