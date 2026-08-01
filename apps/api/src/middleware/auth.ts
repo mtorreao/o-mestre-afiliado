@@ -23,12 +23,32 @@ export interface AuthUser {
 }
 
 /**
+ * Obtém o JWT secret ou gera um aleatório em dev com aviso.
+ * Em produção, JWT_SECRET é obrigatório (fail-closed).
+ */
+function getJwtSecret(): string {
+  if (config.JWT_SECRET) return config.JWT_SECRET;
+
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (!isDev) {
+    throw new Error('JWT_SECRET is required in production');
+  }
+
+  // Gera secret aleatório para dev (não persistente entre restarts)
+  const devSecret = crypto.randomUUID();
+  console.warn(
+    '[SECURITY WARNING] JWT_SECRET not set. Using random dev secret (tokens will not survive restarts).',
+  );
+  return devSecret;
+}
+
+/**
  * Cria o plugin JWT para uso nas rotas.
  */
 export function createJwtPlugin() {
   return jwt({
     name: 'jwt',
-    secret: config.JWT_SECRET || 'omestre-dev-secret-change-in-production',
+    secret: getJwtSecret(),
     schema: t.Object({
       userId: t.Number(),
       userEmail: t.String(),
