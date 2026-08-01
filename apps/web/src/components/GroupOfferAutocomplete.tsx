@@ -6,6 +6,13 @@
  */
 import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { useWhatsAppGroups } from '../hooks/useWhatsAppGroups.ts';
+import {
+  filterGroups,
+  isMaxed as computeIsMaxed,
+  composeKeyDownAction,
+  MAX_SELECTION,
+  type GroupItem,
+} from './GroupOfferAutocomplete-pure.ts';
 
 interface Group {
   jid: string;
@@ -30,8 +37,6 @@ interface GroupOfferAutocompleteProps {
   /** Ref exposta para o input de busca (foco no primeiro campo com erro). */
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }
-
-const MAX_SELECTION = 3;
 
 export function GroupOfferAutocomplete({
   token,
@@ -67,14 +72,8 @@ export function GroupOfferAutocomplete({
   }, [refreshSignal, refresh]);
 
   // Filtra grupos não selecionados
-  const selectedJids = new Set(value.map((g) => g.jid));
-  const filtered = query.trim()
-    ? groups.filter(
-        (g) => !selectedJids.has(g.jid) && g.name.toLowerCase().includes(query.toLowerCase()),
-      )
-    : groups.filter((g) => !selectedJids.has(g.jid));
-
-  const isMaxed = value.length >= MAX_SELECTION;
+  const filtered = filterGroups(groups, value, query);
+  const isMaxed = computeIsMaxed(value);
 
   // Fecha dropdown ao clicar fora
   useEffect(() => {
@@ -112,40 +111,39 @@ export function GroupOfferAutocomplete({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (!isOpen) {
-        if (e.key === 'ArrowDown' || e.key === 'Enter') {
-          setIsOpen(true);
-          setHighlightIndex(0);
-        }
-        return;
-      }
+      const action = composeKeyDownAction(e.key, {
+        isOpen,
+        filteredLength: filtered.length,
+        highlightIndex,
+        query,
+        selectedLength: value.length,
+      });
 
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault();
-          setHighlightIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+      switch (action.type) {
+        case 'open':
+          setIsOpen(true);
+          setHighlightIndex(action.highlightIndex);
           break;
-        case 'ArrowUp':
-          e.preventDefault();
-          setHighlightIndex((prev) => Math.max(prev - 1, 0));
+        case 'highlight':
+          if (action.preventDefault) e.preventDefault();
+          setHighlightIndex(action.index);
           break;
-        case 'Enter':
-          e.preventDefault();
-          if (highlightIndex >= 0 && highlightIndex < filtered.length) {
-            handleSelect(filtered[highlightIndex]!);
+        case 'select':
+          if (action.preventDefault) e.preventDefault();
+          if (action.index >= 0 && action.index < filtered.length) {
+            handleSelect(filtered[action.index]!);
           }
           break;
-        case 'Escape':
+        case 'close':
           setIsOpen(false);
           setHighlightIndex(-1);
           break;
-        case 'Backspace':
-          if (!query && value.length > 0) {
+        case 'removeLast':
+          if (value.length > 0) {
             handleRemove(value[value.length - 1]!.jid);
           }
           break;
-        case 'Tab':
-          setIsOpen(false);
+        case 'noop':
           break;
       }
     },
