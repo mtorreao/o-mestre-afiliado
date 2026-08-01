@@ -36,15 +36,26 @@ body {
 }
 
 /* ─── Typography ───────────────────────────────────────────── */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-weight: var(--font-semibold);
   line-height: var(--leading-tight);
   color: var(--color-text-primary);
 }
 
-h1 { font-size: var(--text-2xl); }
-h2 { font-size: var(--text-xl); }
-h3 { font-size: var(--text-lg); }
+h1 {
+  font-size: var(--text-2xl);
+}
+h2 {
+  font-size: var(--text-xl);
+}
+h3 {
+  font-size: var(--text-lg);
+}
 
 p {
   color: var(--color-text-secondary);
@@ -89,23 +100,53 @@ a:hover {
 }
 
 /* ─── Utilities ────────────────────────────────────────────── */
-.text-xs   { font-size: var(--text-xs); }
-.text-sm   { font-size: var(--text-sm); }
-.text-base { font-size: var(--text-base); }
-.text-lg   { font-size: var(--text-lg); }
-.text-xl   { font-size: var(--text-xl); }
-.text-2xl  { font-size: var(--text-2xl); }
+.text-xs {
+  font-size: var(--text-xs);
+}
+.text-sm {
+  font-size: var(--text-sm);
+}
+.text-base {
+  font-size: var(--text-base);
+}
+.text-lg {
+  font-size: var(--text-lg);
+}
+.text-xl {
+  font-size: var(--text-xl);
+}
+.text-2xl {
+  font-size: var(--text-2xl);
+}
 
-.font-medium   { font-weight: var(--font-medium); }
-.font-semibold { font-weight: var(--font-semibold); }
-.font-bold     { font-weight: var(--font-bold); }
+.font-medium {
+  font-weight: var(--font-medium);
+}
+.font-semibold {
+  font-weight: var(--font-semibold);
+}
+.font-bold {
+  font-weight: var(--font-bold);
+}
 
-.text-secondary { color: var(--color-text-secondary); }
-.text-muted    { color: var(--color-text-muted); }
-.text-success  { color: var(--color-success); }
-.text-warning  { color: var(--color-warning); }
-.text-error    { color: var(--color-error); }
-.text-primary  { color: var(--color-primary); }
+.text-secondary {
+  color: var(--color-text-secondary);
+}
+.text-muted {
+  color: var(--color-text-muted);
+}
+.text-success {
+  color: var(--color-success);
+}
+.text-warning {
+  color: var(--color-warning);
+}
+.text-error {
+  color: var(--color-error);
+}
+.text-primary {
+  color: var(--color-primary);
+}
 
 .truncate {
   overflow: hidden;
@@ -160,7 +201,9 @@ a:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .SelectTrigger:hover {
@@ -209,7 +252,7 @@ a:hover {
   color: var(--color-primary);
 }
 
-.SelectItem[data-state="checked"] {
+.SelectItem[data-state='checked'] {
   font-weight: var(--font-medium);
 }
 
@@ -247,8 +290,12 @@ a:hover {
 }
 
 @keyframes overlayShow {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes contentShow {
@@ -442,7 +489,9 @@ a:hover {
 
 /* ─── Spinner keyframe ─────────────────────────────────────── */
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .spin {
@@ -450,14 +499,49 @@ a:hover {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ─── Skeleton shimmer ────────────────────────────────────── */
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+.skeleton-block {
+  background: var(--color-bg-secondary);
+  background-image: linear-gradient(
+    90deg,
+    var(--color-bg-secondary) 0%,
+    var(--color-surface-hover) 40%,
+    var(--color-bg-secondary) 80%
+  );
+  background-size: 800px 100%;
+  background-repeat: no-repeat;
+  border-radius: var(--radius-sm);
+  animation: shimmer 1.6s ease-in-out infinite;
 }
 
 /* ─── Micro-animations ────────────────────────────────────── */
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ─── Badge base ───────────────────────────────────────────── */
@@ -797,11 +881,50 @@ a:hover {
   }
 }
 
+/* ─── Sticky actions bar — MirrorFormPage (mobile) ────────────────
+   Barra de ações (Salvar/Cancelar) fixa no rodapé da viewport ao rolar.
+   Desktop: botões ficam inline no fim do form (position static).
+   Full-bleed: PageLayout usa padding 1rem em mobile (regra inline !important),
+   então margens negativas de -1rem estendem a barra até as bordas da viewport. */
+.form-actions-bar {
+  position: static;
+}
+
+@media (max-width: 767px) {
+  .form-actions-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding: var(--spacing-4) 1rem;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border-light);
+    box-shadow: 0 -4px 12px -2px rgba(0, 0, 0, 0.06);
+  }
+
+  .form-actions-bar > .Button {
+    flex: 1;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .form-actions-bar {
+      box-shadow: 0 -4px 12px -2px rgba(255, 255, 255, 0.06);
+    }
+  }
+}
 
 /* DLQ badge bump — pulse 3x when new DLQ item arrives via auto-refresh */
 @keyframes dlq-badge-bump {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-  50% { transform: scale(1.18); box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.25); }
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+  50% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.25);
+  }
 }
 .dlq-badge-bump {
   animation: dlq-badge-bump 0.6s ease-in-out 3;

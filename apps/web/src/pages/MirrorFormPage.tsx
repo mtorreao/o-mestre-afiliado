@@ -17,7 +17,9 @@ import { TemplateEditor } from '../components/TemplateEditor.tsx';
 import { TemplatePreview } from '../components/TemplatePreview.tsx';
 import { validateMirrorForm } from '../lib/mirror-form-pure.ts';
 import type { MirrorFormErrors } from '../lib/mirror-form-pure.ts';
-import { AlertTriangle, Save, ArrowLeft, Loader2 } from 'lucide-react';
+import { createEmptyMirrorFormState } from '../lib/mirror-form-reset-pure.ts';
+import { AlertTriangle, Save, ArrowLeft, Loader2, Plus } from 'lucide-react';
+import { EMPTY_SNAPSHOT, isFormDirty, serializeFormSnapshot } from '../lib/dirty-guard-pure.ts';
 
 // ─── A11y: ids estaveis para foco e aria-describedby ──
 const NAME_INPUT_ID = 'mirror-form-nome';
@@ -68,6 +70,41 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   // const [subRateMaxMsgs, setSubRateMaxMsgs] = useState<number | null>(null);
   // const [subRateWindowSec, setSubRateWindowSec] = useState<number | null>(null);
 
+  // ─── Dirty guard (saída com mudanças não salvas) ─────
+  // Snapshot inicial do form (string serializada). Em modo criação parte do
+  // estado vazio; em modo edição é preenchido após o fetch (fetchMirror).
+  // Após save bem-sucedido o snapshot é atualizado para o estado salvo,
+  // zerando o dirty flag.
+  const snapshotRef = useRef<string | null>(isEdit ? null : serializeFormSnapshot(EMPTY_SNAPSHOT));
+
+  const isDirty = isFormDirty(
+    { name, sourceGroups, targetGroups, messageTemplate },
+    snapshotRef.current,
+  );
+
+  // beforeunload: bloqueia fechar/recarregar a aba com form sujo
+  // (usa o diálogo nativo do navegador — window.confirm não funciona aqui).
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  // Saída com confirmação: usada pelo onBack do PageHeader e pelo botão
+  // Cancelar. Se o form está sujo, pergunta antes de sair (PT-BR).
+  const confirmLeave = useCallback((): boolean => {
+    if (!isDirty) return true;
+    return window.confirm('Existem mudanças não salvas. Deseja realmente sair?');
+  }, [isDirty]);
+
+  const handleBack = useCallback(() => {
+    if (confirmLeave()) onBack();
+  }, [confirmLeave, onBack]);
+
   // ─── UI state ───────────────────────────────────
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -104,6 +141,13 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         setSourceGroups(data.mirror.sourceGroups ?? []);
         setTargetGroups(data.mirror.targetGroups ?? []);
         setMessageTemplate(data.mirror.messageTemplate ?? '');
+        // Snapshot inicial do modo edição — carga de dados não conta como edição.
+        snapshotRef.current = serializeFormSnapshot({
+          name: data.mirror.name,
+          sourceGroups: data.mirror.sourceGroups ?? [],
+          targetGroups: data.mirror.targetGroups ?? [],
+          messageTemplate: data.mirror.messageTemplate ?? '',
+        });
         // Sub-rate limit desativado temporariamente.
         // setSubRateMaxMsgs(data.mirror.subRateLimitMaxMsgs ?? null);
         // setSubRateWindowSec(data.mirror.subRateLimitWindowSec ?? null);
@@ -204,8 +248,16 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
       };
 
       if (data.success) {
+        // Form salvo — zera o dirty flag: sair daqui em diante não pede confirmação.
+        // Snapshot usa o estado RAW do form (não o payload trimado): o que o
+        // usuário vê nos campos é o que vira base de comparação.
+        snapshotRef.current = serializeFormSnapshot({
+          name,
+          sourceGroups,
+          targetGroups,
+          messageTemplate,
+        });
         setSuccess(true);
-        setTimeout(() => onBack(), 1200);
       } else {
         setSubmitError(data.error || 'Erro ao salvar espelhamento');
         // Exibe erros de validação do backend nos campos
@@ -219,24 +271,66 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
     setSaving(false);
   }
 
+  // ─── Criar outro espelhamento (reset do form) ────
+  function handleCreateAnother() {
+    const reset = createEmptyMirrorFormState();
+    setName(reset.name);
+    setSourceGroups(reset.sourceGroups);
+    setTargetGroups(reset.targetGroups);
+    setMessageTemplate(reset.messageTemplate);
+    setNameError(reset.nameError);
+    setSourceError(reset.sourceError);
+    setTargetError(reset.targetError);
+    setSubmitError(reset.submitError);
+    setSuccess(reset.success);
+  }
+
   // ─── Loading state ──────────────────────────────
   if (loading) {
     return (
       <PageLayout>
-        <PageHeader title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'} onBack={onBack} />
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '1rem',
-            padding: '4rem 0',
-            color: 'var(--color-text-muted)',
-          }}
-        >
-          <Loader2 size={32} style={{ animation: 'spin 0.8s linear infinite' }} />
-          <span style={{ fontSize: 'var(--text-sm)' }}>Carregando dados do espelhamento...</span>
+        <PageHeader
+          title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'}
+          onBack={handleBack}
+        />
+        <div role="status" aria-label="Carregando formulário" aria-busy="true">
+          {/* Card 1 — Informações Básicas */}
+          <Card style={{ marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div className="skeleton-block" style={{ width: '45%', height: 16 }} />
+              <div className="skeleton-block" style={{ width: '30%', height: 12 }} />
+              <div
+                className="skeleton-block"
+                style={{ width: '100%', height: 38, borderRadius: 'var(--radius-md)' }}
+              />
+            </div>
+          </Card>
+
+          {/* Cards 2 e 3 — Grupos de Origem / Destino */}
+          {['Origem', 'Destino'].map((label) => (
+            <Card key={label} style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div className="skeleton-block" style={{ width: '55%', height: 16 }} />
+                <div className="skeleton-block" style={{ width: '70%', height: 12 }} />
+                <div
+                  className="skeleton-block"
+                  style={{ width: '100%', height: 38, borderRadius: 'var(--radius-md)' }}
+                />
+              </div>
+            </Card>
+          ))}
+
+          {/* Barra de ações */}
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+            <div
+              className="skeleton-block"
+              style={{ width: 190, height: 38, borderRadius: 'var(--radius-md)' }}
+            />
+            <div
+              className="skeleton-block"
+              style={{ width: 110, height: 38, borderRadius: 'var(--radius-md)' }}
+            />
+          </div>
         </div>
       </PageLayout>
     );
@@ -246,7 +340,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   if (fetchError) {
     return (
       <PageLayout>
-        <PageHeader title="Editar Espelhamento" onBack={onBack} />
+        <PageHeader title="Editar Espelhamento" onBack={handleBack} />
         <Card>
           <div
             style={{
@@ -278,7 +372,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         <PageHeader
           title={isEdit ? 'Editar Espelhamento' : 'Novo Espelhamento'}
           titleId={SUCCESS_TITLE_ID}
-          onBack={onBack}
+          onBack={handleBack}
         />
         <div
           style={{
@@ -314,9 +408,35 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           >
             Espelhamento {isEdit ? 'atualizado' : 'criado'} com sucesso!
           </p>
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', margin: 0 }}>
-            Redirecionando...
-          </p>
+          <div
+            style={{
+              display: 'flex',
+              gap: '0.75rem',
+              marginTop: '0.5rem',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+            }}
+          >
+            {isEdit ? (
+              <>
+                <Button variant="secondary" onClick={onBack}>
+                  Ver espelhamentos
+                </Button>
+                <Button variant="ghost" onClick={onBack}>
+                  Fechar
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="primary" icon={<Plus size={16} />} onClick={handleCreateAnother}>
+                  Criar outro espelhamento
+                </Button>
+                <Button variant="secondary" onClick={onBack}>
+                  Ver espelhamentos
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </PageLayout>
     );
@@ -332,10 +452,14 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
             ? 'Altere os campos desejados e salve'
             : 'Configure o espelhamento de ofertas entre grupos'
         }
-        onBack={onBack}
+        onBack={handleBack}
       />
 
-      <form onSubmit={handleSubmit} noValidate>
+      <form
+        onSubmit={handleSubmit}
+        noValidate
+        style={{ width: '100%', maxWidth: '720px', margin: '0 auto' }}
+      >
         <Card
           title="📋 Informações Básicas"
           titleId={NAME_TITLE_ID}
@@ -588,8 +712,9 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           </div>
         )}
 
-        {/* Actions */}
+        {/* Actions — barra sticky em mobile (regra .form-actions-bar em globals.css) */}
         <div
+          className="form-actions-bar"
           style={{
             marginTop: '1.5rem',
             display: 'flex',
@@ -600,7 +725,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           <Button type="submit" loading={saving} icon={<Save size={16} />}>
             {isEdit ? 'Atualizar Espelhamento' : 'Criar Espelhamento'}
           </Button>
-          <Button type="button" variant="secondary" onClick={onBack} disabled={saving}>
+          <Button type="button" variant="secondary" onClick={handleBack} disabled={saving}>
             Cancelar
           </Button>
         </div>
