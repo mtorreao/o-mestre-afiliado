@@ -42,6 +42,7 @@ export const evolutionEndpoints = {
   logoutInstance: (instanceName: string): string => `/instance/logout/${instanceName}`,
   fetchGroups: (instanceName: string): string =>
     `/group/fetchAllGroups/${instanceName}?getParticipants=true`,
+  fetchInstances: (): string => '/instance/fetchInstances',
   groupInfo: (instanceName: string, groupJid: string): string =>
     `/group/groupInfo/${instanceName}/${encodeURIComponent(groupJid)}`,
   findMessages: (instanceName: string): string => `/chat/findMessages/${instanceName}`,
@@ -202,6 +203,45 @@ export function normalizeGroups(groupList: unknown[]): { jid: string; name: stri
       return { jid, name };
     })
     .filter((g) => g.jid && g.name);
+}
+
+export interface NormalizedWhatsAppGroup {
+  jid: string;
+  name: string;
+  isAdmin: boolean;
+}
+
+function participantMatchesInstance(
+  participant: Record<string, unknown>,
+  instanceOwnerJid: string,
+): boolean {
+  return participant.id === instanceOwnerJid || participant.phoneNumber === instanceOwnerJid;
+}
+
+/**
+ * Normaliza grupos preservando se a conta conectada é admin do grupo.
+ * `admin` da Evolution pode ser "admin", "superadmin" ou null.
+ */
+export function normalizeGroupsForInstance(
+  groupList: unknown[],
+  instanceOwnerJid: string | null,
+): NormalizedWhatsAppGroup[] {
+  return groupList
+    .map((group) => {
+      const item = group as Record<string, unknown>;
+      const jid = String(item.jid ?? item.id ?? '');
+      const name = String(item.name ?? item.subject ?? '');
+      const participants = Array.isArray(item.participants) ? item.participants : [];
+      const participant = instanceOwnerJid
+        ? participants.find((candidate) =>
+            participantMatchesInstance(candidate as Record<string, unknown>, instanceOwnerJid),
+          )
+        : undefined;
+      const admin = (participant as Record<string, unknown> | undefined)?.admin;
+
+      return { jid, name, isAdmin: admin === 'admin' || admin === 'superadmin' };
+    })
+    .filter((group) => group.jid && group.name);
 }
 
 /** Parse da resposta do groupInfo — null se jid/name ausentes. */

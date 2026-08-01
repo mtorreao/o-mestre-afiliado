@@ -455,11 +455,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         onBack={handleBack}
       />
 
-      <form
-        onSubmit={handleSubmit}
-        noValidate
-        style={{ width: '100%', maxWidth: '720px', margin: '0 auto' }}
-      >
+      <form onSubmit={handleSubmit} noValidate style={{ width: '100%' }}>
         <Card
           title="📋 Informações Básicas"
           titleId={NAME_TITLE_ID}

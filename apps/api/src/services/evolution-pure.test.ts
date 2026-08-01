@@ -22,6 +22,7 @@ import {
   isDeleteStatusAcceptable,
   isInstanceAlreadyInUseError,
   normalizeGroups,
+  normalizeGroupsForInstance,
   normalizeMessages,
   parseConnectionState,
   parseCreateInstanceResponse,
@@ -90,6 +91,10 @@ describe('evolutionEndpoints', () => {
     expect(evolutionEndpoints.fetchGroups('user-1')).toBe(
       '/group/fetchAllGroups/user-1?getParticipants=true',
     );
+  });
+
+  it('fetchInstances lista identidades conectadas', () => {
+    expect(evolutionEndpoints.fetchInstances()).toBe('/instance/fetchInstances');
   });
 
   it('groupInfo faz encode do JID', () => {
@@ -297,6 +302,50 @@ describe('normalizeGroups', () => {
 
   it('descarta itens sem jid ou sem name', () => {
     expect(normalizeGroups([{ jid: '1@g.us' }, { name: 'X' }, {}])).toEqual([]);
+  });
+});
+
+describe('normalizeGroupsForInstance', () => {
+  const groups = [
+    {
+      id: 'admin@g.us',
+      subject: 'Administrado',
+      participants: [
+        { phoneNumber: '558193970733@s.whatsapp.net', admin: 'admin' },
+        { phoneNumber: '5511999999999@s.whatsapp.net', admin: null },
+      ],
+    },
+    {
+      id: 'superadmin@g.us',
+      subject: 'Criado pelo usuário',
+      participants: [{ phoneNumber: '558193970733@s.whatsapp.net', admin: 'superadmin' }],
+    },
+    {
+      id: 'member@g.us',
+      subject: 'Somente membro',
+      participants: [{ phoneNumber: '558193970733@s.whatsapp.net', admin: null }],
+    },
+  ];
+
+  it('marca apenas grupos em que o dono da instância é admin ou superadmin', () => {
+    expect(normalizeGroupsForInstance(groups, '558193970733@s.whatsapp.net')).toEqual([
+      { jid: 'admin@g.us', name: 'Administrado', isAdmin: true },
+      { jid: 'superadmin@g.us', name: 'Criado pelo usuário', isAdmin: true },
+      { jid: 'member@g.us', name: 'Somente membro', isAdmin: false },
+    ]);
+  });
+
+  it('compara também pelo id LID quando disponível', () => {
+    expect(
+      normalizeGroupsForInstance(
+        [{ id: 'lid@g.us', subject: 'LID', participants: [{ id: '123@lid', admin: 'admin' }] }],
+        '123@lid',
+      ),
+    ).toEqual([{ jid: 'lid@g.us', name: 'LID', isAdmin: true }]);
+  });
+
+  it('não concede administração quando a identidade da instância está ausente', () => {
+    expect(normalizeGroupsForInstance(groups, null).every((group) => !group.isAdmin)).toBe(true);
   });
 });
 

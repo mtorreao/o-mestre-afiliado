@@ -15,7 +15,7 @@ import { Elysia, t } from 'elysia';
 import { MirrorRepository, AffiliatesRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
 import { replaceSourceGroups, removeSourceGroups } from '../../services/group-cache.ts';
-import { instanceNameFromUserId } from '../../services/evolution.ts';
+import { fetchGroups, instanceNameFromUserId } from '../../services/evolution.ts';
 import {
   parseListQuery,
   parseIdParam,
@@ -35,6 +35,18 @@ import {
 
 const mirrorRepo = new MirrorRepository();
 const affiliatesRepo = new AffiliatesRepository();
+
+async function findUnauthorizedTargetGroup(
+  userId: number,
+  targetGroups: GroupItem[] | undefined,
+): Promise<GroupItem | null> {
+  if (!targetGroups?.length) return null;
+  const result = await fetchGroups(instanceNameFromUserId(userId));
+  const adminJids = new Set(
+    result.groups?.filter((group) => group.isAdmin).map((group) => group.jid),
+  );
+  return targetGroups.find((group) => !adminJids.has(group.jid)) ?? null;
+}
 
 // ─── Schemas de validação (Zod via Elysia t) ─────────────────────────
 
@@ -146,6 +158,14 @@ export const mirrorRoutes = new Elysia()
         return buildErrorResult('Não autenticado');
       }
 
+      const unauthorizedTarget = await findUnauthorizedTargetGroup(auth.userId, body.targetGroups);
+      if (unauthorizedTarget) {
+        set.status = 400;
+        return buildErrorResult(
+          `Você precisa ser administrador do grupo de destino "${unauthorizedTarget.name}"`,
+        );
+      }
+
       const mirror = await mirrorRepo.create(buildCreateMirrorInput(body, auth.userId));
 
       // Popula cache Redis com os sourceGroups do novo mirror
@@ -185,6 +205,14 @@ export const mirrorRoutes = new Elysia()
         return buildErrorResult('ID inválido');
       }
       const id = idParsed.id;
+
+      const unauthorizedTarget = await findUnauthorizedTargetGroup(auth.userId, body.targetGroups);
+      if (unauthorizedTarget) {
+        set.status = 400;
+        return buildErrorResult(
+          `Você precisa ser administrador do grupo de destino "${unauthorizedTarget.name}"`,
+        );
+      }
 
       const updateData = buildUpdateData(body);
 

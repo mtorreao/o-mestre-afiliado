@@ -6,10 +6,12 @@
  */
 import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { useWhatsAppGroups } from '../hooks/useWhatsAppGroups.ts';
+import { filterWhatsAppGroupsByAdmin } from '../hooks/whatsapp-groups-pure.ts';
 
 interface Group {
   jid: string;
   name: string;
+  isAdmin?: boolean;
 }
 
 interface GroupDestAutocompleteProps {
@@ -65,12 +67,13 @@ export function GroupDestAutocomplete({
   }, [refreshSignal, refresh]);
 
   // Filtra grupos não selecionados
+  const adminGroups = filterWhatsAppGroupsByAdmin(groups, true);
   const selectedJids = new Set(value.map((g) => g.jid));
   const filtered = query.trim()
-    ? groups.filter(
+    ? adminGroups.filter(
         (g) => !selectedJids.has(g.jid) && g.name.toLowerCase().includes(query.toLowerCase()),
       )
-    : groups.filter((g) => !selectedJids.has(g.jid));
+    : adminGroups.filter((g) => !selectedJids.has(g.jid));
 
   // Fecha dropdown ao clicar fora
   useEffect(() => {
@@ -188,6 +191,11 @@ export function GroupDestAutocomplete({
         <div role="status" style={{ padding: '0.5rem 0', color: '#64748b', fontSize: '0.85rem' }}>
           Nenhum grupo encontrado. Certifique-se de que o WhatsApp está conectado e participa de
           grupos.
+        </div>
+      )}
+      {!loading && !fetchError && groups.length > 0 && adminGroups.length === 0 && (
+        <div role="status" style={{ padding: '0.5rem 0', color: '#64748b', fontSize: '0.85rem' }}>
+          Nenhum grupo disponível. Você precisa ser administrador do grupo para usá-lo como destino.
         </div>
       )}
       {/* Tags selecionadas */}

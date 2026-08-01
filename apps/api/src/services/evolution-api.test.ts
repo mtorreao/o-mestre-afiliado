@@ -146,17 +146,29 @@ describe('logoutInstance', () => {
 });
 
 describe('fetchGroups', () => {
-  it('GET /group/fetchAllGroups/{name} normaliza grupos', async () => {
-    fetchImpl = async () =>
-      jsonResponse([
-        { id: '1@g.us', subject: 'G1' },
-        { id: '2@g.us', subject: 'G2' },
+  it('GET /group/fetchAllGroups/{name} normaliza grupos e identifica administração', async () => {
+    fetchImpl = async (url: string) => {
+      if (url.includes('/instance/fetchInstances')) {
+        return jsonResponse([{ name: 'user-1', ownerJid: '5511999999999@s.whatsapp.net' }]);
+      }
+      return jsonResponse([
+        {
+          id: '1@g.us',
+          subject: 'G1',
+          participants: [{ phoneNumber: '5511999999999@s.whatsapp.net', admin: 'admin' }],
+        },
+        {
+          id: '2@g.us',
+          subject: 'G2',
+          participants: [{ phoneNumber: '5511999999999@s.whatsapp.net', admin: null }],
+        },
       ]);
+    };
     const res = await (await import('./evolution.ts')).fetchGroups('user-1');
     expect(res.success).toBe(true);
     expect(res.groups).toEqual([
-      { jid: '1@g.us', name: 'G1' },
-      { jid: '2@g.us', name: 'G2' },
+      { jid: '1@g.us', name: 'G1', isAdmin: true },
+      { jid: '2@g.us', name: 'G2', isAdmin: false },
     ]);
   });
 

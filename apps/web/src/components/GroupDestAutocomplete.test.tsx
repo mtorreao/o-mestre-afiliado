@@ -2,8 +2,8 @@ import { describe, it, expect, mock } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 let state = {
   groups: [
-    { jid: 'a@g.us', name: 'Alpha' },
-    { jid: 'b@g.us', name: 'Beta' },
+    { jid: 'a@g.us', name: 'Alpha', isAdmin: true },
+    { jid: 'b@g.us', name: 'Beta', isAdmin: false },
   ],
   loading: false,
   error: null as string | null,
@@ -39,5 +39,17 @@ describe('GroupDestAutocomplete', () => {
     expect(
       renderToString(<GroupDestAutocomplete token="x" value={[]} onChange={() => {}} />),
     ).toContain('Nenhum grupo encontrado');
+  });
+
+  it('informa quando existem grupos, mas o usuário não administra nenhum', () => {
+    state = {
+      groups: [{ jid: 'b@g.us', name: 'Beta', isAdmin: false }],
+      loading: false,
+      error: null,
+      refresh: () => {},
+    };
+    expect(
+      renderToString(<GroupDestAutocomplete token="x" value={[]} onChange={() => {}} />),
+    ).toContain('Você precisa ser administrador do grupo');
   });
 });

@@ -24,7 +24,7 @@ import {
   httpErrorMessage,
   isDeleteStatusAcceptable,
   isInstanceAlreadyInUseError,
-  normalizeGroups,
+  normalizeGroupsForInstance,
   normalizeMessages,
   parseConnectionState,
   parseCreateInstanceResponse,
@@ -209,6 +209,26 @@ export async function deleteInstance(instanceName: string): Promise<{
   }
 }
 
+async function fetchInstanceOwnerJid(instanceName: string): Promise<string | null> {
+  try {
+    const res = await fetch(url(evolutionEndpoints.fetchInstances()), {
+      method: 'GET',
+      headers: headers(),
+    });
+    if (!res.ok) return null;
+
+    const instances = (await res.json()) as unknown;
+    if (!Array.isArray(instances)) return null;
+    const instance = instances.find((candidate) => {
+      const item = candidate as Record<string, unknown>;
+      return item.name === instanceName || item.instanceName === instanceName;
+    }) as Record<string, unknown> | undefined;
+    return typeof instance?.ownerJid === 'string' ? instance.ownerJid : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Busca todos os grupos do WhatsApp que a instância participa.
  *
@@ -218,7 +238,7 @@ export async function deleteInstance(instanceName: string): Promise<{
  */
 export async function fetchGroups(instanceName: string): Promise<{
   success: boolean;
-  groups?: { jid: string; name: string }[];
+  groups?: { jid: string; name: string; isAdmin: boolean }[];
   error?: string;
 }> {
   try {
@@ -233,7 +253,8 @@ export async function fetchGroups(instanceName: string): Promise<{
     }
 
     const raw = (await res.json()) as Record<string, unknown>;
-    const groups = normalizeGroups(extractGroupList(raw));
+    const ownerJid = await fetchInstanceOwnerJid(instanceName);
+    const groups = normalizeGroupsForInstance(extractGroupList(raw), ownerJid);
 
     return { success: true, groups };
   } catch (err) {
@@ -278,7 +299,8 @@ export async function fetchGroupInfo(
   try {
     const result = await fetchGroups(instanceName);
     if (!result.success || !result.groups) return null;
-    return result.groups.find((g) => g.jid === groupJid) ?? null;
+    const group = result.groups.find((candidate) => candidate.jid === groupJid);
+    return group ? { jid: group.jid, name: group.name } : null;
   } catch {
     return null;
   }

@@ -352,14 +352,14 @@ export const whatsAppRoutes = new Elysia()
 
       const instanceName = instanceNameFromUserId(auth.userId);
 
-      const cacheKey = `whatsapp:groups:${instanceName}`;
+      const cacheKey = `whatsapp:groups:v2:${instanceName}`;
 
       const force = query?.force === 'true';
 
       // Tenta cache primeiro (a menos que force=true)
 
       if (!force) {
-        const cached = await cacheGet<{ jid: string; name: string }[]>(cacheKey);
+        const cached = await cacheGet<{ jid: string; name: string; isAdmin: boolean }[]>(cacheKey);
 
         if (cached) {
           return { success: true, groups: cached, fromCache: true };

@@ -12,6 +12,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 interface WhatsAppGroup {
   jid: string;
   name: string;
+  isAdmin: boolean;
 }
 
 interface UseWhatsAppGroupsResult {
@@ -29,42 +30,45 @@ export function useWhatsAppGroups(token: string, pollIntervalMs = 60000): UseWha
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
-  const fetchGroups = useCallback(async (force = false) => {
-    // Se já carregou antes, marca como refreshing em vez de loading
-    if (groups.length > 0 || !loading) {
-      setRefreshing(true);
-    }
-    setError(null);
-
-    try {
-      const url = force ? '/api/whatsapp/groups?force=true' : '/api/whatsapp/groups';
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json() as {
-        success: boolean;
-        groups?: WhatsAppGroup[];
-        error?: string;
-      };
-
-      if (!mountedRef.current) return;
-
-      if (data.success && data.groups) {
-        setGroups(data.groups);
-      } else {
-        setError(data.error || 'Falha ao carregar grupos');
+  const fetchGroups = useCallback(
+    async (force = false) => {
+      // Se já carregou antes, marca como refreshing em vez de loading
+      if (groups.length > 0 || !loading) {
+        setRefreshing(true);
       }
-    } catch {
+      setError(null);
+
+      try {
+        const url = force ? '/api/whatsapp/groups?force=true' : '/api/whatsapp/groups';
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await res.json()) as {
+          success: boolean;
+          groups?: WhatsAppGroup[];
+          error?: string;
+        };
+
+        if (!mountedRef.current) return;
+
+        if (data.success && data.groups) {
+          setGroups(data.groups);
+        } else {
+          setError(data.error || 'Falha ao carregar grupos');
+        }
+      } catch {
+        if (mountedRef.current) {
+          setError('Erro de conexão ao carregar grupos');
+        }
+      }
+
       if (mountedRef.current) {
-        setError('Erro de conexão ao carregar grupos');
+        setLoading(false);
+        setRefreshing(false);
       }
-    }
-
-    if (mountedRef.current) {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [token, groups.length, loading]);
+    },
+    [token, groups.length, loading],
+  );
 
   // Carrega grupos ao montar
   useEffect(() => {
