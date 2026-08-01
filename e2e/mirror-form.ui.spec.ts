@@ -152,7 +152,9 @@ test.describe('MirrorFormPage — Acessibilidade', () => {
     await loginDirect(page);
   });
 
-  test('1.0 — Labels conectados aos inputs via htmlFor/id', async ({ page }) => {
+  test('1.0 — Labels conectados aos inputs via htmlFor/id + asterisco de obrigatorio', async ({
+    page,
+  }) => {
     await navigateToNewMirrorForm(page);
 
     // O Input component gera id="input-nome-do-espelhamento" ou usa id explícito "mirror-form-nome"
@@ -163,7 +165,13 @@ test.describe('MirrorFormPage — Acessibilidade', () => {
     // Label deve ter htmlFor="mirror-form-nome"
     const nomeLabel = page.locator('label[for="mirror-form-nome"]');
     await expect(nomeLabel).toBeVisible();
-    await expect(nomeLabel).toHaveText('Nome do Espelhamento');
+    // O asterisco de obrigatoriedade (critério 5) faz o texto incluir " *",
+    // então validamos o nome-base em vez de toHaveText exato.
+    await expect(nomeLabel).toContainText('Nome do Espelhamento');
+    // Asterisco presente (aria-hidden via Input.tsx)
+    await expect(nomeLabel).toContainText('*');
+    // Asterisco é decorativo: aria-hidden="true" para nao ser lido pelo leitor de tela
+    await expect(nomeLabel.locator('span[aria-hidden="true"]')).toContainText('*');
   });
 
   test('2.0 — Campo nome com erro tem aria-invalid=true e aria-describedby', async ({ page }) => {
@@ -612,11 +620,14 @@ test.describe('MirrorFormPage — Dirty Guard', () => {
     await selectGroup(page, 'VIP', 'Grupo VIP Compras', { target: true });
 
     await page.getByRole('button', { name: 'Criar Espelhamento' }).click();
-    // Tela de success → auto-redirect em 1200ms para /mirrors
+    // Tela de success aparece (sem auto-redirect — feature do
+    // wt/t_7051622a, validada em 5.0/5.1/5.2/5.3). Aqui clicamos em
+    // "Ver espelhamentos" para navegar manualmente.
     await expect(page.locator('text=Espelhamento criado com sucesso!')).toBeVisible({
       timeout: 10_000,
     });
-    await page.waitForURL(/\/mirrors$/, { timeout: 5000 });
+    await page.getByRole('button', { name: 'Ver espelhamentos' }).click();
+    await page.waitForURL(/\/mirrors$/, { timeout: 5_000 });
 
     // Agora clica em "Novo" → form de criação limpo
     // (snapshot resetado após save no componente)
@@ -631,7 +642,7 @@ test.describe('MirrorFormPage — Dirty Guard', () => {
       void d.dismiss();
     });
     await page.getByRole('button', { name: 'Cancelar' }).click();
-    await page.waitForURL(/\/mirrors$/, { timeout: 5000 });
+    await page.waitForURL(/\/mirrors$/, { timeout: 5_000 });
     expect(dialogShown).toBe(false);
 
     await page.screenshot({ path: `${EVIDENCE_DIR}/dirty-pos-save-sem-confirm.png` });
