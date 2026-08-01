@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { getAuthUser } from './auth.ts';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { getAuthUser, getSuperAdminUser } from './auth.ts';
 
 function makeHeaders(auth: string | null): Headers {
   const h = new Headers();
@@ -70,5 +70,66 @@ describe('getAuthUser', () => {
     expect(r2!.isAdmin).toBe(true);
     const r3 = await getAuthUser(fakeJwt({ userId: 3 }), makeHeaders('Bearer tok'));
     expect(r3!.isAdmin).toBe(false);
+  });
+});
+
+describe('getSuperAdminUser', () => {
+  it('aceita apenas quando o banco marca admin e o email está em ADMIN_EMAILS', async () => {
+    const user = await getSuperAdminUser(
+      fakeJwt({ userId: 1, userEmail: 'forged@example.com', isAdmin: false }),
+      makeHeaders('Bearer tok'),
+      'other@example.com, admin@example.com',
+      async () => ({ email: 'ADMIN@EXAMPLE.COM', isAdmin: true }),
+    );
+
+    expect(user).toEqual({
+      userId: 1,
+      userEmail: 'ADMIN@EXAMPLE.COM',
+      isAdmin: true,
+    });
+  });
+
+  it('rejeita is_admin=true quando o email não está em ADMIN_EMAILS', async () => {
+    expect(
+      await getSuperAdminUser(
+        fakeJwt({ userId: 1, userEmail: 'mtorreao1@gmail.com', isAdmin: true }),
+        makeHeaders('Bearer tok'),
+        'admin@omestreafiliado.com.br',
+        async () => ({ email: 'mtorreao1@gmail.com', isAdmin: true }),
+      ),
+    ).toBeNull();
+  });
+
+  it('rejeita email permitido quando is_admin=false', async () => {
+    expect(
+      await getSuperAdminUser(
+        fakeJwt({ userId: 1, userEmail: 'admin@example.com', isAdmin: false }),
+        makeHeaders('Bearer tok'),
+        'admin@example.com',
+        async () => ({ email: 'admin@example.com', isAdmin: false }),
+      ),
+    ).toBeNull();
+  });
+
+  it('rejeita quando o usuário não existe mais no banco', async () => {
+    expect(
+      await getSuperAdminUser(
+        fakeJwt({ userId: 1, userEmail: 'admin@example.com', isAdmin: true }),
+        makeHeaders('Bearer tok'),
+        'admin@example.com',
+        async () => null,
+      ),
+    ).toBeNull();
+  });
+
+  it('rejeita quando ADMIN_EMAILS está vazio', async () => {
+    expect(
+      await getSuperAdminUser(
+        fakeJwt({ userId: 1, userEmail: 'admin@example.com', isAdmin: true }),
+        makeHeaders('Bearer tok'),
+        '',
+        async () => ({ email: 'admin@example.com', isAdmin: true }),
+      ),
+    ).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { UserRepository, UserCredentialsRepository, isEmailAdminAllowed } from '@omestre/db';
-import { createJwtPlugin, getAuthUser } from '../../middleware/auth.ts';
+import { createJwtPlugin, getAuthUser, getSuperAdminUser } from '../../middleware/auth.ts';
 import { config } from '../../config.ts';
 
 const userRepo = new UserRepository();
@@ -121,7 +121,12 @@ export const authRoutes = new Elysia()
         return { success: false, error: 'Usuário não encontrado' };
       }
 
-      return { success: true, user };
+      const isSuperAdmin = !!(await getSuperAdminUser(jwt, request.headers));
+
+      return {
+        success: true,
+        user: { ...user, isSuperAdmin },
+      };
     },
     {
       detail: {

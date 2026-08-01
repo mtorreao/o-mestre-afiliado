@@ -1,8 +1,8 @@
 /**
  * Testes de INTEGRAÇÃO dos handlers de catalog.routes.ts.
  *
- * Mockamos o CatalogRepository (@omestre/db) e o getAdminUser para exercitar
- * as rotas de verdade (parse de query/params, gate isAdmin -> 403, envelopes)
+ * Mockamos o CatalogRepository (@omestre/db) e o getSuperAdminUser para exercer
+ * as rotas de verdade (parse de query/params, gate super admin -> 403, envelopes)
  * sem DB real. Mesmo padrão de mirrors.routes.handlers.test.ts.
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
@@ -81,7 +81,7 @@ const getVariationHistoryMock = mock((id: number, options?: Record<string, strin
   ]);
 });
 
-const getAdminUserMock = mock(async () => ({
+const getSuperAdminUserMock = mock(async () => ({
   userId: 1,
   userEmail: 'admin@x.com',
   isAdmin: true,
@@ -102,7 +102,7 @@ await mock.module('@omestre/db', () => ({
 
 await mock.module('../../../middleware/auth.ts', () => ({
   createJwtPlugin: realCreateJwtPlugin,
-  getAdminUser: getAdminUserMock,
+  getSuperAdminUser: getSuperAdminUserMock,
 }));
 
 const { catalogRoutes } = await import('../catalog.routes.ts');
@@ -130,7 +130,7 @@ beforeEach(() => {
   for (const m of [listProductsMock, getProductWithVariationsMock, getVariationHistoryMock]) {
     m.mockClear?.();
   }
-  getAdminUserMock.mockImplementation(async () => ({
+  getSuperAdminUserMock.mockImplementation(async () => ({
     userId: 1,
     userEmail: 'admin@x.com',
     isAdmin: true,
@@ -139,7 +139,7 @@ beforeEach(() => {
 
 describe('GET /api/catalog/products (lista)', () => {
   it('sem token -> 403', async () => {
-    getAdminUserMock.mockImplementation(async () => null as never);
+    getSuperAdminUserMock.mockImplementation(async () => null as never);
     const res = await call('GET', '/api/catalog/products');
     expect(res.status).toBe(403);
     const json = await res.json();
@@ -147,13 +147,13 @@ describe('GET /api/catalog/products (lista)', () => {
     expect(json.error).toBe('Não autorizado');
   });
 
-  it('não-admin (getAdminUser retorna null) -> 403', async () => {
-    // getAdminUser real retorna null quando o usuário não é admin
-    getAdminUserMock.mockImplementation(async () => null as never);
+  it('não-admin (getSuperAdminUser retorna null) -> 403', async () => {
+    // getSuperAdminUser real retorna null quando o usuário não é admin
+    getSuperAdminUserMock.mockImplementation(async () => null as never);
     const res = await call('GET', '/api/catalog/products');
     expect(res.status).toBe(403);
     expect((await res.json()).success).toBe(false);
-    expect(getAdminUserMock).toHaveBeenCalled();
+    expect(getSuperAdminUserMock).toHaveBeenCalled();
   });
 
   it('admin lista produtos com filtros e paginação', async () => {
@@ -205,7 +205,7 @@ describe('GET /api/catalog/products (lista)', () => {
 
 describe('GET /api/catalog/products/:id (detalhe)', () => {
   it('sem token -> 403', async () => {
-    getAdminUserMock.mockImplementation(async () => null as never);
+    getSuperAdminUserMock.mockImplementation(async () => null as never);
     const res = await call('GET', '/api/catalog/products/1');
     expect(res.status).toBe(403);
     expect((await res.json()).success).toBe(false);
@@ -236,7 +236,7 @@ describe('GET /api/catalog/products/:id (detalhe)', () => {
 
 describe('GET /api/catalog/variations/:id/history', () => {
   it('sem token -> 403', async () => {
-    getAdminUserMock.mockImplementation(async () => null as never);
+    getSuperAdminUserMock.mockImplementation(async () => null as never);
     const res = await call('GET', '/api/catalog/variations/10/history');
     expect(res.status).toBe(403);
     expect((await res.json()).success).toBe(false);

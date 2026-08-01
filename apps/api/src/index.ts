@@ -26,16 +26,10 @@ import { magaluRoutes } from './modules/magalu/magalu.routes.ts';
 import { extensionRoutes } from './modules/extension/extension.routes.ts';
 import { extensionLogRoutes } from './modules/extension/extension-log.routes.ts';
 import { featureFlagsRoutes } from './modules/admin/feature-flags.routes.ts';
+import { workerAdminRoutes } from './modules/admin/worker-admin.routes.ts';
 import { catalogRoutes } from './modules/catalog/catalog.routes.ts';
 import { isFeatureEnabled, initFlagInvalidation } from '@omestre/feature-flags';
 import { warmSourceGroupCache } from './services/group-cache.ts';
-import {
-  getAggregatedWorkerStatus,
-  listDlqItems,
-  requeueDlqItem,
-  removeDlqItem,
-  purgeDlq,
-} from './services/worker-metrics.ts';
 import { globalErrorHandler } from './error-handler.ts';
 
 const PORT = parseInt(config.API_PORT, 10);
@@ -71,6 +65,7 @@ const app = new Elysia()
   .use(extensionRoutes)
   .use(extensionLogRoutes)
   .use(featureFlagsRoutes)
+  .use(workerAdminRoutes)
   .use(catalogRoutes)
 
   // ─── Gate de manutenção (feature flag global) ────────────────────
@@ -175,42 +170,6 @@ const app = new Elysia()
       },
     },
   )
-
-  // ─── Worker Status ───────────────────────────────────────────────────
-  .get('/api/worker/status', async () => {
-    return getAggregatedWorkerStatus();
-  })
-
-  // ─── DLQ ─────────────────────────────────────────────────────────────
-  .get('/api/worker/dlq', async ({ query }) => {
-    const q = query as Record<string, string>;
-    return listDlqItems({
-      offset: q.offset ? parseInt(q.offset, 10) : 0,
-      limit: q.limit ? parseInt(q.limit, 10) : 20,
-      queue: q.queue as 'A' | 'B' | undefined,
-      failureReason: q.reason || undefined,
-      since: q.since ? parseInt(q.since, 10) || undefined : undefined,
-    });
-  })
-  .post('/api/worker/dlq/requeue', async ({ query, set }) => {
-    const { id } = query as { id?: string };
-    if (!id) {
-      set.status = 400;
-      return { success: false, error: 'ID é obrigatório' };
-    }
-    return requeueDlqItem(id);
-  })
-  .post('/api/worker/dlq/remove', async ({ query, set }) => {
-    const { id } = query as { id?: string };
-    if (!id) {
-      set.status = 400;
-      return { success: false, error: 'ID é obrigatório' };
-    }
-    return removeDlqItem(id);
-  })
-  .post('/api/worker/dlq/purge', async () => {
-    return purgeDlq();
-  })
 
   // ─── Cache warming + flag invalidation no startup ────────────────────
   .onStart(async () => {

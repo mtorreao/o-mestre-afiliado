@@ -2,7 +2,7 @@
  * Helpers de autenticação JWT.
  *
  * Uso em rotas protegidas:
- *   import { getAuthUser, getAdminUser } from '../../middleware/auth.ts';
+ *   import { getAuthUser, getSuperAdminUser } from '../../middleware/auth.ts';
  *
  *   // Em uma rota:
  *   const auth = await getAuthUser(jwtInstance, request.headers);
@@ -12,6 +12,8 @@
 
 import { t } from 'elysia';
 import { jwt } from '@elysiajs/jwt';
+import { UserRepository } from '@omestre/db';
+import { isSuperAdmin } from './super-admin.ts';
 import { config } from '../config.ts';
 
 export interface AuthUser {
@@ -60,14 +62,26 @@ export async function getAuthUser(
 }
 
 /**
- * Obtém o usuário autenticado e verifica se é admin.
- * Retorna o AuthUser se for admin, ou null se não autenticado/não admin.
+ * Obtém o usuário autenticado e verifica se é super admin.
+ * Exige is_admin=true no banco/JWT e email presente em ADMIN_EMAILS.
+ * Retorna null se não autenticado ou se qualquer uma das condições falhar.
  */
-export async function getAdminUser(
+export async function getSuperAdminUser(
   jwtInstance: { verify: (token: string) => Promise<Record<string, unknown> | null | false> },
   headers: Headers,
+  adminEmailsCsv = config.ADMIN_EMAILS,
+  findUserById: (id: number) => Promise<{ email: string; isAdmin: boolean } | null> = (id) =>
+    new UserRepository().findById(id),
 ): Promise<AuthUser | null> {
-  const user = await getAuthUser(jwtInstance, headers);
-  if (!user?.isAdmin) return null;
-  return user;
+  const tokenUser = await getAuthUser(jwtInstance, headers);
+  if (!tokenUser) return null;
+
+  const dbUser = await findUserById(tokenUser.userId);
+  if (!dbUser || !isSuperAdmin(dbUser.isAdmin, dbUser.email, adminEmailsCsv)) return null;
+
+  return {
+    userId: tokenUser.userId,
+    userEmail: dbUser.email,
+    isAdmin: dbUser.isAdmin,
+  };
 }

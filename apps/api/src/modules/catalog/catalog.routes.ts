@@ -11,7 +11,7 @@ import { Elysia } from 'elysia';
 import { CatalogRepository, marketplaceEnum } from '@omestre/db';
 import type { CatalogMarketplace } from '@omestre/db';
 import { makeLogger } from '@omestre/shared';
-import { createJwtPlugin, getAdminUser } from '../../middleware/auth.ts';
+import { createJwtPlugin, getSuperAdminUser } from '../../middleware/auth.ts';
 
 const log = makeLogger('api:catalog');
 const repo = new CatalogRepository();
@@ -23,7 +23,7 @@ export const catalogRoutes = new Elysia()
   .get(
     '/api/catalog/products',
     async ({ query, jwt, request: { headers }, set }) => {
-      const admin = await getAdminUser(jwt, headers);
+      const admin = await getSuperAdminUser(jwt, headers);
       if (!admin) {
         set.status = 403;
         return { success: false, error: 'Não autorizado' };
@@ -57,7 +57,7 @@ export const catalogRoutes = new Elysia()
   .get(
     '/api/catalog/products/:id',
     async ({ params, jwt, request: { headers }, set }) => {
-      const admin = await getAdminUser(jwt, headers);
+      const admin = await getSuperAdminUser(jwt, headers);
       if (!admin) {
         set.status = 403;
         return { success: false, error: 'Não autorizado' };
@@ -91,7 +91,7 @@ export const catalogRoutes = new Elysia()
   .get(
     '/api/catalog/variations/:id/history',
     async ({ params, query, jwt, request: { headers }, set }) => {
-      const admin = await getAdminUser(jwt, headers);
+      const admin = await getSuperAdminUser(jwt, headers);
       if (!admin) {
         set.status = 403;
         return { success: false, error: 'Não autorizado' };
