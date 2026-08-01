@@ -70,6 +70,56 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function SuperAdminRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isSuperAdmin, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--color-bg)',
+          color: 'var(--color-text-muted)',
+        }}
+      >
+        Carregando...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isSuperAdmin) {
+    return (
+      <div
+        style={{
+          minHeight: '60vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.75rem',
+          padding: 'var(--spacing-6)',
+          textAlign: 'center',
+        }}
+      >
+        <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700 }}>Acesso restrito</h1>
+        <p style={{ color: 'var(--color-text-secondary)' }}>
+          Esta página é exclusiva do super admin. Verifique se o seu e-mail está em
+          <code style={{ marginLeft: 4 }}>ADMIN_EMAILS</code>.
+        </p>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 // ─── Auth-aware route redirect for login/register ────────
 
 function GuestRoute({ children }: { children: React.ReactNode }) {
@@ -104,7 +154,8 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
 // ─── Main App ────────────────────────────────────────────
 
 function App() {
-  const { user, token, login, register, logout, isAuthenticated, isAdmin } = useAuth();
+  const { user, token, login, register, logout, isAuthenticated, isAdmin, isSuperAdmin } =
+    useAuth();
   const navigate = useNavigate();
 
   return (
@@ -152,6 +203,7 @@ function App() {
                 <AppShellLayout
                   userName={user?.name ?? ''}
                   isAdmin={isAdmin}
+                  isSuperAdmin={isSuperAdmin}
                   onLogout={() => {
                     logout();
                     navigate('/login');
@@ -165,7 +217,14 @@ function App() {
           <Route path="settings" element={<SettingsPage user={user!} token={token!} />} />
           <Route path="groups" element={<Navigate to="/mirrors" replace />} />
           <Route path="mirror-logs" element={<MirrorLogsPage token={token!} />} />
-          <Route path="worker-status" element={<WorkerStatusPage />} />
+          <Route
+            path="worker-status"
+            element={
+              <SuperAdminRoute>
+                <WorkerStatusPage />
+              </SuperAdminRoute>
+            }
+          />
           <Route path="mirrors" element={<MirrorsPage token={token!} />} />
           <Route
             path="mirror-form"

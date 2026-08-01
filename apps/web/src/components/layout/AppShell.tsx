@@ -21,6 +21,7 @@ import {
   Flag,
   TrendingUp,
 } from 'lucide-react';
+import { filterNavByRole, type NavItemId } from './AppShell.pure.ts';
 
 export type NavItem =
   | 'dashboard'
@@ -36,6 +37,7 @@ interface AppShellLayoutProps {
   userName: string;
   onLogout: () => void;
   isAdmin?: boolean;
+  isSuperAdmin?: boolean;
 }
 
 /** Mapeia o pathname atual para um NavItem */
@@ -70,7 +72,7 @@ const pageTitles: Record<NavItem, string> = {
   'historico-precos': 'Histórico de Preços',
 };
 
-export function AppShellLayout({ userName, onLogout, isAdmin }: AppShellLayoutProps) {
+export function AppShellLayout({ userName, onLogout, isAdmin, isSuperAdmin }: AppShellLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -86,10 +88,14 @@ export function AppShellLayout({ userName, onLogout, isAdmin }: AppShellLayoutPr
     { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
   ];
 
-  // Filtra itens admin se não for admin
+  // Filtra itens admin se não for admin / super admin
   const visibleNavItems = navItems.filter((item) => {
-    if (item.id === 'feature-flags' || item.id === 'historico-precos') return !!isAdmin;
-    return true;
+    return (
+      filterNavByRole([item.id] as NavItemId[], {
+        isAdmin: !!isAdmin,
+        isSuperAdmin: !!isSuperAdmin,
+      }).length > 0
+    );
   });
 
   function handleNavigate(id: NavItem) {

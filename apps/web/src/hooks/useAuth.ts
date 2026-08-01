@@ -15,6 +15,7 @@ interface User {
   email: string;
   name: string;
   isAdmin?: boolean;
+  isSuperAdmin?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -111,7 +112,8 @@ export function useAuth() {
     token: state.token,
     loading: state.loading,
     isAuthenticated: !!state.user,
-    isAdmin: !!state.user?.isAdmin,
+    isAdmin: state.user?.isAdmin === true,
+    isSuperAdmin: state.user?.isSuperAdmin === true,
     login,
     register,
     logout,
