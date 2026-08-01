@@ -6,7 +6,7 @@
  * Consome POST /api/mirrors (criação) e PUT /api/mirrors/:id (atualização).
  * Redireciona para listagem após sucesso.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
@@ -15,6 +15,8 @@ import { GroupOfferAutocomplete } from '../components/GroupOfferAutocomplete.tsx
 import { GroupDestAutocomplete } from '../components/GroupDestAutocomplete.tsx';
 import { TemplateEditor } from '../components/TemplateEditor.tsx';
 import { TemplatePreview } from '../components/TemplatePreview.tsx';
+import { validateMirrorForm } from '../lib/mirror-form-pure.ts';
+import type { MirrorFormErrors } from '../lib/mirror-form-pure.ts';
 import { AlertTriangle, Save, ArrowLeft, Loader2 } from 'lucide-react';
 
 // ─── A11y: ids estaveis para foco e aria-describedby ──
@@ -73,6 +75,11 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // ─── Refs (foco/scroll no primeiro campo com erro) ─
+  const nameRef = useRef<HTMLInputElement>(null);
+  const sourceRef = useRef<HTMLInputElement>(null);
+  const targetRef = useRef<HTMLInputElement>(null);
+
   // ─── Validation state ───────────────────────────
   const [nameError, setNameError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -123,45 +130,35 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
   }, [success]);
 
   // ─── Validation ─────────────────────────────────
-  // Retorna o primeiro campo com erro ('name' | 'source' | 'target') ou null.
-  function validate(): 'name' | 'source' | 'target' | null {
-    let firstError: 'name' | 'source' | 'target' | null = null;
-
-    if (!name.trim()) {
-      setNameError('O nome é obrigatório');
-      firstError = firstError ?? 'name';
-    } else if (name.trim().length > 255) {
-      setNameError('O nome deve ter no máximo 255 caracteres');
-      firstError = firstError ?? 'name';
-    } else {
-      setNameError(null);
-    }
-
-    if (sourceGroups.length === 0) {
-      setSourceError('Selecione pelo menos 1 grupo de origem');
-      firstError = firstError ?? 'source';
-    } else {
-      setSourceError(null);
-    }
-
-    if (targetGroups.length === 0) {
-      setTargetError('Selecione pelo menos 1 grupo de destino');
-      firstError = firstError ?? 'target';
-    } else {
-      setTargetError(null);
-    }
-
-    return firstError;
+  /** Valida todos os campos via função pura e publica os erros no state. */
+  function validate(): MirrorFormErrors {
+    const formErrors = validateMirrorForm({ name, sourceGroups, targetGroups });
+    setNameError(formErrors.name ?? null);
+    setSourceError(formErrors.sourceGroups ?? null);
+    setTargetError(formErrors.targetGroups ?? null);
+    return formErrors;
   }
 
-  // A11y: foca o primeiro campo com erro após submit inválido.
-  function focusField(field: 'name' | 'source' | 'target'): void {
-    const idByField = {
-      name: NAME_INPUT_ID,
-      source: SOURCE_INPUT_ID,
-      target: TARGET_INPUT_ID,
-    } as const;
-    document.getElementById(idByField[field])?.focus();
+  /** Valida apenas o campo que saiu do foco (feedback incremental sem submit). */
+  function validateField(field: 'name' | 'sourceGroups' | 'targetGroups'): void {
+    const formErrors = validateMirrorForm({ name, sourceGroups, targetGroups });
+    if (field === 'name') setNameError(formErrors.name ?? null);
+    else if (field === 'sourceGroups') setSourceError(formErrors.sourceGroups ?? null);
+    else setTargetError(formErrors.targetGroups ?? null);
+  }
+
+  /** Foca e rola até o primeiro campo com erro (ordem: nome → origem → destino). */
+  function focusFirstError(formErrors: MirrorFormErrors): void {
+    const firstRef = formErrors.name
+      ? nameRef
+      : formErrors.sourceGroups
+        ? sourceRef
+        : formErrors.targetGroups
+          ? targetRef
+          : null;
+    if (!firstRef || !firstRef.current) return;
+    firstRef.current.focus({ preventScroll: true });
+    firstRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   // ─── Submit ─────────────────────────────────────
@@ -169,9 +166,9 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
     e.preventDefault();
     setSubmitError(null);
 
-    const firstError = validate();
-    if (firstError) {
-      focusField(firstError);
+    const formErrors = validate();
+    if (formErrors.name || formErrors.sourceGroups || formErrors.targetGroups) {
+      focusFirstError(formErrors);
       return;
     }
 
@@ -349,6 +346,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <Input
               id={NAME_INPUT_ID}
+              ref={nameRef}
               label="Nome do Espelhamento"
               placeholder="Ex: Ofertas Diárias → Grupo VIP"
               value={name}
@@ -356,6 +354,7 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
                 setName((e.target as HTMLInputElement).value);
                 if (nameError) setNameError(null);
               }}
+              onBlur={() => validateField('name')}
               error={nameError}
               maxLength={255}
               required
@@ -364,11 +363,18 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         </Card>
 
         <Card
-          title="🔗 Grupos de Origem"
+          title={
+            <>
+              🔗 Grupos de Origem{' '}
+              <span style={{ color: 'var(--color-error)' }} aria-hidden="true">
+                *
+              </span>
+            </>
+          }
           titleId={SOURCE_TITLE_ID}
           role="group"
           aria-labelledby={SOURCE_TITLE_ID}
-          style={{ marginBottom: '1.5rem' }}
+          style={{ marginBottom: '1.5rem', overflow: 'visible' }}
         >
           <p
             style={{
@@ -391,6 +397,8 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
             ariaLabel="Buscar grupo de origem"
             error={sourceError}
             errorId={SOURCE_ERROR_ID}
+            onBlur={() => validateField('sourceGroups')}
+            inputRef={sourceRef}
           />
           {sourceError && (
             <p
@@ -409,11 +417,18 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
         </Card>
 
         <Card
-          title="🎯 Grupos de Destino"
+          title={
+            <>
+              🎯 Grupos de Destino{' '}
+              <span style={{ color: 'var(--color-error)' }} aria-hidden="true">
+                *
+              </span>
+            </>
+          }
           titleId={TARGET_TITLE_ID}
           role="group"
           aria-labelledby={TARGET_TITLE_ID}
-          style={{ marginBottom: '1.5rem' }}
+          style={{ marginBottom: '1.5rem', overflow: 'visible' }}
         >
           <p
             style={{
@@ -436,6 +451,8 @@ export function MirrorFormPage({ token, onBack }: MirrorFormPageProps) {
             ariaLabel="Buscar grupo de destino"
             error={targetError}
             errorId={TARGET_ERROR_ID}
+            onBlur={() => validateField('targetGroups')}
+            inputRef={targetRef}
           />
           {targetError && (
             <p

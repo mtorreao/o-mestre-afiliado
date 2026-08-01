@@ -21,10 +21,14 @@ interface GroupDestAutocompleteProps {
   inputId?: string;
   /** nome acessivel do combobox */
   ariaLabel?: string;
-  /** erro do campo (controlado pelo pai) — liga aria-invalid/aria-describedby */
+  /** erro do campo (controlado pelo pai) - liga aria-invalid/aria-describedby */
   error?: string | null;
   /** id do elemento do pai que renderiza a mensagem de erro */
   errorId?: string;
+  /** Disparado quando o input de busca perde o foco (validacao onBlur do pai). */
+  onBlur?: () => void;
+  /** Ref exposta para o input de busca (foco no primeiro campo com erro). */
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 export function GroupDestAutocomplete({
@@ -36,12 +40,15 @@ export function GroupDestAutocomplete({
   ariaLabel,
   error,
   errorId,
+  onBlur,
+  inputRef,
 }: GroupDestAutocompleteProps) {
   const { groups, loading, error: fetchError, refresh } = useWhatsAppGroups(token);
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalRef = useRef<HTMLInputElement>(null);
+  const searchRef = inputRef ?? internalRef;
   const dropdownRef = useRef<HTMLDivElement>(null);
   // A11y: ids estaveis para o padrao combobox (aria-controls, aria-activedescendant)
   const uid = useId();
@@ -71,8 +78,8 @@ export function GroupDestAutocomplete({
       if (
         dropdownRef.current &&
         !dropdownRef.current.contains(e.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(e.target as Node)
+        searchRef.current &&
+        !searchRef.current.contains(e.target as Node)
       ) {
         setIsOpen(false);
       }
@@ -86,7 +93,7 @@ export function GroupDestAutocomplete({
       onChange([...value, group]);
       setQuery('');
       setHighlightIndex(-1);
-      inputRef.current?.focus();
+      searchRef.current?.focus();
     },
     [value, onChange],
   );
@@ -228,7 +235,7 @@ export function GroupDestAutocomplete({
       {/* Input de busca */}
       <div style={{ position: 'relative' }}>
         <input
-          ref={inputRef}
+          ref={searchRef}
           id={searchInputId}
           role="combobox"
           aria-expanded={isOpen}
@@ -251,6 +258,12 @@ export function GroupDestAutocomplete({
           onFocus={() => {
             setIsOpen(true);
             setHighlightIndex(0);
+          }}
+          onBlur={() => {
+            // Não fechar o dropdown aqui: o blur dispara no mousedown do item e fechar
+            // antes do click impediria a seleção por mouse (regressão f58e818).
+            // handleClickOutside (mousedown fora) + Tab + Escape fecham o dropdown.
+            onBlur?.();
           }}
           onKeyDown={handleKeyDown}
           placeholder="Buscar grupo de destino..."
@@ -294,7 +307,13 @@ export function GroupDestAutocomplete({
                 id={`${listboxId}-option-${i}`}
                 role="option"
                 aria-selected={highlightIndex === i}
-                onClick={() => handleSelect(g)}
+                onMouseDown={(e) => {
+                  // Selecao no mousedown + preventDefault: impede o blur do input
+                  // (o blur antes do click desmontaria o dropdown e o click nunca
+                  // dispararia - regressao f58e818). Padrao robusto p/ autocomplete.
+                  e.preventDefault();
+                  handleSelect(g);
+                }}
                 onMouseEnter={() => setHighlightIndex(i)}
                 style={{
                   padding: '0.5rem 0.75rem',

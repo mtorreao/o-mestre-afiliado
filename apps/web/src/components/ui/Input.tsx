@@ -11,7 +11,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, id, style, className, ...props }, ref) => {
+  ({ label, error, hint, id, style, className, required, ...props }, ref) => {
     const inputId = id || `input-${label?.toLowerCase().replace(/\s+/g, '-')}`;
     // A11y: id estavel da mensagem de erro — referenciada via aria-describedby
     const errorId = `${inputId}-error`;
@@ -58,6 +58,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label htmlFor={inputId} style={labelStyle}>
             {label}
+            {required && (
+              <span style={{ color: 'var(--color-error)' }} aria-hidden="true">
+                {' '}
+                *
+              </span>
+            )}
           </label>
         )}
         <input
@@ -65,6 +71,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
+          required={required}
           style={{
             ...inputStyle,
             ...(error ? { borderColor: 'var(--color-error)' } : {}),
