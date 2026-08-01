@@ -259,19 +259,28 @@ test.describe('MirrorFormPage — Acessibilidade', () => {
     }
   });
 
-  test('7.0 — Após sucesso, foco move para o título da página', async ({ page }) => {
-    await navigateToNewMirrorForm(page);
+  test('7.0 — Após sucesso, focus move para o título da página', async ({ page }) => {
+    // Mock da API de grupos (usada pelos autocompletes de origem e destino)
+    await page.route('**/api/whatsapp/groups*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          groups: [
+            { jid: 'src-group@g.us', name: 'Grupo Fonte' },
+            { jid: 'dst-group@g.us', name: 'Grupo Destino' },
+          ],
+        }),
+      });
+    });
 
-    // Preenche o form com dados válidos
-    await page.fill('#mirror-form-nome', 'Teste A11y Sucesso');
-
-    // Para preencher os autocompletes, precisamos de grupos no WhatsApp
-    // Como o E2E stack pode não ter grupos, vamos mockar a resposta
-    // ou usar a API para criar um espelhamento diretamente e testar o edit mode
-    // Para este teste, vamos verificar o comportamento de sucesso via intercept
-
-    // Intercepta a chamada POST /api/mirrors e retorna sucesso
+    // Mock do POST /api/mirrors → sucesso
     await page.route('**/api/mirrors', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -282,8 +291,8 @@ test.describe('MirrorFormPage — Acessibilidade', () => {
             name: 'Teste A11y Sucesso',
             userId: 1,
             status: 'active',
-            sourceGroups: [{ jid: 'src@g.us', name: 'Fonte' }],
-            targetGroups: [{ jid: 'dst@g.us', name: 'Destino' }],
+            sourceGroups: [{ jid: 'src-group@g.us', name: 'Grupo Fonte' }],
+            targetGroups: [{ jid: 'dst-group@g.us', name: 'Grupo Destino' }],
             messageTemplate: null,
             subRateLimitMaxMsgs: null,
             subRateLimitWindowSec: null,
@@ -294,41 +303,43 @@ test.describe('MirrorFormPage — Acessibilidade', () => {
       });
     });
 
-    // Preenche source e target com valores fictícios via evaluate
-    await page.evaluate(() => {
-      // Força estado via React internals — não é ideal, mas necessário
-      // pois o autocomplete requer grupos do WhatsApp
-    });
+    await navigateToNewMirrorForm(page);
 
-    // Alternativa: submete o form mesmo com campos vazios e verifica
-    // que o foco vai para o primeiro campo com erro (já testado em 3.0)
-    // Para testar o sucesso, vamos verificar o useEffect diretamente
+    // Preenche o nome
+    await page.fill('#mirror-form-nome', 'Teste A11y Sucesso');
 
-    // Verifica que o título de sucesso tem tabIndex=-1 e id correto
-    // Isso é uma verificação estática do código, não dinâmica
-    // Mas podemos verificar que o elemento existe após o sucesso
+    // Seleciona grupo de origem via combobox (opção do listbox)
+    const origemInput = page.locator('#mirror-form-origem-input');
+    await origemInput.focus();
+    const origemOption = page.locator(
+      '#mirror-form-origem-input-listbox [role="option"]',
+    );
+    await origemOption.first().waitFor({ state: 'visible', timeout: 5000 });
+    await origemOption.first().click();
 
-    // Submete o form (vai falhar na validação, mas testa o fluxo)
+    // Seleciona grupo de destino via combobox
+    const destinoInput = page.locator('#mirror-form-destino-input');
+    await destinoInput.focus();
+    const destinoOption = page.locator(
+      '#mirror-form-destino-input-listbox [role="option"]',
+    );
+    await destinoOption.first().waitFor({ state: 'visible', timeout: 5000 });
+    await destinoOption.first().click();
+
+    // Submete o form
     await page.click('button[type="submit"]');
-    await page.waitForTimeout(500);
 
-    // Como não temos grupos, o form não vai submitir com sucesso
-    // Vamos verificar a estrutura do success overlay via code inspection
-    // O teste 3.0 já valida o focus no erro
+    // Success overlay renderiza — título da página recebe foco via useEffect
+    const successTitle = page.locator('#mirror-form-success-title');
+    await expect(successTitle).toBeVisible();
 
-    // Para validar o success, precisamos de um teste de integração completo
-    // que é coberto pelo teste manual + code review
-    // Marcamos este teste como passando se a estrutura existe
-    const successTitleId = 'mirror-form-success-title';
-
-    // Verifica que o h1 do form tem o título correto
-    const h1 = page.locator('h1');
-    await expect(h1).toContainText('Novo Espelhamento');
-
-    // O success overlay só aparece após submit bem-sucedido
-    // que requer grupos do WhatsApp — não testável em E2E sem mock complexo
-    // O comportamento é validado via code review do useEffect
-    expect(successTitleId).toBe('mirror-form-success-title');
+    // Verifica document.activeElement apontando para o título
+    await expect
+      .poll(
+        () => page.evaluate(() => document.activeElement?.id),
+        { timeout: 2000, intervals: [50, 100, 200] },
+      )
+      .toBe('mirror-form-success-title');
   });
 
   test('8.0 — Console sem erros JS fatais ao navegar para o form', async ({ page }) => {
