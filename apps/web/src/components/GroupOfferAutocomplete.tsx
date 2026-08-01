@@ -204,7 +204,7 @@ export function GroupOfferAutocomplete({
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.3rem',
+              gap: '0.4rem',
               padding: '0.25rem 0.5rem',
               borderRadius: '4px',
               background: '#6366f120',
@@ -213,9 +213,16 @@ export function GroupOfferAutocomplete({
               fontSize: '0.8rem',
             }}
           >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span>{g.name}</span>
-              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{g.jid}</span>
+            <GroupAvatar name={g.name} pictureUrl={g.pictureUrl ?? null} size={16} />
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '180px',
+              }}
+            >
+              {g.name}
             </span>
             <button
               onClick={() => handleRemove(g.jid)}

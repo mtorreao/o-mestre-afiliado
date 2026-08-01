@@ -16,7 +16,7 @@ import { renderToString } from 'react-dom/server';
 
 // Mock do hook — controla o estado retornado em cada teste
 let mockHookResult: {
-  groups: { jid: string; name: string }[];
+  groups: { jid: string; name: string; isAdmin?: boolean; pictureUrl?: string | null }[];
   loading: boolean;
   refreshing: boolean;
   error: string | null;
@@ -109,5 +109,34 @@ describe('GroupOfferAutocomplete (a11y / render sempre do input)', () => {
 
     expect(html).toContain('aria-invalid="true"');
     expect(html).toContain('aria-describedby="mirror-form-origem-error"');
+  });
+
+  it('tags selecionadas mostram avatar (img com pictureUrl) + nome, sem JID', () => {
+    mockHookResult.groups = [
+      { jid: 'a@g.us', name: 'Grupo A', pictureUrl: 'https://example.com/a.png' },
+    ];
+    const html = renderToString(
+      <GroupOfferAutocomplete
+        {...baseProps}
+        value={[{ jid: 'a@g.us', name: 'Grupo A', pictureUrl: 'https://example.com/a.png' }]}
+      />,
+    );
+    expect(html).toContain('Grupo A');
+    expect(html).not.toContain('a@g.us');
+    expect(html).toContain('<img');
+    expect(html).toContain('https://example.com/a.png');
+  });
+
+  it('tags selecionadas sem pictureUrl usam o avatar de inicial', () => {
+    mockHookResult.groups = [{ jid: 'a@g.us', name: 'Achadinhos', pictureUrl: null }];
+    const html = renderToString(
+      <GroupOfferAutocomplete
+        {...baseProps}
+        value={[{ jid: 'a@g.us', name: 'Achadinhos', pictureUrl: null }]}
+      />,
+    );
+    expect(html).toContain('Achadinhos');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('>A<');
   });
 });

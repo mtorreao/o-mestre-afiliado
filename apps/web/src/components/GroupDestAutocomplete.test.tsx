@@ -53,7 +53,7 @@ describe('GroupDestAutocomplete', () => {
     ).toContain('Você precisa ser administrador do grupo');
   });
 
-  it('tags selecionadas mostram apenas o nome, sem JID e sem avatar', () => {
+  it('tags selecionadas mostram avatar (img com pictureUrl) e apenas o nome, sem JID', () => {
     state = {
       groups: [
         { jid: 'a@g.us', name: 'Alpha', isAdmin: true, pictureUrl: 'https://example.com/a.png' },
@@ -67,7 +67,25 @@ describe('GroupDestAutocomplete', () => {
     );
     // Nome aparece na tag.
     expect(html).toContain('Alpha');
-    // O JID não aparece na tag (apenas em campos internos/seleção invisível).
+    // O JID não aparece na tag.
     expect(html).not.toContain('a@g.us');
+    // A foto aparece como <img src=...>.
+    expect(html).toContain('<img');
+    expect(html).toContain('https://example.com/a.png');
+  });
+
+  it('tags selecionadas sem pictureUrl usam o avatar de inicial', () => {
+    state = {
+      groups: [{ jid: 'a@g.us', name: 'Achadinhos', isAdmin: true, pictureUrl: null }],
+      loading: false,
+      error: null,
+      refresh: () => {},
+    };
+    const html = renderToString(
+      <GroupDestAutocomplete token="x" value={[state.groups[0]!]} onChange={() => {}} />,
+    );
+    expect(html).toContain('Achadinhos');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('>A<');
   });
 });

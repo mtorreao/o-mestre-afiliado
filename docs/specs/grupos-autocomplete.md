@@ -25,10 +25,9 @@ a produtividade do usuário:
   disparando `?force=true` em ambos os autocompletes ao mesmo tempo.
 - Cada item do dropdown mostra a imagem do grupo (`pictureUrl` da
   Evolution) à esquerda do nome, com fallback para a inicial quando
-  ausente.
-- JID removido de ambos os dropdowns. Continua visível apenas nas tags
-  de origem (decisão de UX mantida).
-- Filtro de destino continua exigindo admin (entregue no commit anterior
+  ausente. O JID não aparece no dropdown, mas as tags de origem e
+  destino também passam a usar a mesma definição visual
+  (`GroupAvatar` + nome) — sem JID.
   `271bf31`).
 
 **Fora de escopo:** cache da imagem em disco/Redis, pré-fetch no backend,
@@ -329,7 +328,10 @@ Cenários cobertos (Playwright):
 - [x] Cada item do dropdown mostra a imagem (ou inicial como
       fallback) à esquerda do nome.
 - [x] JID removido de ambos os dropdowns.
-- [x] Tag selecionada de origem ainda mostra o JID.
+- [x] Tag selecionada de origem agora mostra avatar + nome
+      (sem JID). O JID foi removido das tags para alinhar com a
+      definição visual do dropdown (`GroupAvatar` à esquerda do
+      nome).
 - [x] Tag selecionada de destino continua sem JID.
 - [x] `bun run typecheck` 0 erros, `bun run test:unit` 100%
       verde (2288 testes), `bun run build` verde.

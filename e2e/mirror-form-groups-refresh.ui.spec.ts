@@ -193,7 +193,7 @@ test.describe('MirrorFormPage — Grupos: refresh, avatar e JID', () => {
     await page.screenshot({ path: `${EVIDENCE_DIR}/dest-dropdown-avatar.png` });
   });
 
-  test('tags de origem continuam mostrando o JID ao lado do nome', async ({ page }) => {
+  test('tags de origem mostram avatar + nome, sem JID', async ({ page }) => {
     await mockWhatsAppGroups(page);
     await page.goto(`${WEB}/mirror-form`);
     await page.waitForSelector('form', { timeout: 15_000 });
@@ -207,13 +207,16 @@ test.describe('MirrorFormPage — Grupos: refresh, avatar e JID', () => {
     await expect(page.getByRole('listbox')).toBeVisible({ timeout: 3_000 });
     await page.getByRole('option').filter({ hasText: 'Ofertas Premium' }).first().click();
 
-    // Após selecionar, a tag renderiza nome + jid.
-    const tag = page.locator('text=120363000000000001@g.us').first();
-    await expect(tag).toBeVisible();
+    // Após selecionar, a tag renderiza avatar + nome.
     await expect(page.locator('text=Ofertas Premium').first()).toBeVisible();
+    // O JID não aparece em lugar nenhum da UI.
+    const jidVisible = await page.locator('text=120363000000000001@g.us').count();
+    expect(jidVisible).toBe(0);
+    // A foto do grupo aparece na tag como <img>.
+    await expect(page.locator('img[src="https://example.com/premium.png"]').first()).toBeVisible();
   });
 
-  test('tags de destino mostram só o nome (sem JID)', async ({ page }) => {
+  test('tags de destino mostram avatar + nome, sem JID', async ({ page }) => {
     await mockWhatsAppGroups(page);
     await page.goto(`${WEB}/mirror-form`);
     await page.waitForSelector('form', { timeout: 15_000 });
@@ -229,9 +232,10 @@ test.describe('MirrorFormPage — Grupos: refresh, avatar e JID', () => {
 
     // O nome aparece na tag.
     await expect(page.locator('text=Grupo VIP Compras').first()).toBeVisible();
-    // O JID não aparece em lugar nenhum da UI (apenas nas opções não-selecionadas do dropdown).
-    // Confirmação adicional: nenhum elemento visível contém o JID.
+    // O JID não aparece em lugar nenhum da UI.
     const jidVisible = await page.locator('text=120363000000000002@g.us').count();
     expect(jidVisible).toBe(0);
+    // A foto do grupo aparece na tag como <img>.
+    await expect(page.locator('img[src="https://example.com/vip.png"]').first()).toBeVisible();
   });
 });

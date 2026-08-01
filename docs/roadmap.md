@@ -118,8 +118,9 @@ os dropdowns mas mantido nas tags de origem (decisão de UX preservada).
       cache Redis → `useWhatsAppGroups` → `GroupAvatar`).
 - [x] `GroupAvatar` renderiza `<img>` com `pictureUrl` ou
       fallback para span cinza com inicial (preserva acentos).
-- [x] JID removido do item do dropdown de origem e de destino.
-      Tags de origem continuam com JID ao lado do nome.
+- JID removido do item do dropdown de origem, de destino, e das
+  tags selecionadas. Tags passam a mostrar `GroupAvatar` (img
+  ou inicial) + nome, alinhado com o dropdown.
 - [x] Botão "Atualizar grupos" no `PageHeader` dispara
       `?force=true` em ambos os autocompletes; validado no teste
       E2E com `page.route` capturando a URL.

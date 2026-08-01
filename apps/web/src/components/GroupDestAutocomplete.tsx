@@ -209,7 +209,7 @@ export function GroupDestAutocomplete({
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.3rem',
+              gap: '0.4rem',
               padding: '0.25rem 0.5rem',
               borderRadius: '4px',
               background: '#22c55e20',
@@ -218,7 +218,17 @@ export function GroupDestAutocomplete({
               fontSize: '0.8rem',
             }}
           >
-            📨 {g.name}
+            <GroupAvatar name={g.name} pictureUrl={g.pictureUrl ?? null} size={16} />
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '180px',
+              }}
+            >
+              {g.name}
+            </span>
             <button
               onClick={() => handleRemove(g.jid)}
               style={{
