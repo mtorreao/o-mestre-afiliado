@@ -275,8 +275,15 @@ export const mirrorRoutes = new Elysia()
         return buildErrorResult(buildInvalidStatusError());
       }
 
+      // Verificar ownership ANTES de modificar
+      const existingMirror = await mirrorRepo.findById(id);
+      if (!existingMirror || existingMirror.userId !== auth.userId) {
+        set.status = 404;
+        return buildErrorResult('Espelhamento não encontrado');
+      }
+
       const mirror = await mirrorRepo.patchStatus(id, body.status);
-      if (!mirror || mirror.userId !== auth.userId) {
+      if (!mirror) {
         set.status = 404;
         return buildErrorResult('Espelhamento não encontrado');
       }
@@ -332,7 +339,7 @@ export const mirrorRoutes = new Elysia()
 
       // Busca o mirror ANTES de deletar para ter os sourceGroups e limpar o cache
       const existingMirror = await mirrorRepo.findById(id);
-      if (!existingMirror) {
+      if (!existingMirror || existingMirror.userId !== auth.userId) {
         set.status = 404;
         return buildErrorResult('Espelhamento não encontrado');
       }
