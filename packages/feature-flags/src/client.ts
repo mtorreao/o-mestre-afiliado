@@ -122,6 +122,17 @@ export function invalidateFlagCache(key: string): void {
   cache.delete(key);
 }
 
+/**
+ * Reset do estado de modulo para testes. NAO usar em codigo de producao.
+ * Limpa o cache local e a flag pubSubInitialized para que initFlagInvalidation
+ * possa ser chamada novamente em testes sequenciais. Marcado com prefixo __
+ * para sinalizar uso interno.
+ */
+export function __resetModuleStateForTesting(): void {
+  cache.clear();
+  pubSubInitialized = false;
+}
+
 // ─── PubSub de invalidação ──────────────────────────────────────────
 
 let pubSubInitialized = false;
