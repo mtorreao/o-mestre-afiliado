@@ -104,12 +104,16 @@ await mock.module('@omestre/db', () => ({
   }),
 }));
 
+const realAuth = await import('../../../middleware/auth.ts');
 await mock.module('../../../middleware/auth.ts', () => ({
+  ...realAuth,
   createJwtPlugin: realCreateJwtPlugin,
   getAuthUser: getAuthUserMock,
 }));
 
+const realMlService = await import('../ml.service.ts');
 await mock.module('../ml.service.ts', () => ({
+  ...realMlService,
   ML_CLIENT_ID: 'test_client_id',
   ML_CLIENT_SECRET: 'test_client_secret',
   REDIRECT_URI: 'http://localhost:5442/api/ml/callback',

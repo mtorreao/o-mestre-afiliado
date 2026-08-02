@@ -16,7 +16,6 @@ Retorna informações do serviço e links para os endpoints disponíveis.
   "version": "1.0.0",
   "endpoints": {
     "health": "/health",
-    "convert": "POST /api/convert",
     "docs": "/docs"
   }
 }
@@ -30,53 +29,6 @@ Health check simples. Útil para probes de Kubernetes, Docker, etc.
 {
   "status": "ok",
   "timestamp": "2026-07-20T16:54:19.856Z"
-}
-```
-
-### `POST /api/convert`
-
-Converte uma URL de produto em link de afiliado. O marketplace é detectado automaticamente.
-
-**Request:**
-
-```json
-{
-  "url": "https://shopee.com.br/product/123/456"
-}
-```
-
-**Response (sucesso):**
-
-```json
-{
-  "success": true,
-  "originalUrl": "https://shopee.com.br/product/123/456",
-  "affiliateUrl": "https://shortlink.shopee.com.br/abc123",
-  "marketplace": "shopee",
-  "method": "api"
-}
-```
-
-**Response (erro de marketplace):**
-
-```json
-{
-  "success": false,
-  "originalUrl": "https://example.com",
-  "error": "Marketplace não suportado. Aceito: Shopee, Mercado Livre"
-}
-```
-
-**Response (credenciais não configuradas):**
-
-```json
-{
-  "success": false,
-  "originalUrl": "https://shopee.com.br/product/123/456",
-  "affiliateUrl": null,
-  "marketplace": "shopee",
-  "method": "api",
-  "error": "Credenciais Shopee não encontradas. Defina SHOPEE_APP_ID e SHOPEE_SECRET no .env"
 }
 ```
 
@@ -108,26 +60,24 @@ API_PORT=4000
 
 ## 🔧 Dependências
 
-| Pacote | Versão | Uso |
-|--------|--------|-----|
-| `elysia` | ^1.2.25 | Framework web |
-| `@elysiajs/cors` | ^1.2.0 | CORS headers |
-| `@elysiajs/swagger` | ^1.2.0 | Swagger UI em `/docs` |
-| `@omestre/converters` | workspace:* | Lógica de conversão |
-| `@omestre/shared` | workspace:* | Tipos compartilhados |
+| Pacote                | Versão      | Uso                   |
+| --------------------- | ----------- | --------------------- |
+| `elysia`              | ^1.2.25     | Framework web         |
+| `@elysiajs/cors`      | ^1.2.0      | CORS headers          |
+| `@elysiajs/swagger`   | ^1.2.0      | Swagger UI em `/docs` |
+| `@omestre/converters` | workspace:* | Lógica de conversão   |
+| `@omestre/shared`     | workspace:* | Tipos compartilhados  |
 
 ---
 
 ## 🧠 Arquitetura
 
 ```
-Requisição HTTP → Elysia Router → POST /api/convert
+Requisição HTTP → Elysia Router → módulos de conversão por afiliado
     │
-    ├── detectMarketplace(url)
-    │   └── Se unknown → retorna erro 200 com detalhe
-    │
-    └── convertUrl(url)
-        ├── marketplace === 'shopee'
+    ├── /api/ml/convert (Mercado Livre, credenciais do afiliado)
+    ├── /api/affiliate (Shopee, credenciais do afiliado)
+    └── /api/magalu/convert (Magalu, slug do afiliado)
         │   └── convertShopeeUrl() → generateShortLink() (GraphQL API)
         │
         └── marketplace === 'mercadolivre'

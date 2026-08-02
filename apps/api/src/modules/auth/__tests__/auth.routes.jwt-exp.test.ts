@@ -8,7 +8,12 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test';
 
 process.env.JWT_SECRET = 'test-secret-for-jwt-exp-validation';
 
+const realRateLimit = await import('../../../middleware/auth-rate-limit-pure.ts');
+// Snapshot do módulo REAL: o mock substitui o arquivo inteiro, então
+// espalhamos os exports reais (ex.: isRateLimitEnabled, usado por
+// auth.routes.ts) e sobrescrevemos só o que este teste controla.
 await mock.module('../../../middleware/auth-rate-limit-pure.ts', () => ({
+  ...realRateLimit,
   getClientIp: () => '127.0.0.1',
   IpRateLimiter: class {
     check = mock(() => {});

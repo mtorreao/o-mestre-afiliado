@@ -5,7 +5,7 @@
  * as chamadas de upsert. Cobrem os 3 desfechos: sucesso (ACK), descarte
  * sem dado útil (ACK) e erro de infra (lança → DLQ no caller).
  */
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { CatalogJob } from '@omestre/shared';
 import type { CatalogRepository } from '@omestre/db';
 import type { CatalogFetchResult } from '@omestre/db';
@@ -47,6 +47,13 @@ const { processCatalogJob } = await import('./catalog-worker.ts');
 describe('processCatalogJob', () => {
   beforeEach(() => {
     mockedFetch = async () => ({ kind: 'none', reason: 'default' });
+  });
+
+  // O mock de './catalog-fetcher.ts' (topo do arquivo) é global no processo
+  // bun test. Restauramos ao fim para não vazar para catalog-fetcher.test.ts
+  // (onde fetchMlItem/fetchShopeeOffer precisam do módulo real).
+  afterAll(() => {
+    mock.restore();
   });
 
   it('ML com item grava catálogo e retorna true (ACK)', async () => {

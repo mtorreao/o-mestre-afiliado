@@ -333,8 +333,7 @@ export async function convertMagaluUrlWithStoreSlug(
  *
  * ⚠️ Para fluxo MULTI-AFILIADO (painel), prefira
  * `convertMagaluUrlWithStoreSlug` passando o slug do afiliado.
- * Esta função é mantida para o CLI (`bun run magalu <url>`) e o
- * fallback global em `/api/convert`.
+ * Esta função é mantida para o CLI (`bun run magalu <url>`).
  */
 export async function convertMagaluUrl(url: string): Promise<ConversionResult> {
   const storeSlug = process.env.MAGALU_STORE_NAME;
