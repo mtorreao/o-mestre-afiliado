@@ -100,3 +100,16 @@ status e latência (min/p50/p95/p99/max), seguido de ✅/❌ de SLO.
 - **Risco:** flood de webhook pode poluir grupos reais. **Mitigação:** o
   cenário `webhook-ingest-burst` usa `instance=user-{N}`; em produção apontar
   para instâncias de teste ou usar o mock até o cutover.
+
+## 12. Modo ramp-up (adicionado)
+
+Cenários podem rodar em modo ramp-up (`--ramp`) com cargas crescentes por
+estágio para encontrar o ponto de saturação. Plano padrão 5→10→25→50→100
+(durações em segundos); customizável via `--stages "conc:seg,..."`.
+
+Lógica pura em `ramp-pure.ts`: `defaultRampPlan`, `parseStagesSpec`,
+`analyzeRamp` (saturação = ganho de throughput ≤ 5% entre estágios consecutivos
+AO MESMO TEMPO em que p95 sobe; capacidade = rps do último estágio estável).
+Relatório em `ramp-report-pure.ts`. Engine em `ramp.ts` (pool por estágio,
+workers em loop até a duração expirar). 10 testes unitários cobrem parse,
+detecção de saturação, rompimento de SLO e render.

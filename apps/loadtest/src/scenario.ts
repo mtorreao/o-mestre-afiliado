@@ -40,7 +40,7 @@ export interface ScenarioOutput {
   slo: SloResult | null;
 }
 
-async function sendOne(req: ScenarioRequest, timeoutMs: number): Promise<RequestRecord> {
+export async function sendOne(req: ScenarioRequest, timeoutMs: number): Promise<RequestRecord> {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
