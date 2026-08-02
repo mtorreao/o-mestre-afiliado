@@ -31,36 +31,15 @@ import { catalogRoutes } from './modules/catalog/catalog.routes.ts';
 import { isFeatureEnabled, initFlagInvalidation } from '@omestre/feature-flags';
 import { warmSourceGroupCache } from './services/group-cache.ts';
 import { globalErrorHandler } from './error-handler.ts';
+import { getAllowedCorsOrigins } from './middleware/cors-origins-pure.ts';
 
 const PORT = parseInt(config.API_PORT, 10);
-
-// ─── Origins permitidas no CORS (#5) ──────────────────────────────────────
-// Em produção, restrinja ao FRONTEND_URL. Em dev, permite localhost
-// em portas comuns (web, swagger, tunnel local).
-function getAllowedOrigins(): string[] {
-  const origins: string[] = [];
-  const frontend = config.FRONTEND_URL;
-  if (frontend) origins.push(frontend);
-
-  // Dev: origens locais comuns
-  if (process.env.NODE_ENV !== 'production') {
-    origins.push(
-      'http://localhost:5441',
-      'http://localhost:5173', // Vite default
-      'http://localhost:3000', // React dev
-      'http://127.0.0.1:5441',
-      'http://127.0.0.1:5173',
-    );
-  }
-
-  return origins;
-}
 
 // ─── App ─────────────────────────────────────────────────────────────────
 
 const app = new Elysia().use(
   cors({
-    origin: getAllowedOrigins(),
+    origin: getAllowedCorsOrigins(config.FRONTEND_URL, process.env.NODE_ENV),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   }),

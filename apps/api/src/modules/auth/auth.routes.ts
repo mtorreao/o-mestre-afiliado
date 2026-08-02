@@ -10,6 +10,7 @@ import {
   REGISTER_MAX_REQUESTS,
   REGISTER_WINDOW_MS,
 } from '../../middleware/auth-rate-limit-pure.ts';
+import { buildJwtExpiry } from '../../middleware/jwt-expiry-pure.ts';
 import { config } from '../../config.ts';
 
 const userRepo = new UserRepository();
@@ -82,7 +83,7 @@ export const authRoutes = new Elysia()
         userId: user.id,
         userEmail: user.email,
         isAdmin,
-        exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 dias
+        exp: buildJwtExpiry(),
       });
 
       return {
@@ -152,7 +153,7 @@ export const authRoutes = new Elysia()
         userId: user.id,
         userEmail: user.email,
         isAdmin,
-        exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 dias
+        exp: buildJwtExpiry(),
       });
 
       return {

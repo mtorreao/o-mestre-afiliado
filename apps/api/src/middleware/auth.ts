@@ -15,6 +15,7 @@ import { jwt } from '@elysiajs/jwt';
 import { UserRepository } from '@omestre/db';
 import { isSuperAdmin } from './super-admin.ts';
 import { config } from '../config.ts';
+import { resolveJwtSecret } from './jwt-secret-pure.ts';
 
 export interface AuthUser {
   userId: number;
@@ -23,32 +24,13 @@ export interface AuthUser {
 }
 
 /**
- * Obtém o JWT secret ou gera um aleatório em dev com aviso.
- * Em produção, JWT_SECRET é obrigatório (fail-closed).
- */
-function getJwtSecret(): string {
-  if (config.JWT_SECRET) return config.JWT_SECRET;
-
-  const isDev = process.env.NODE_ENV !== 'production';
-  if (!isDev) {
-    throw new Error('JWT_SECRET is required in production');
-  }
-
-  // Gera secret aleatório para dev (não persistente entre restarts)
-  const devSecret = crypto.randomUUID();
-  console.warn(
-    '[SECURITY WARNING] JWT_SECRET not set. Using random dev secret (tokens will not survive restarts).',
-  );
-  return devSecret;
-}
-
-/**
  * Cria o plugin JWT para uso nas rotas.
  */
 export function createJwtPlugin() {
+  const { secret } = resolveJwtSecret(config.JWT_SECRET, process.env.NODE_ENV);
   return jwt({
     name: 'jwt',
-    secret: getJwtSecret(),
+    secret,
     schema: t.Object({
       userId: t.Number(),
       userEmail: t.String(),
