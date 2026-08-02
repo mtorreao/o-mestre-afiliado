@@ -1,0 +1,20 @@
+{
+  "name": "@omestre/loadtest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@omestre/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@elysiajs/cors": "^1.2.0",
+    "@elysiajs/jwt": "^1.4.2",
+    "@elysiajs/swagger": "^1.2.0",
+    "elysia": "catalog:",
+    "@types/bun": "latest"
+  }
+}

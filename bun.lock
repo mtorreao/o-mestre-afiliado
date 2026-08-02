@@ -79,6 +79,20 @@
         "@types/bun": "latest",
       },
     },
+    "apps/loadtest": {
+      "name": "@omestre/loadtest",
+      "version": "1.0.0",
+      "dependencies": {
+        "@omestre/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@elysiajs/cors": "^1.2.0",
+        "@elysiajs/jwt": "^1.4.2",
+        "@elysiajs/swagger": "^1.2.0",
+        "@types/bun": "latest",
+        "elysia": "catalog:",
+      },
+    },
     "apps/web": {
       "name": "@omestre/web",
       "version": "1.0.0",
@@ -342,6 +356,8 @@
     "@omestre/feature-flags": ["@omestre/feature-flags@workspace:packages/feature-flags"],
 
     "@omestre/ingestor": ["@omestre/ingestor@workspace:apps/ingestor"],
+
+    "@omestre/loadtest": ["@omestre/loadtest@workspace:apps/loadtest"],
 
     "@omestre/shared": ["@omestre/shared@workspace:packages/shared"],
 
