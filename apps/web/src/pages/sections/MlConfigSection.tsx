@@ -4,7 +4,7 @@
  * Mantido como componente separado para ser usado dentro do dashboard.
  */
 import { useState } from 'react';
-import { Button, Input } from '../../components/ui/index.ts';
+import { Button, Input, Dialog } from '../../components/ui/index.ts';
 import { Save, ExternalLink, Trash2 } from 'lucide-react';
 import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
 
@@ -29,9 +29,10 @@ export function MlConfigSection({
   const [melitat, setMelitat] = useState(initialMelitat);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
 
   async function handleClearCookies() {
-    if (!window.confirm('Limpar os cookies de sessão do Mercado Livre?')) return;
+    setClearDialogOpen(false);
     setSaving(true);
     try {
       const res = await fetch(`/api/ml/affiliates/${mlUserId}/cookies`, {
@@ -85,7 +86,7 @@ export function MlConfigSection({
           Salvar
         </Button>
         <Button
-          onClick={handleClearCookies}
+          onClick={() => setClearDialogOpen(true)}
           loading={saving}
           icon={<Trash2 size={16} />}
           size="sm"
@@ -130,6 +131,26 @@ export function MlConfigSection({
           extensão Chrome <ExternalLink size={12} />
         </a>
       </p>
+      <Dialog
+        open={clearDialogOpen}
+        onOpenChange={setClearDialogOpen}
+        title="Limpar cookies do Mercado Livre?"
+        description="Essa ação remove os cookies de sessão salvos no aplicativo. Os campos MELIID e MELITAT serão preservados."
+      >
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+          <Button variant="outline" onClick={() => setClearDialogOpen(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="danger"
+            onClick={handleClearCookies}
+            loading={saving}
+            icon={<Trash2 size={16} />}
+          >
+            Limpar cookies
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }
