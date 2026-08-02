@@ -19,6 +19,10 @@ import { uniqueEmail, TEST_PASSWORD, TEST_NAME } from './helpers.ts';
 
 const WEB = process.env.WEB_URL || `http://localhost:${process.env.WEB_PORT || '15441'}`;
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
+// API mirror (15447) aponta para o simulador WhatsApp — usada para criar
+// mirrors com grupos admin válidos (validação "destino exige admin").
+const API_MIRROR =
+  process.env.API_MIRROR_URL || `http://localhost:${process.env.API_MIRROR_PORT || '15447'}`;
 
 /**
  * Helper: registra um usuário via API e configura o token diretamente
@@ -63,7 +67,17 @@ async function navigateToMirrors(page: Page) {
  * Helper: cria um espelhamento via API para testes de listagem populada.
  */
 async function createMirror(token: string, name: string, status: string = 'active') {
-  await fetch(`${API}/api/mirrors`, {
+  // Conecta WhatsApp no simulador (admin dos grupos de destino) e cria via
+  // API mirror (15447) — validação "destino exige admin" aceita os grupos.
+  await fetch(`${API_MIRROR}/api/whatsapp/connect`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: '{}',
+  });
+  await fetch(`${API_MIRROR}/api/mirrors`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -72,8 +86,8 @@ async function createMirror(token: string, name: string, status: string = 'activ
     body: JSON.stringify({
       name,
       status,
-      sourceGroups: [{ jid: 'source@g.us', name: 'Fonte Ofertas' }],
-      targetGroups: [{ jid: 'target@g.us', name: 'Grupo VIP' }],
+      sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
+      targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     }),
   });
 }
@@ -121,8 +135,8 @@ test.describe('Mirrors UI — Lista e Ações', () => {
     await page.locator('text=Expansível').click();
     await page.waitForTimeout(300);
 
-    await expect(page.locator('text=Fonte Ofertas').first()).toBeVisible();
-    await expect(page.locator('text=Grupo VIP').first()).toBeVisible();
+    await expect(page.locator('text=Ofertas Promoções').first()).toBeVisible();
+    await expect(page.locator('text=Grupo Teste 3').first()).toBeVisible();
   });
 
   test('4.0 — Toggle desativar funciona', async ({ page }) => {

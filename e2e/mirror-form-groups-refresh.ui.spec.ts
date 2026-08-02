@@ -105,13 +105,16 @@ test.describe('MirrorFormPage — Grupos: refresh, avatar e JID', () => {
       });
     });
 
-    await page.goto(`${WEB}/mirror-form`);
-    await page.waitForSelector('form', { timeout: 15_000 });
-    // Aguarda o fetch inicial completar.
-    await page.waitForResponse(
+    // Registra o listener ANTES da navegação (o mock fulfill é instantâneo
+    // e o fetch no mount pode completar antes do waitForResponse).
+    const initialResponse = page.waitForResponse(
       (r) => r.url().includes('/api/whatsapp/groups') && r.status() === 200,
       { timeout: 5_000 },
     );
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+    // Aguarda o fetch inicial completar.
+    await initialResponse;
     const initialCalls = forceCalls.length;
 
     // Clica no botão.
@@ -130,12 +133,13 @@ test.describe('MirrorFormPage — Grupos: refresh, avatar e JID', () => {
     page,
   }) => {
     await mockWhatsAppGroups(page);
-    await page.goto(`${WEB}/mirror-form`);
-    await page.waitForSelector('form', { timeout: 15_000 });
-    await page.waitForResponse(
+    const groupsResponse = page.waitForResponse(
       (r) => r.url().includes('/api/whatsapp/groups') && r.status() === 200,
       { timeout: 5_000 },
     );
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+    await groupsResponse;
 
     const originInput = page.locator('input[placeholder="Buscar grupo..."]');
     await originInput.click();
@@ -157,12 +161,13 @@ test.describe('MirrorFormPage — Grupos: refresh, avatar e JID', () => {
 
   test('dropdown de destino mostra apenas grupos admin e renderiza avatar', async ({ page }) => {
     await mockWhatsAppGroups(page);
-    await page.goto(`${WEB}/mirror-form`);
-    await page.waitForSelector('form', { timeout: 15_000 });
-    await page.waitForResponse(
+    const groupsResponse = page.waitForResponse(
       (r) => r.url().includes('/api/whatsapp/groups') && r.status() === 200,
       { timeout: 5_000 },
     );
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+    await groupsResponse;
 
     const destInput = page.locator('input[placeholder="Buscar grupo de destino..."]');
     await destInput.click();
@@ -195,12 +200,13 @@ test.describe('MirrorFormPage — Grupos: refresh, avatar e JID', () => {
 
   test('tags de origem mostram avatar + nome, sem JID', async ({ page }) => {
     await mockWhatsAppGroups(page);
-    await page.goto(`${WEB}/mirror-form`);
-    await page.waitForSelector('form', { timeout: 15_000 });
-    await page.waitForResponse(
+    const groupsResponse = page.waitForResponse(
       (r) => r.url().includes('/api/whatsapp/groups') && r.status() === 200,
       { timeout: 5_000 },
     );
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+    await groupsResponse;
 
     const originInput = page.locator('input[placeholder="Buscar grupo..."]');
     await originInput.click();
@@ -218,12 +224,13 @@ test.describe('MirrorFormPage — Grupos: refresh, avatar e JID', () => {
 
   test('tags de destino mostram avatar + nome, sem JID', async ({ page }) => {
     await mockWhatsAppGroups(page);
-    await page.goto(`${WEB}/mirror-form`);
-    await page.waitForSelector('form', { timeout: 15_000 });
-    await page.waitForResponse(
+    const groupsResponse = page.waitForResponse(
       (r) => r.url().includes('/api/whatsapp/groups') && r.status() === 200,
       { timeout: 5_000 },
     );
+    await page.goto(`${WEB}/mirror-form`);
+    await page.waitForSelector('form', { timeout: 15_000 });
+    await groupsResponse;
 
     const destInput = page.locator('input[placeholder="Buscar grupo de destino..."]');
     await destInput.click();

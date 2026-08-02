@@ -27,16 +27,20 @@ import { uniqueEmail, TEST_PASSWORD, TEST_NAME } from './helpers.ts';
 
 const WEB = process.env.WEB_URL || `http://localhost:${process.env.WEB_PORT || '15441'}`;
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
+// API mirror (15447) aponta para o simulador WhatsApp — usada para criar
+// mirrors com grupos admin válidos (validação "destino exige admin").
+const API_MIRROR =
+  process.env.API_MIRROR_URL || `http://localhost:${process.env.API_MIRROR_PORT || '15447'}`;
 
 const EVIDENCE_DIR = 'test-results/mirror-form-evidence';
 const FORM_CARD_TITLES = ['📋 Informações Básicas', '🔗 Grupos de Origem', '🎯 Grupos de Destino'];
 const MOCK_GROUPS = [
-  { jid: '120363000000000001@g.us', name: 'Ofertas Premium' },
-  { jid: '120363000000000002@g.us', name: 'Grupo VIP Compras' },
-  { jid: '120363@g.us', name: 'Ofertas Tech Brasil' },
-  { jid: '120364@g.us', name: 'Promoções do Dia' },
-  { jid: '120365@g.us', name: 'Grupo VIP Ofertas' },
-  { jid: '120366@g.us', name: 'Achadinhos Shopee' },
+  { jid: '120363000000000001@g.us', name: 'Ofertas Premium', isAdmin: true },
+  { jid: '120363000000000002@g.us', name: 'Grupo VIP Compras', isAdmin: true },
+  { jid: '120363@g.us', name: 'Ofertas Tech Brasil', isAdmin: true },
+  { jid: '120364@g.us', name: 'Promoções do Dia', isAdmin: true },
+  { jid: '120365@g.us', name: 'Grupo VIP Ofertas', isAdmin: true },
+  { jid: '120366@g.us', name: 'Achadinhos Shopee', isAdmin: true },
 ];
 
 /**
@@ -74,7 +78,13 @@ async function navigateToNewMirrorForm(page: Page) {
 }
 
 async function createMirror(token: string, name: string) {
-  const res = await fetch(`${API}/api/mirrors`, {
+  // Cria via API mirror (15447): o simulador retorna grupos admin, então a
+  // validação "destino exige admin" aceita. O Postgres é compartilhado entre
+  // api-e2e e api-e2e-mirror — o mirror fica visível na API padrão também.
+  // Garante instância conectada no simulador (admin dos grupos de destino)
+  await connectWhatsAppMirror(token);
+
+  const res = await fetch(`${API_MIRROR}/api/mirrors`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -83,12 +93,30 @@ async function createMirror(token: string, name: string) {
     body: JSON.stringify({
       name,
       status: 'active',
-      sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Fonte Ofertas' }],
-      targetGroups: [{ jid: '120363000000000002@g.us', name: 'Grupo VIP' }],
+      sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
+      targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     }),
   });
   const data = (await res.json()) as { success: boolean; mirror?: { id: number } };
-  return data.mirror!.id;
+  if (!data.mirror) {
+    throw new Error(`createMirror falhou: ${res.status} ${JSON.stringify(data)}`);
+  }
+  return data.mirror.id;
+}
+
+/**
+ * Conecta o WhatsApp no simulador (idempotente) para que o usuário seja
+ * admin dos grupos de destino na API mirror (15447).
+ */
+async function connectWhatsAppMirror(token: string) {
+  await fetch(`${API_MIRROR}/api/whatsapp/connect`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: '{}',
+  });
 }
 
 async function mockWhatsAppGroups(page: Page) {
@@ -97,6 +125,40 @@ async function mockWhatsAppGroups(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ success: true, groups: MOCK_GROUPS }),
+    });
+  });
+}
+
+/**
+ * Mocka POST /api/mirrors → sucesso. Necessário porque o E2E roda sem
+ * WhatsApp conectado na API padrão (15442), e a validação "destino exige
+ * admin" (feature 271bf31) rejeita o POST real com 400.
+ */
+async function mockCreateMirror(page: Page) {
+  await page.route('**/api/mirrors', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+    const body = route.request().postDataJSON() as {
+      name?: string;
+      sourceGroups?: unknown[];
+      targetGroups?: unknown[];
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        mirror: {
+          id: 999,
+          name: body.name ?? 'Espelho',
+          status: 'active',
+          sourceGroups: body.sourceGroups ?? [],
+          targetGroups: body.targetGroups ?? [],
+          messageTemplate: null,
+        },
+      }),
     });
   });
 }
@@ -278,8 +340,8 @@ test.describe('MirrorFormPage — Acessibilidade', () => {
         body: JSON.stringify({
           success: true,
           groups: [
-            { jid: 'src-group@g.us', name: 'Grupo Fonte' },
-            { jid: 'dst-group@g.us', name: 'Grupo Destino' },
+            { jid: 'src-group@g.us', name: 'Grupo Fonte', isAdmin: true },
+            { jid: 'dst-group@g.us', name: 'Grupo Destino', isAdmin: true },
           ],
         }),
       });
@@ -470,9 +532,9 @@ test.describe('MirrorFormPage — Base', () => {
     const nameInput = page.locator('input[placeholder*="Ofertas Diárias"]');
     await expect(nameInput).toHaveValue('Mirror Editável');
 
-    // Chips dos grupos selecionados (vindos da API)
-    await expect(page.locator('text=Fonte Ofertas').first()).toBeVisible();
-    await expect(page.locator('text=Grupo VIP').first()).toBeVisible();
+    // Chips dos grupos selecionados (vindos da API — nomes do simulador)
+    await expect(page.locator('text=Ofertas Promoções').first()).toBeVisible();
+    await expect(page.locator('text=Grupo Teste 3').first()).toBeVisible();
 
     // Botão de submit diz "Atualizar"
     await expect(page.getByRole('button', { name: 'Atualizar Espelhamento' })).toBeVisible();
@@ -485,6 +547,8 @@ test.describe('MirrorFormPage — Base', () => {
   }) => {
     // Mocka o endpoint de grupos WhatsApp (em E2E sem WhatsApp conectado)
     await mockWhatsAppGroups(page);
+    // Mocka o POST /api/mirrors (validação de admin exige WhatsApp real)
+    await mockCreateMirror(page);
     await openCreateForm(page);
     await page.waitForTimeout(500); // estabiliza autocomplete após mock
 
@@ -609,8 +673,9 @@ test.describe('MirrorFormPage — Dirty Guard', () => {
   });
 
   test('2.2 — Após salvar com sucesso, voltar não pede confirmação', async ({ page }) => {
-    // Mocka WhatsApp para a criação funcionar
+    // Mocka WhatsApp + POST /api/mirrors para a criação funcionar
     await mockWhatsAppGroups(page);
+    await mockCreateMirror(page);
     await openCreateForm(page);
     await page.waitForTimeout(500);
 
@@ -867,13 +932,13 @@ test.describe('MirrorForm — Layout desktop (1280x800)', () => {
     await page.screenshot({ path: `${EVIDENCE_DIR}/desktop-botoes-inline.png` });
   });
 
-  test('2.1 — Desktop: form centralizado com max-width 720px consistente', async ({ page }) => {
+  test('2.1 — Desktop: form centralizado com max-width padrão (960px)', async ({ page }) => {
     await openCreateForm(page);
 
     const formBox = (await page.locator('form').boundingBox())!;
-    // max-width 720 aplicado
-    expect(formBox.width).toBeGreaterThanOrEqual(719);
-    expect(formBox.width).toBeLessThanOrEqual(721);
+    // max-width padrão do PageLayout (960px) — largura unificada (271bf31)
+    expect(formBox.width).toBeGreaterThanOrEqual(959);
+    expect(formBox.width).toBeLessThanOrEqual(961);
 
     // Centralizado em relação ao container pai (PageLayout inner)
     const parent = await page

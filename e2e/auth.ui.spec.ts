@@ -201,15 +201,15 @@ test.describe('UI - Dashboard', () => {
     await page.waitForSelector('text=🧪 Testar Conversão', { timeout: 10_000 });
 
     // Preencher URL e testar
-    const testInput = page.locator(
-      'input[placeholder="Cole a URL do produto (Shopee, ML ou Amazon)..."]',
-    );
+    const testInput = page.locator('input[placeholder="Cole a URL do produto Mercado Livre..."]');
     await testInput.fill('https://shopee.com.br/product/123');
 
     await page.click('button:has-text("Testar")');
 
-    // Deve mostrar erro de credenciais não configuradas
-    await expect(page.locator('text=Credenciais')).toBeVisible({ timeout: 10_000 });
+    // Deve mostrar erro de conta ML não vinculada (sem credenciais configuradas)
+    await expect(page.locator('text=Nenhuma conta Mercado Livre vinculada')).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test('deve fazer logout', async ({ page }) => {

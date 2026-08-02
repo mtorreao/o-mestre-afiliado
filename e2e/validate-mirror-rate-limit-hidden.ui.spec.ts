@@ -17,6 +17,9 @@ import { uniqueEmail, TEST_PASSWORD, TEST_NAME } from './helpers.ts';
 
 const WEB = process.env.WEB_URL || `http://localhost:${process.env.WEB_PORT || '15441'}`;
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
+// API mirror (15447) aponta para o simulador — grupos admin válidos.
+const API_MIRROR =
+  process.env.API_MIRROR_URL || `http://localhost:${process.env.API_MIRROR_PORT || '15447'}`;
 
 // Playwright roda com cwd na raiz do repo. Os screenshots vão para
 // e2e/screenshots/validate-mirror-rate-limit-hidden/.
@@ -45,13 +48,19 @@ async function loginDirect(page: Page): Promise<string> {
 }
 
 async function createMirror(token: string, name: string) {
-  await fetch(`${API}/api/mirrors`, {
+  // Conecta WhatsApp no simulador e cria via API mirror (validação de admin).
+  await fetch(`${API_MIRROR}/api/whatsapp/connect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: '{}',
+  });
+  await fetch(`${API_MIRROR}/api/mirrors`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       name,
-      sourceGroups: [{ jid: 'source@g.us', name: 'Fonte' }],
-      targetGroups: [{ jid: 'target@g.us', name: 'Grupo VIP' }],
+      sourceGroups: [{ jid: '120363000000000001@g.us', name: 'Ofertas Promoções' }],
+      targetGroups: [{ jid: '120363000000000003@g.us', name: 'Grupo Teste 3' }],
     }),
   });
 }
