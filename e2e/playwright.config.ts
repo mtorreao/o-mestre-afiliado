@@ -6,17 +6,25 @@ const API_PORT = process.env.API_PORT || '15442';
 const API_MIRROR_PORT = process.env.API_MIRROR_PORT || '15447';
 const SIMULATOR_PORT = process.env.SIMULATOR_PORT || '15446';
 
+// Manter SERIAL (workers:1): mirror-flow.api.spec.ts e mirror-pipeline.api.spec.ts
+// compartilham o estado globob de mensagens do simulador e ambos resetam tudo
+// via resetSimulator() (sentMessages global). Com workers>1, os 2 arquivos rodam
+// em paralelo e um apaga a mensagem que o outro verifica → flake determinístico.
+// Subir workers SÓ após isolar o simulador por instância (não feito). Local também 1.
+const WORKERS = 1; // serial local e CI
+
 export default defineConfig({
   testDir: __dirname,
   timeout: 20_000,
   expect: { timeout: 5_000 },
   fullyParallel: false,
-  retries: 0,
-  workers: 1,
-  // Fail-fast: para a suíte no PRIMEIRO teste que falhar. No CI o job e2e
-  // tem timeout de 45min e ~224 testes; com uma falha, o restante é
-  // garantidamente ruído — parar cedo economiza minutos de Actions e
-  // acelera o feedback (o report de falha é o mesmo).
+  // Retry no CI: cold-start/healthcheck do Docker pesado geram flake único;
+  // um retry recupera sem custo de re-run manual do job.
+  retries: process.env.CI ? 1 : 0,
+  workers: WORKERS,
+  // Fail-fast intencional: numa falha massiva (Ex: Evolution API caiu), rodar o
+  // restante queima os 45min aos 15s por teste para chegar à mesma conclusão.
+  // Parar no PRIMEIRO reduz tempo de feedback e economiza Actions.
   maxFailures: 1,
 
   // Report em CI: HTML (playwright-report/) + terminal. Screenshot e trace
@@ -29,7 +37,9 @@ export default defineConfig({
       'Content-Type': 'application/json',
     },
     screenshot: 'only-on-failure',
-    trace: 'retain-on-failure',
+    // Trace só no retry (first): coleta forense para flake que passa no 2º run,
+    // sem o peso de gravar trace de todo teste que passou.
+    trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
   },
 
   projects: [
