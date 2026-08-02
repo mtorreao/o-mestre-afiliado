@@ -281,7 +281,7 @@ function marketplaceIcon(mp: string): string {
 // ─── Component ──────────────────────────────────────
 
 interface DashboardPageProps {
-  user: { id: number; email: string; name: string };
+  user: { id: number; email: string; name: string; isSuperAdmin?: boolean };
   token: string;
 }
 
@@ -460,12 +460,14 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
             description="Histórico completo de ofertas espelhadas"
             onClick={() => navigate('/mirror-logs')}
           />
-          <QuickActionCard
-            icon={<Activity size={20} />}
-            label="Status do Worker"
-            description="Métricas, filas e saúde do worker"
-            onClick={() => navigate('/worker-status')}
-          />
+          {user.isSuperAdmin && (
+            <QuickActionCard
+              icon={<Activity size={20} />}
+              label="Status do Worker"
+              description="Métricas, filas e saúde do worker"
+              onClick={() => navigate('/worker-status')}
+            />
+          )}
         </div>
       </Card>
 
