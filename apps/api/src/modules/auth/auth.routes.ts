@@ -39,7 +39,12 @@ export const authRoutes = new Elysia()
 
       await credentialsRepo.upsert(user.id, {});
 
-      const token = await jwt.sign({ userId: user.id, userEmail: user.email, isAdmin });
+      const token = await jwt.sign({
+        userId: user.id,
+        userEmail: user.email,
+        isAdmin,
+        exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 dias
+      });
 
       return {
         success: true,
@@ -90,7 +95,12 @@ export const authRoutes = new Elysia()
         isAdmin = updated?.isAdmin ?? false;
       }
 
-      const token = await jwt.sign({ userId: user.id, userEmail: user.email, isAdmin });
+      const token = await jwt.sign({
+        userId: user.id,
+        userEmail: user.email,
+        isAdmin,
+        exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 dias
+      });
 
       return {
         success: true,
