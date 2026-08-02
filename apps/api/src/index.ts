@@ -11,8 +11,6 @@
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
-import { convertUrl } from '@omestre/converters';
-import { detectMarketplace } from '@omestre/shared';
 import { UserRepository, UserCredentialsRepository, checkDbHealth } from '@omestre/db';
 import { config } from './config.ts';
 import { authRoutes } from './modules/auth/auth.routes.ts';
@@ -116,7 +114,6 @@ app
     version: '1.0.0',
     endpoints: {
       health: '/health',
-      convert: 'POST /api/convert',
       'ml/auth': 'GET /api/ml/auth',
       'ml/callback': 'GET /api/ml/callback',
       'ml/affiliates': 'GET /api/ml/affiliates',
@@ -147,41 +144,6 @@ app
       timestamp: new Date().toISOString(),
     };
   })
-
-  // ─── Conversão padrão (usa .env) ─────────────────────────────────────
-  .post(
-    '/api/convert',
-    async ({ body }) => {
-      const { url } = body as { url: string };
-      if (!url) return { success: false, error: 'URL é obrigatória' };
-
-      const marketplace = detectMarketplace(url);
-      if (marketplace === 'unknown') {
-        return {
-          success: false,
-          originalUrl: url,
-          error: 'Marketplace não suportado. Aceito: Shopee, Mercado Livre',
-        };
-      }
-
-      try {
-        return await convertUrl(url);
-      } catch (error) {
-        return {
-          success: false,
-          originalUrl: url,
-          marketplace,
-          error: error instanceof Error ? error.message : 'Erro interno',
-        };
-      }
-    },
-    {
-      detail: {
-        summary: 'Converter link de afiliado (padrão)',
-        description: 'Converte uma URL usando as credenciais do .env',
-      },
-    },
-  )
 
   // ─── Cache warming + flag invalidation no startup ────────────────────
   .onStart(async () => {
