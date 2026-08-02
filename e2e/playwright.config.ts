@@ -8,8 +8,8 @@ const SIMULATOR_PORT = process.env.SIMULATOR_PORT || '15446';
 
 export default defineConfig({
   testDir: __dirname,
-  timeout: 30_000,
-  expect: { timeout: 10_000 },
+  timeout: 20_000,
+  expect: { timeout: 5_000 },
   fullyParallel: false,
   retries: 0,
   workers: 1,
