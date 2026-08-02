@@ -223,10 +223,10 @@ test.describe('Security #5 — CORS whitelist', () => {
   });
 });
 
-// ─── Item #6 — JWT exp 7 dias ───────────────────────────────────────
+// ─── Item #6 — JWT exp (access 1h, refresh 30d) ──────────────────────
 
 test.describe('Security #6 — JWT exp', () => {
-  test('Token emitido em /login tem claim exp (~7 dias)', async () => {
+  test('Token emitido em /login tem claim exp (~1h de access)', async () => {
     const helperRes = await createTestUser();
     const token = helperRes.token;
 
@@ -243,9 +243,9 @@ test.describe('Security #6 — JWT exp', () => {
     expect(typeof payload.iat).toBe('number');
 
     const lifetime = Number(payload.exp) - Number(payload.iat);
-    const sevenDays = 7 * 24 * 60 * 60;
+    const oneHour = 60 * 60;
     // Tolerância de ±5 segundos
-    expect(Math.abs(lifetime - sevenDays)).toBeLessThanOrEqual(5);
+    expect(Math.abs(lifetime - oneHour)).toBeLessThanOrEqual(5);
   });
 
   test('Token emitido em /register tem claim exp', async () => {

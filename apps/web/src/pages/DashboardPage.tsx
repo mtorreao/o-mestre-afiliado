@@ -281,7 +281,11 @@ function marketplaceIcon(mp: string): string {
 // ─── Component ──────────────────────────────────────
 
 interface DashboardPageProps {
-  user: { id: number; email: string; name: string; isSuperAdmin?: boolean };
+  // user pode ser null em runtime: o ProtectedRoute libera os children com
+  // base no estado PRÓPRIO do useAuth, enquanto o App passa o user do estado
+  // dele (instâncias independentes do hook) — o fetch /me do App pode ainda
+  // não ter completado. Mesmo padrão defensivo do AppShellLayout.
+  user: { id: number; email: string; name: string; isSuperAdmin?: boolean } | null;
   token: string;
 }
 
@@ -460,7 +464,7 @@ export function DashboardPage({ user, token }: DashboardPageProps) {
             description="Histórico completo de ofertas espelhadas"
             onClick={() => navigate('/mirror-logs')}
           />
-          {user.isSuperAdmin && (
+          {user?.isSuperAdmin && (
             <QuickActionCard
               icon={<Activity size={20} />}
               label="Status do Worker"

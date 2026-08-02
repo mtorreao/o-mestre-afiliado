@@ -83,7 +83,7 @@ export const authRoutes = new Elysia()
       const existing = await userRepo.findByEmail(email);
       if (existing) {
         set.status = 409;
-        return { success: false, error: 'Email ja cadastrado' };
+        return { success: false, error: 'Email já cadastrado' };
       }
 
       const passwordHash = await Bun.password.hash(password);
