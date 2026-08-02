@@ -118,6 +118,10 @@ services:
     build:
       context: ../
       dockerfile: apps/api/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
       args:
         NODE_ENV: test
     restart: no
@@ -154,6 +158,10 @@ services:
     build:
       context: ../
       dockerfile: apps/web/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     ports:
       - '127.0.0.1:15441:5441'
@@ -170,6 +178,10 @@ services:
     build:
       context: ../
       dockerfile: apps/ingestor/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     networks:
       - e2e-net
@@ -193,6 +205,10 @@ services:
     build:
       context: ../
       dockerfile: apps/dispatcher/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     networks:
       - e2e-net
@@ -219,6 +235,10 @@ services:
     build:
       context: ../
       dockerfile: apps/whatsapp-simulator/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     ports:
       - '127.0.0.1:15446:8080'
@@ -231,6 +251,10 @@ services:
     build:
       context: ../
       dockerfile: apps/api/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
       args:
         NODE_ENV: test
     restart: no
@@ -274,6 +298,10 @@ services:
     build:
       context: ../
       dockerfile: apps/ingestor/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     networks:
       - e2e-net
@@ -298,6 +326,10 @@ services:
     build:
       context: ../
       dockerfile: apps/dispatcher/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     networks:
       - e2e-net

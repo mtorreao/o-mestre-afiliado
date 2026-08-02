@@ -120,6 +120,9 @@ jobs:
       - name: Instalar browser do Playwright
         run: bunx playwright install --with-deps chromium
 
+      - name: Setup Buildx (buildkit p/ cache GHA das imagens)
+        uses: docker/setup-buildx-action@v3
+
       - name: Rodar testes E2E (sobe stack própria, executa specs, derruba)
         run: bun run test:e2e
 
