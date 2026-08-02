@@ -141,3 +141,9 @@ export type {
   CatalogProductDetail,
   CatalogVariationWithHistory,
 } from './repository/catalog.repository.ts';
+
+export { AuthRefreshTokenRepository } from './repository/authRefreshTokens.repository.ts';
+export type {
+  AuthRefreshToken,
+  NewAuthRefreshToken,
+} from './repository/authRefreshTokens.repository.ts';

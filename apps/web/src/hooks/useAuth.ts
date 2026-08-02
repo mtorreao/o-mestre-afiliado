@@ -2,13 +2,13 @@
  * Hook de autenticação.
  *
  * Gerencia:
- * - Token JWT no localStorage
+ * - Access token (JWT) + refresh token no localStorage
  * - Login, Register, Logout
- * - Estado do usuário logado
- * - isAdmin para feature flags
+ * - Sessão reativa via subscribeSession (roteção automática de exp)
+ * - Reinício silencioso quando o access token vence mas temos refresh
  */
-
 import { useState, useEffect, useCallback } from 'react';
+import { getSession, setSession, subscribeSession, logoutSession } from '../lib/auth-session.ts';
 
 interface User {
   id: number;
@@ -30,22 +30,23 @@ const STORAGE_KEY = 'omestre_auth_token';
 
 export function useAuth() {
   const [state, setState] = useState<AuthState>(() => {
-    const token = localStorage.getItem(STORAGE_KEY);
-    return { user: null, token, loading: !!token };
+    const { accessToken } = getSession();
+    return { user: null, token: accessToken, loading: !!accessToken };
   });
 
   // Verificar token na inicialização
   useEffect(() => {
-    if (state.token && !state.user) {
+    const { accessToken } = getSession();
+    if (accessToken && !state.user) {
       fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${state.token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       })
         .then((r) => r.json())
         .then((data) => {
           if (data.success && data.user) {
             setState((prev) => ({ ...prev, user: data.user, loading: false }));
           } else {
-            // Token inválido
+            // Token inválido (e refresh falhou no interceptor) → logout
             localStorage.removeItem(STORAGE_KEY);
             window.dispatchEvent(new CustomEvent('omestre:auth-changed'));
             setState({ user: null, token: null, loading: false });
@@ -54,9 +55,22 @@ export function useAuth() {
         .catch(() => {
           setState((prev) => ({ ...prev, loading: false }));
         });
-    } else if (!state.token) {
+    } else if (!accessToken) {
       setState((prev) => ({ ...prev, loading: false }));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-sincroniza o token quando a sessão muda (login/logout/refresh)
+  useEffect(() => {
+    return subscribeSession(() => {
+      const { accessToken } = getSession();
+      if (accessToken && !state.user) {
+        // refresh aconteceu; mantém user (vem do /me separado)
+      }
+      setState((prev) => ({ ...prev, token: accessToken }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -68,6 +82,7 @@ export function useAuth() {
     const data = (await res.json()) as {
       success: boolean;
       token?: string;
+      refreshToken?: string;
       user?: User;
       error?: string;
     };
@@ -76,7 +91,7 @@ export function useAuth() {
       throw new Error(data.error || 'Falha no login');
     }
 
-    localStorage.setItem(STORAGE_KEY, data.token);
+    setSession(data.token, data.refreshToken ?? '');
     setState({ user: data.user!, token: data.token, loading: false });
     return data;
   }, []);
@@ -90,6 +105,7 @@ export function useAuth() {
     const data = (await res.json()) as {
       success: boolean;
       token?: string;
+      refreshToken?: string;
       user?: User;
       error?: string;
     };
@@ -98,15 +114,23 @@ export function useAuth() {
       throw new Error(data.error || 'Falha no registro');
     }
 
-    localStorage.setItem(STORAGE_KEY, data.token);
+    setSession(data.token, data.refreshToken ?? '');
     setState({ user: data.user!, token: data.token, loading: false });
     return data;
   }, []);
 
   const logout = useCallback(() => {
+    const { refreshToken } = getSession();
     localStorage.removeItem(STORAGE_KEY);
     window.dispatchEvent(new CustomEvent('omestre:auth-changed'));
     setState({ user: null, token: null, loading: false });
+    if (refreshToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      }).catch(() => {});
+    }
   }, []);
 
   return {

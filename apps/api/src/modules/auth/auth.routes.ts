@@ -1,5 +1,10 @@
 import { Elysia, t } from 'elysia';
-import { UserRepository, UserCredentialsRepository, isEmailAdminAllowed } from '@omestre/db';
+import {
+  UserRepository,
+  UserCredentialsRepository,
+  AuthRefreshTokenRepository,
+  isEmailAdminAllowed,
+} from '@omestre/db';
 import { createJwtPlugin, getAuthUser, getSuperAdminUser } from '../../middleware/auth.ts';
 import {
   getClientIp,
@@ -11,13 +16,19 @@ import {
   REGISTER_MAX_REQUESTS,
   REGISTER_WINDOW_MS,
 } from '../../middleware/auth-rate-limit-pure.ts';
-import { buildJwtExpiry } from '../../middleware/jwt-expiry-pure.ts';
+import {
+  buildAccessTokenExpiry,
+  hashRefreshToken,
+  issueRefreshToken,
+} from '../../middleware/token-pure.ts';
+import { refreshSession } from './refresh-session.ts';
 import { config } from '../../config.ts';
 
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
+const refreshTokenRepo = new AuthRefreshTokenRepository();
 
-// ─── Rate limiters (singleton por processo) ────────────────────────────────
+// ---------- Rate limiters (singleton por processo) ----------------
 const loginLimiter = new IpRateLimiter({
   maxRequests: LOGIN_MAX_REQUESTS,
   windowMs: LOGIN_WINDOW_MS,
@@ -27,21 +38,21 @@ const registerLimiter = new IpRateLimiter({
   windowMs: REGISTER_WINDOW_MS,
 });
 
-/** Prune periódicos para evitar unbounded growth em produção. */
+/** Prune dos limiters para evitar unbounded growth em producao. */
 function pruneLimiters(): void {
   loginLimiter.prune();
   registerLimiter.prune();
 }
 
 export const authRoutes = new Elysia()
-  // ─── Plugin JWT ───────────────────────────────────────────────────
+  // ---- Plugin JWT ---------------------------------------------------
   .use(createJwtPlugin())
 
-  // ─── POST /api/auth/register ──────────────────────────────────────
+  // ---- POST /api/auth/register --------------------------------------
   .post(
     '/api/auth/register',
     async ({ body, jwt, request, set }) => {
-      // Rate limit por IP (3 registros/hora) — desabilitado em NODE_ENV=test
+      // Rate limit por IP (3 registros/hora) — desabilitado em test
       const ip = getClientIp(request.headers);
       if (isRateLimitEnabled(process.env.NODE_ENV)) {
         try {
@@ -72,26 +83,33 @@ export const authRoutes = new Elysia()
       const existing = await userRepo.findByEmail(email);
       if (existing) {
         set.status = 409;
-        return { success: false, error: 'Email já cadastrado' };
+        return { success: false, error: 'Email ja cadastrado' };
       }
 
       const passwordHash = await Bun.password.hash(password);
-      // Admin bootstrap via env: emails em ADMIN_EMAILS nascem admin.
       const isAdmin = isEmailAdminAllowed(email, config.ADMIN_EMAILS);
       const user = await userRepo.create({ email, name, passwordHash, isAdmin });
-
       await credentialsRepo.upsert(user.id, {});
+
+      const issue = issueRefreshToken();
+      await refreshTokenRepo.create({
+        userId: user.id,
+        tokenHash: issue.hash,
+        familyId: issue.familyId,
+        expiresAt: issue.expiresAt,
+      });
 
       const token = await jwt.sign({
         userId: user.id,
         userEmail: user.email,
         isAdmin,
-        exp: buildJwtExpiry(),
+        exp: buildAccessTokenExpiry(),
       });
 
       return {
         success: true,
         token,
+        refreshToken: issue.token,
         user: { id: user.id, email: user.email, name: user.name, isAdmin },
       };
     },
@@ -103,11 +121,10 @@ export const authRoutes = new Elysia()
     },
   )
 
-  // ─── POST /api/auth/login ─────────────────────────────────────────
+  // ---- POST /api/auth/login -----------------------------------------
   .post(
     '/api/auth/login',
     async ({ body, jwt, request, set }) => {
-      // Rate limit por IP (5 tentativas/minuto) — desabilitado em NODE_ENV=test
       const ip = getClientIp(request.headers);
       if (isRateLimitEnabled(process.env.NODE_ENV)) {
         try {
@@ -142,40 +159,89 @@ export const authRoutes = new Elysia()
         return { success: false, error: 'Email ou senha inválidos' };
       }
 
-      // Admin bootstrap via env: se o email entrou em ADMIN_EMAILS depois do
-      // cadastro, promove no DB (idempotente) e usa o valor atualizado no JWT.
-      // Se o email foi removido da lista, mantém o valor atual do DB.
-      // Fail-closed: se o UPDATE não retornar linha (e-mail sumiu do banco
-      // entre o find e o UPDATE, etc.), cai pro default seguro (false) em
-      // vez de presentear o usuário com admin.
       let isAdmin = user.isAdmin;
       if (!isAdmin && isEmailAdminAllowed(email, config.ADMIN_EMAILS)) {
         const updated = await userRepo.promoteToAdmin(email);
         isAdmin = updated?.isAdmin ?? false;
       }
 
+      const issue = issueRefreshToken();
+      await refreshTokenRepo.create({
+        userId: user.id,
+        tokenHash: issue.hash,
+        familyId: issue.familyId,
+        expiresAt: issue.expiresAt,
+      });
+
       const token = await jwt.sign({
         userId: user.id,
         userEmail: user.email,
         isAdmin,
-        exp: buildJwtExpiry(),
+        exp: buildAccessTokenExpiry(),
       });
 
       return {
         success: true,
         token,
+        refreshToken: issue.token,
         user: { id: user.id, email: user.email, name: user.name, isAdmin },
       };
     },
     {
       detail: {
         summary: 'Fazer login',
-        description: 'Autentica com email e senha, retorna JWT',
+        description: 'Autentica com email e senha, retorna access + refresh token',
       },
     },
   )
 
-  // ─── GET /api/auth/me ─────────────────────────────────────────────
+  // ---- POST /api/auth/refresh ------------------------------------------------
+  .post(
+    '/api/auth/refresh',
+    async ({ body, jwt, set }) => {
+      const { refreshToken } = body as { refreshToken?: string };
+      const result = await refreshSession(refreshToken, {
+        refreshTokenRepo,
+        userRepo,
+        jwtSign: (payload) => jwt.sign(payload),
+      });
+      set.status = result.status;
+      if (result.ok) {
+        return { success: true, token: result.token, refreshToken: result.refreshToken };
+      }
+      return { success: false, error: result.error };
+    },
+    {
+      detail: {
+        summary: 'Rotacionar sessão',
+        description: 'Troca por novo access + refresh (rotação), detectando replay',
+      },
+    },
+  )
+
+  // ---- POST /api/auth/logout ----------------------------------------
+  .post(
+    '/api/auth/logout',
+    async ({ body }) => {
+      const { refreshToken } = body as { refreshToken?: string };
+      if (refreshToken) {
+        const hash = hashRefreshToken(refreshToken);
+        const row = await refreshTokenRepo.findByHashIncludingRevoked(hash);
+        if (row && row.revokedAt == null) {
+          await refreshTokenRepo.revokeById(row.id);
+        }
+      }
+      return { success: true };
+    },
+    {
+      detail: {
+        summary: 'Encerrar sessão',
+        description: 'Revoga o refresh token (idempotente)',
+      },
+    },
+  )
+
+  // ---- GET /api/auth/me ---------------------------------------------
   .get(
     '/api/auth/me',
     async ({ jwt, request, set }) => {

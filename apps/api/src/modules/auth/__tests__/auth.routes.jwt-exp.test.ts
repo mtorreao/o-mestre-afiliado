@@ -24,6 +24,7 @@ await mock.module('../../../middleware/auth-rate-limit-pure.ts', () => ({
   REGISTER_MAX_REQUESTS: 3,
   REGISTER_WINDOW_MS: 3600000,
   RateLimitError: class extends Error {},
+  isRateLimitEnabled: () => false,
 }));
 
 const findByEmailMock = mock(
@@ -58,6 +59,14 @@ await mock.module('@omestre/db', () => ({
   UserCredentialsRepository: class {
     upsert = upsertMock;
   },
+  AuthRefreshTokenRepository: class {
+    create = mock(() =>
+      Promise.resolve({ id: 1, tokenHash: 'h', familyId: 'f', expiresAt: new Date() }),
+    );
+    findByHashIncludingRevoked = mock(() => Promise.resolve(null));
+    revokeById = mock(() => Promise.resolve());
+    revokeFamilyByFamilyId = mock(() => Promise.resolve(1));
+  },
   isEmailAdminAllowed: () => false,
 }));
 
@@ -88,7 +97,7 @@ beforeEach(() => {
   upsertMock.mockClear();
 });
 
-describe('Item #6 — JWT exp 7 dias', () => {
+describe('Item #6 — JWT exp 1 hora + refresh token', () => {
   it('POST /api/auth/login emite token com exp', async () => {
     findByEmailMock.mockImplementationOnce(() =>
       Promise.resolve({
@@ -110,14 +119,14 @@ describe('Item #6 — JWT exp 7 dias', () => {
         password: 'senha',
       });
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { success: boolean; token: string };
+      const body = (await res.json()) as { success: boolean; token: string; refreshToken?: string };
       expect(body.token).toBeTruthy();
+      expect(body.refreshToken).toBeTruthy();
 
       const payload = decodeJwtPayload(body.token);
       expect(typeof payload.exp).toBe('number');
-      const sevenDaysFromNow = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
-      const diff = Number(payload.exp) - sevenDaysFromNow;
-      // tolerancia: ±5s (clock skew entre sign e read)
+      const oneHourFromNow = Math.floor(Date.now() / 1000) + 60 * 60;
+      const diff = Number(payload.exp) - oneHourFromNow;
       expect(Math.abs(diff)).toBeLessThanOrEqual(5);
     } finally {
       Bun.password.verify = originalVerify;
@@ -135,11 +144,12 @@ describe('Item #6 — JWT exp 7 dias', () => {
         password: 'senha123',
       });
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { success: boolean; token: string };
+      const body = (await res.json()) as { success: boolean; token: string; refreshToken?: string };
+      expect(body.refreshToken).toBeTruthy();
       const payload = decodeJwtPayload(body.token);
       expect(typeof payload.exp).toBe('number');
-      const sevenDaysFromNow = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
-      const diff = Number(payload.exp) - sevenDaysFromNow;
+      const oneHourFromNow = Math.floor(Date.now() / 1000) + 60 * 60;
+      const diff = Number(payload.exp) - oneHourFromNow;
       expect(Math.abs(diff)).toBeLessThanOrEqual(5);
     } finally {
       Bun.password.hash = originalHash;
