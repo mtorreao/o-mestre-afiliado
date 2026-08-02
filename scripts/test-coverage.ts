@@ -279,10 +279,19 @@ console.log(
   `Cobertura ajustada: ${linePct.toFixed(2)}% linhas / ${funcPct.toFixed(2)}% funcoes (bruta: ${rawLinePct.toFixed(2)}% / ${rawFuncPct.toFixed(2)}%, ${excludedCount} isentos)`,
 );
 
+const MIN_LINE_PCT = 80;
+const coverageTooLow = linePct < MIN_LINE_PCT;
+
 const failed = results.filter((r) => r.exitCode !== 0);
 if (failed.length > 0) {
-  console.log(`\n❌ ${failed.length} arquivo(s) de teste falharam`);
+  console.log(`\n\u274c ${failed.length} arquivo(s) de teste falharam`);
   for (const r of failed) console.log(`  - ${r.rel}`);
   process.exit(1);
 }
-console.log('\n✅ Cobertura medida com sucesso');
+if (coverageTooLow) {
+  console.log(
+    `\n\u274c Cobertura ajustada (${linePct.toFixed(2)}% linhas) abaixo do minimo de ${MIN_LINE_PCT}% (AGENTS.md).`,
+  );
+  process.exit(1);
+}
+console.log('\n\u2705 Cobertura medida com sucesso');
