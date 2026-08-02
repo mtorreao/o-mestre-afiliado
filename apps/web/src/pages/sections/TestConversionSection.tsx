@@ -4,32 +4,24 @@
  * Permite selecionar a plataforma e testar a conversão de links.
  */
 import { useState } from 'react';
-import { Card, Button, Input, Select } from '../../components/ui/index.ts';
+import { Card, Button, Input } from '../../components/ui/index.ts';
 import { FlaskConical, Copy, Check } from 'lucide-react';
 
 interface TestConversionSectionProps {
   token: string;
+  platform: Platform;
 }
 
-const PLATFORM_OPTIONS = [
-  { value: 'auto', label: '🔍 Auto-detectar' },
-  { value: 'shopee', label: '🛒 Shopee' },
-  { value: 'mercadolivre', label: '📦 Mercado Livre' },
-  { value: 'amazon', label: '📦 Amazon' },
-] as const;
-
-type Platform = (typeof PLATFORM_OPTIONS)[number]['value'];
+type Platform = 'shopee' | 'mercadolivre' | 'amazon';
 
 const PLACEHOLDERS: Record<Platform, string> = {
-  auto: 'Cole a URL do produto (Shopee, ML ou Amazon)...',
   shopee: 'Cole a URL do produto Shopee...',
   mercadolivre: 'Cole a URL do produto Mercado Livre...',
   amazon: 'Cole a URL do produto Amazon...',
 };
 
-export function TestConversionSection({ token }: TestConversionSectionProps) {
+export function TestConversionSection({ token, platform }: TestConversionSectionProps) {
   const [url, setUrl] = useState('');
-  const [platform, setPlatform] = useState<Platform>('auto');
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
@@ -41,15 +33,17 @@ export function TestConversionSection({ token }: TestConversionSectionProps) {
     setError(null);
     try {
       const body: Record<string, string> = { url };
-      if (platform !== 'auto') {
-        body.platform = platform;
-      }
+      body.platform = platform;
       const res = await fetch('/api/affiliate/test-conversion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       });
-      const data = await res.json() as { success: boolean; affiliateUrl?: string; error?: string };
+      const data = (await res.json()) as {
+        success: boolean;
+        affiliateUrl?: string;
+        error?: string;
+      };
       if (data.success && data.affiliateUrl) {
         setResult(data.affiliateUrl);
       } else {
@@ -71,14 +65,6 @@ export function TestConversionSection({ token }: TestConversionSectionProps) {
     <Card title="🧪 Testar Conversão" subtitle="Teste a conversão de links de produtos">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end' }}>
-          <div style={{ minWidth: '180px' }}>
-            <Select
-              label="Plataforma"
-              value={platform}
-              onValueChange={(v) => setPlatform(v as Platform)}
-              options={PLATFORM_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-            />
-          </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Input
               type="url"
@@ -87,7 +73,12 @@ export function TestConversionSection({ token }: TestConversionSectionProps) {
               placeholder={PLACEHOLDERS[platform]}
             />
           </div>
-          <Button onClick={handleTest} loading={testing} disabled={!url} icon={<FlaskConical size={16} />}>
+          <Button
+            onClick={handleTest}
+            loading={testing}
+            disabled={!url}
+            icon={<FlaskConical size={16} />}
+          >
             Testar
           </Button>
         </div>

@@ -135,11 +135,14 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
         {loading ? (
           <Loading text="Carregando perfil..." size="sm" />
         ) : (
-          <ShopeeConfigSection
-            token={token}
-            initialAppId={profile?.shopeeAppId || ''}
-            onUpdate={refreshProfile}
-          />
+          <>
+            <ShopeeConfigSection
+              token={token}
+              initialAppId={profile?.shopeeAppId || ''}
+              onUpdate={refreshProfile}
+            />
+            <TestConversionSection token={token} platform="shopee" />
+          </>
         )}
 
         {/* Aba 3: Mercado Livre */}
@@ -214,7 +217,7 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                 </div>
               </Card>
             )}
-            <TestConversionSection token={token} />
+            <TestConversionSection token={token} platform="mercadolivre" />
           </div>
         )}
 
@@ -228,7 +231,7 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
               initialAffiliate={amazon}
               onUpdate={refreshProfile}
             />
-            <TestConversionSection token={token} />
+            <TestConversionSection token={token} platform="amazon" />
           </div>
         )}
 
