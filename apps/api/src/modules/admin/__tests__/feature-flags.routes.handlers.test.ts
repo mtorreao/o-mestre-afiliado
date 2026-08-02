@@ -16,7 +16,7 @@
  * catalog.routes.handlers.test.ts / mirrors.routes.handlers.test.ts) para
  * não quebrar mirrors.routes.test.ts / catalog.routes.handlers.test.ts.
  */
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { Elysia } from 'elysia';
 
 const { createJwtPlugin: realCreateJwtPlugin } = await import('../../../middleware/auth.ts');
@@ -45,45 +45,60 @@ const countFlagChecksMock = mock(() => Promise.resolve(0));
 // do mirrors.routes.test.ts, etc.) — mesmo padrão de
 // catalog.routes.handlers.test.ts / mirrors.routes.handlers.test.ts.
 const realDb = await import('@omestre/db');
-await mock.module('@omestre/db', () => ({
-  ...realDb,
-  // Símbolos que este teste usa.
-  FeatureFlagRepository: class {
-    findAll = findAllMock;
-    upsert = upsertMock;
-  },
-}));
 
-await mock.module('@omestre/feature-flags', () => ({
-  FLAGS: {
-    maintenance_mode: {
-      label: 'Manutenção',
-      description: 'Bloqueia API',
-      category: 'Operacional',
-      defaultEnabled: false,
-      danger: true,
-    },
-  },
-  ALL_FLAG_KEYS: ['maintenance_mode'],
-  countFlagChecks: countFlagChecksMock,
-  invalidateFlagCache: () => {},
-  publishFlagInvalidation: () => {},
-}));
-
+// IMPORTANTE: mock.module do Bun é global ao processo bun test. Outros
+// arquivos de teste do apps/api também mockam @omestre/db / middleware/auth.ts
+// e NÃO restauram, vazando mocks entre arquivos. Para ser determinístico
+// independente da ordem de execução (Windows x Linux), restauramos TUDO no
+// beforeAll antes de registrar nossos mocks e importamos a rota APÓS o mock
+// estar ativo — assim o módulo nunca vem cacheado com o mock de outro arquivo.
 const getAuthUserMock = mock(async (_jwt: unknown, _headers: unknown) => ({
   userId: 1,
   userEmail: 'admin@x.com',
   isAdmin: true,
 }));
 
-await mock.module('../../../middleware/auth.ts', () => ({
-  createJwtPlugin: realCreateJwtPlugin,
-  getAuthUser: getAuthUserMock,
-}));
+// `app` só é usado via app.handle() (existe no tipo base Elysia). O plugin
+// createJwtPlugin muda o tipo genérico da instância, então anotamos como
+// Elysia e fazemos o cast na atribuição.
+let app: Elysia;
 
-const { featureFlagsRoutes } = await import('../feature-flags.routes.ts');
+beforeAll(async () => {
+  mock.restore();
+  await mock.module('@omestre/db', () => ({
+    ...realDb,
+    // Símbolos que este teste usa.
+    FeatureFlagRepository: class {
+      findAll = findAllMock;
+      upsert = upsertMock;
+    },
+  }));
+  await mock.module('@omestre/feature-flags', () => ({
+    FLAGS: {
+      maintenance_mode: {
+        label: 'Manutenção',
+        description: 'Bloqueia API',
+        category: 'Operacional',
+        defaultEnabled: false,
+        danger: true,
+      },
+    },
+    ALL_FLAG_KEYS: ['maintenance_mode'],
+    countFlagChecks: countFlagChecksMock,
+    invalidateFlagCache: () => {},
+    publishFlagInvalidation: () => {},
+  }));
+  await mock.module('../../../middleware/auth.ts', () => ({
+    createJwtPlugin: realCreateJwtPlugin,
+    getAuthUser: getAuthUserMock,
+  }));
+  const { featureFlagsRoutes } = await import('../feature-flags.routes.ts');
+  app = new Elysia().use(featureFlagsRoutes) as unknown as Elysia;
+});
 
-const app = new Elysia().use(featureFlagsRoutes);
+afterAll(() => {
+  mock.restore();
+});
 
 async function call(
   method: string,
