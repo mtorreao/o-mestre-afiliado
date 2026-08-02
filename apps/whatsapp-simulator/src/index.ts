@@ -36,10 +36,29 @@ let requestIdCounter = 1;
 const MOCK_QR_BASE64 =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
+// Owner JID usado nas instâncias simuladas — precisa ser admin dos grupos
+// para a validação "destino exige admin" (mirrors.routes.ts) aceitar o POST.
+const MOCK_OWNER_JID = '5511999999999@s.whatsapp.net';
+
 const MOCK_GROUPS = [
-  { jid: '120363000000000001@g.us', subject: 'Ofertas Promoções', name: 'Ofertas Promoções' },
-  { jid: '120363000000000002@g.us', subject: 'Grupo Teste 2', name: 'Grupo Teste 2' },
-  { jid: '120363000000000003@g.us', subject: 'Grupo Teste 3', name: 'Grupo Teste 3' },
+  {
+    jid: '120363000000000001@g.us',
+    subject: 'Ofertas Promoções',
+    name: 'Ofertas Promoções',
+    participants: [{ id: MOCK_OWNER_JID, admin: 'superadmin' }],
+  },
+  {
+    jid: '120363000000000002@g.us',
+    subject: 'Grupo Teste 2',
+    name: 'Grupo Teste 2',
+    participants: [{ id: MOCK_OWNER_JID, admin: 'superadmin' }],
+  },
+  {
+    jid: '120363000000000003@g.us',
+    subject: 'Grupo Teste 3',
+    name: 'Grupo Teste 3',
+    participants: [{ id: MOCK_OWNER_JID, admin: 'superadmin' }],
+  },
 ];
 
 /** Mensagens mockadas com links de marketplace para validação de grupos */
@@ -218,7 +237,7 @@ const app = new Elysia()
       instanceName: name,
       status: data.status === 'connecting' || data.status === 'created' ? 'open' : data.status,
       integration: 'WHATSAPP-BAILEYS',
-      ownerJid: '5511999999999@s.whatsapp.net',
+      ownerJid: MOCK_OWNER_JID,
       profileName: 'Simulador E2E',
     }));
     return list;
