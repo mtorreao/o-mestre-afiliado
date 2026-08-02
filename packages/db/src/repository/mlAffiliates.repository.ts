@@ -186,6 +186,20 @@ export class MlAffiliateRepository {
   }
 
   /**
+   * Remove os cookies de sessão do afiliado, sem remover a configuração ML.
+   */
+  async clearSessionCookies(mlUserId: string): Promise<MlAffiliate | null> {
+    const db = getDb();
+    const [row] = await db
+      .update(mlAffiliates)
+      .set({ sessionCookies: null })
+      .where(eq(mlAffiliates.mlUserId, mlUserId))
+      .returning();
+
+    return row ?? null;
+  }
+
+  /**
    * Atualiza tokens OAuth (usado no refresh).
    */
   async refreshTokens(

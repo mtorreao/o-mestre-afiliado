@@ -5,7 +5,7 @@
  */
 import { useState } from 'react';
 import { Button, Input } from '../../components/ui/index.ts';
-import { Save, ExternalLink } from 'lucide-react';
+import { Save, ExternalLink, Trash2 } from 'lucide-react';
 import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
 
 interface MlConfigSectionProps {
@@ -17,11 +17,36 @@ interface MlConfigSectionProps {
   onUpdate: () => void;
 }
 
-export function MlConfigSection({ mlUserId, meliid: initialMeliid, melitat: initialMelitat, hasSessionCookies, token, onUpdate }: MlConfigSectionProps) {
+export function MlConfigSection({
+  mlUserId,
+  meliid: initialMeliid,
+  melitat: initialMelitat,
+  hasSessionCookies,
+  token,
+  onUpdate,
+}: MlConfigSectionProps) {
   const [meliid, setMeliid] = useState(initialMeliid);
   const [melitat, setMelitat] = useState(initialMelitat);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  async function handleClearCookies() {
+    if (!window.confirm('Limpar os cookies de sessão do Mercado Livre?')) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/ml/affiliates/${mlUserId}/cookies`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Falha ao limpar cookies');
+      showSuccessToast('Mercado Livre', 'Cookies limpos com sucesso');
+      onUpdate();
+    } catch {
+      showErrorToast('Mercado Livre', 'Erro ao limpar cookies');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -59,8 +84,30 @@ export function MlConfigSection({ mlUserId, meliid: initialMeliid, melitat: init
         <Button onClick={handleSave} loading={saving} icon={<Save size={16} />} size="sm">
           Salvar
         </Button>
-        {saved && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success)', fontWeight: 500 }}>✅ Salvo!</span>}
-        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: hasSessionCookies ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
+        <Button
+          onClick={handleClearCookies}
+          loading={saving}
+          icon={<Trash2 size={16} />}
+          size="sm"
+          variant="danger"
+          disabled={!hasSessionCookies}
+        >
+          Limpar cookies
+        </Button>
+        {saved && (
+          <span
+            style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success)', fontWeight: 500 }}
+          >
+            ✅ Salvo!
+          </span>
+        )}
+        <span
+          style={{
+            fontSize: 'var(--text-xs)',
+            fontWeight: 500,
+            color: hasSessionCookies ? 'var(--color-success)' : 'var(--color-text-muted)',
+          }}
+        >
           {hasSessionCookies ? '🔗 Cookies OK' : '📎 Sem cookies'}
         </span>
       </div>
@@ -68,8 +115,17 @@ export function MlConfigSection({ mlUserId, meliid: initialMeliid, melitat: init
         Para importar cookies de sessão, use a{' '}
         <a
           href="#"
-          onClick={(e) => { e.preventDefault(); window.open('/chrome-cookie-importer', '_blank'); }}
-          style={{ color: 'var(--color-primary)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+          onClick={(e) => {
+            e.preventDefault();
+            window.open('/chrome-cookie-importer', '_blank');
+          }}
+          style={{
+            color: 'var(--color-primary)',
+            textDecoration: 'underline',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.2rem',
+          }}
         >
           extensão Chrome <ExternalLink size={12} />
         </a>

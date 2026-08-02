@@ -208,6 +208,25 @@ export const mlRoutes = new Elysia()
     },
   )
 
+  // ─── ML — Limpar cookies de sessão ─────────────────────────────────
+  .delete('/api/ml/affiliates/:mlUserId/cookies', async ({ params, set, jwt, request }) => {
+    const auth = await getAuthUser(jwt, request.headers);
+    if (!auth) {
+      set.status = 401;
+      return { success: false, error: 'Não autenticado' };
+    }
+
+    const { mlUserId } = params as { mlUserId: string };
+    const affiliate = await mlRepo.findByUserId(mlUserId);
+    if (!affiliate || affiliate.userId !== auth.userId) {
+      set.status = 403;
+      return { success: false, error: 'Acesso negado' };
+    }
+
+    await mlRepo.clearSessionCookies(mlUserId);
+    return { success: true, mlUserId, hasSessionCookies: false };
+  })
+
   // ─── ML — Importar cookies sem OAuth ────────────────────────────────
   .post(
     '/api/ml/affiliates/import-cookies',
