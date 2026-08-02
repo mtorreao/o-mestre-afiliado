@@ -33,6 +33,24 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Unit tests
+        run: bun run test:unit
+
+      - name: Coverage (relatório agregado)
+        run: bun run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage/summary.md
+            '*/coverage/lcov.info'
+            'apps/*/coverage/lcov.info'
+            'packages/*/coverage/lcov.info'
+          if-no-files-found: ignore
+
       - name: Prettier check (apenas arquivos do diff)
         run: |
           if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
