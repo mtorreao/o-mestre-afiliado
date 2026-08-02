@@ -243,7 +243,11 @@ function offerWebhook(opts: {
 async function postWebhook(payload: unknown): Promise<Response> {
   return await fetch(`${API_MIRROR}/webhook/message`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // Segurança #3: webhook exige apikey válida (EVOLUTION_API_KEY do E2E)
+      apikey: 'e2e-evolution-api-key',
+    },
     body: JSON.stringify(payload),
   });
 }

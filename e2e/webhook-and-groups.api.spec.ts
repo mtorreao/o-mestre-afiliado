@@ -59,7 +59,7 @@ test.describe('WhatsApp Groups - Listagem', () => {
 test.describe('Webhook Evolution API', () => {
   const EVO_API_KEY = 'e2e-evolution-api-key';
 
-  test('POST /webhook/message deve aceitar requisição com apikey inválido (webhook global não valida apikey)', async () => {
+  test('POST /webhook/message rejeita apikey inválida (segurança #3)', async () => {
     const res = await fetch(`${API}/webhook/message`, {
       method: 'POST',
       headers: {
@@ -72,11 +72,11 @@ test.describe('Webhook Evolution API', () => {
         data: { state: 'open' },
       }),
     });
-    // Webhook global não valida apikey porque a Evolution API
-    // não envia o header em global webhooks (apenas em chamadas REST diretas)
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body.success).toBe(true);
+    // Segurança #3: webhook valida apikey (comparação constant-time)
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { success: boolean; error: string };
+    expect(body.success).toBe(false);
+    expect(body.error).toBe('Unauthorized');
   });
 
   test('POST /webhook/message deve aceitar evento connection.update', async () => {
@@ -193,9 +193,9 @@ test.describe('Webhook Evolution API', () => {
     expect((await res.json()).success).toBe(true);
   });
 
-  test('POST /webhook/message deve aceitar requisição sem apikey (webhook global não exige)', async () => {
-    // O webhook NÃO rejeita requisições sem apikey porque a
-    // Evolution API global webhook não envia o header apikey
+  test('POST /webhook/message rejeita requisição sem apikey (segurança #3)', async () => {
+    // Segurança #3: webhook rejeita requisições sem apikey (fail-closed).
+    // A Evolution API é configurada com WEBHOOK_GLOBAL_APikey para enviar o header.
     const res = await fetch(`${API}/webhook/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -205,8 +205,9 @@ test.describe('Webhook Evolution API', () => {
         data: { state: 'open' },
       }),
     });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body.success).toBe(true);
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { success: boolean; error: string };
+    expect(body.success).toBe(false);
+    expect(body.error).toBe('Unauthorized');
   });
 });

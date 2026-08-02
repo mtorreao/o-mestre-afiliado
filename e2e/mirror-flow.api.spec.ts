@@ -249,7 +249,10 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
 
     const webhookRes = await fetch(`${API_MIRROR}/webhook/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: 'e2e-evolution-api-key',
+      },
       body: JSON.stringify(webhookPayload),
     });
     expect(webhookRes.status).toBe(200);
@@ -280,7 +283,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // Mensagem SEM link de marketplace
     await fetch(`${API_MIRROR}/webhook/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', apikey: 'e2e-evolution-api-key' },
       body: JSON.stringify({
         event: 'messages.upsert',
         instance: 'user-1',
@@ -322,7 +325,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // Mensagem de um grupo NÃO configurado como source
     await fetch(`${API_MIRROR}/webhook/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', apikey: 'e2e-evolution-api-key' },
       body: JSON.stringify({
         event: 'messages.upsert',
         instance: 'user-1',
@@ -362,7 +365,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // Mensagem com fromMe=true
     await fetch(`${API_MIRROR}/webhook/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', apikey: 'e2e-evolution-api-key' },
       body: JSON.stringify({
         event: 'messages.upsert',
         instance: 'user-1',
@@ -464,7 +467,10 @@ test.describe('Mirror Flow — ML /social/ Resolution', () => {
 
     const webhookRes = await fetch(`${API_MIRROR}/webhook/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: 'e2e-evolution-api-key',
+      },
       body: JSON.stringify(webhookPayload),
     });
     expect(webhookRes.status).toBe(200);
