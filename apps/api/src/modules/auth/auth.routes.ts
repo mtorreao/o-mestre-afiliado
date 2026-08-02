@@ -1,10 +1,35 @@
 import { Elysia, t } from 'elysia';
 import { UserRepository, UserCredentialsRepository, isEmailAdminAllowed } from '@omestre/db';
 import { createJwtPlugin, getAuthUser, getSuperAdminUser } from '../../middleware/auth.ts';
+import {
+  getClientIp,
+  IpRateLimiter,
+  LOGIN_MAX_REQUESTS,
+  LOGIN_WINDOW_MS,
+  RateLimitError,
+  REGISTER_MAX_REQUESTS,
+  REGISTER_WINDOW_MS,
+} from '../../middleware/auth-rate-limit-pure.ts';
 import { config } from '../../config.ts';
 
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
+
+// ─── Rate limiters (singleton por processo) ────────────────────────────────
+const loginLimiter = new IpRateLimiter({
+  maxRequests: LOGIN_MAX_REQUESTS,
+  windowMs: LOGIN_WINDOW_MS,
+});
+const registerLimiter = new IpRateLimiter({
+  maxRequests: REGISTER_MAX_REQUESTS,
+  windowMs: REGISTER_WINDOW_MS,
+});
+
+/** Prune periódicos para evitar unbounded growth em produção. */
+function pruneLimiters(): void {
+  loginLimiter.prune();
+  registerLimiter.prune();
+}
 
 export const authRoutes = new Elysia()
   // ─── Plugin JWT ───────────────────────────────────────────────────
@@ -13,7 +38,21 @@ export const authRoutes = new Elysia()
   // ─── POST /api/auth/register ──────────────────────────────────────
   .post(
     '/api/auth/register',
-    async ({ body, jwt, set }) => {
+    async ({ body, jwt, request, set }) => {
+      // Rate limit por IP (3 registros/hora)
+      const ip = getClientIp(request.headers);
+      try {
+        registerLimiter.check(ip);
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          set.status = 429;
+          set.headers['Retry-After'] = String(Math.ceil(err.retryAfterMs / 1000));
+          return { success: false, error: err.message, retryAfterMs: err.retryAfterMs };
+        }
+        throw err;
+      }
+      pruneLimiters();
+
       const { email, name, password } = body as { email: string; name: string; password: string };
 
       if (!email || !name || !password) {
@@ -63,7 +102,21 @@ export const authRoutes = new Elysia()
   // ─── POST /api/auth/login ─────────────────────────────────────────
   .post(
     '/api/auth/login',
-    async ({ body, jwt, set }) => {
+    async ({ body, jwt, request, set }) => {
+      // Rate limit por IP (5 tentativas/minuto) — brute force protection
+      const ip = getClientIp(request.headers);
+      try {
+        loginLimiter.check(ip);
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          set.status = 429;
+          set.headers['Retry-After'] = String(Math.ceil(err.retryAfterMs / 1000));
+          return { success: false, error: err.message, retryAfterMs: err.retryAfterMs };
+        }
+        throw err;
+      }
+      pruneLimiters();
+
       const { email, password } = body as { email: string; password: string };
 
       if (!email || !password) {
