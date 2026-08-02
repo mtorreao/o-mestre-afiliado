@@ -152,16 +152,10 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                 title="📦 Mercado Livre"
                 subtitle={
                   <>
-                    Conectado como <strong>{ml.nickname}</strong>
-                    {ml.expired && (
-                      <span
-                        style={{
-                          marginLeft: '0.4rem',
-                          color: 'var(--color-error)',
-                          fontSize: 'var(--text-xs)',
-                        }}
-                      >
-                        (token expirado)
+                    ID: <strong>{ml.mlUserId}</strong>
+                    {ml.nickname && (
+                      <span style={{ marginLeft: '0.4rem', color: 'var(--color-text-muted)' }}>
+                        ({ml.nickname})
                       </span>
                     )}
                   </>
@@ -171,10 +165,10 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                     style={{
                       fontSize: 'var(--text-xs)',
                       fontWeight: 500,
-                      color: 'var(--color-success)',
+                      color: ml.hasSessionCookies ? 'var(--color-success)' : 'var(--color-warning)',
                     }}
                   >
-                    ✅ Conectado
+                    {ml.hasSessionCookies ? '✅ Cookies OK' : '⚠️ Sem cookies'}
                   </span>
                 }
               >
@@ -197,12 +191,11 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                       marginBottom: '1rem',
                     }}
                   >
-                    Conecte sua conta do Mercado Livre para gerar links de afiliado.
+                    Instale a extensão Chrome e clique em "Importar cookies Mercado Livre" enquanto
+                    estiver logado no ML.
                   </p>
                   <button
-                    onClick={() => {
-                      window.location.href = `/api/ml/auth?userId=${user.id}`;
-                    }}
+                    onClick={() => window.open('/chrome-cookie-importer', '_blank')}
                     style={{
                       padding: '0.5rem 1rem',
                       borderRadius: 'var(--radius-md)',
@@ -214,7 +207,7 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                       fontWeight: 500,
                     }}
                   >
-                    + Conectar conta ML
+                    📥 Instalar extensão
                   </button>
                 </div>
               </Card>
