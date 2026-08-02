@@ -125,3 +125,6 @@ export { priceHistory } from './priceHistory.ts';
 export { omestre } from './omestre.ts';
 export { users } from './users.ts';
 export { userCredentials } from './userCredentials.ts';
+
+// ─── Refresh Tokens (rotação de sessão) ─────────────────
+export { authRefreshTokens } from './authRefreshTokens.ts';
