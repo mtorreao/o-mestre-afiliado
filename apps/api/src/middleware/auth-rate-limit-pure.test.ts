@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   getClientIp,
   IpRateLimiter,
+  isRateLimitEnabled,
   LOGIN_MAX_REQUESTS,
   LOGIN_WINDOW_MS,
   RateLimitError,
@@ -107,5 +108,27 @@ describe('constantes de rate limit', () => {
   test('register: 3 requests por hora', () => {
     expect(REGISTER_MAX_REQUESTS).toBe(3);
     expect(REGISTER_WINDOW_MS).toBe(3_600_000);
+  });
+});
+
+describe('isRateLimitEnabled', () => {
+  test('NODE_ENV=test → desabilitado (E2E cria muitos usuários do mesmo IP)', () => {
+    expect(isRateLimitEnabled('test')).toBe(false);
+  });
+
+  test('NODE_ENV=production → habilitado', () => {
+    expect(isRateLimitEnabled('production')).toBe(true);
+  });
+
+  test('NODE_ENV=development → habilitado', () => {
+    expect(isRateLimitEnabled('development')).toBe(true);
+  });
+
+  test('NODE_ENV undefined → habilitado (default seguro)', () => {
+    expect(isRateLimitEnabled(undefined)).toBe(true);
+  });
+
+  test('NODE_ENV vazio → habilitado', () => {
+    expect(isRateLimitEnabled('')).toBe(true);
   });
 });

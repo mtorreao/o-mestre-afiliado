@@ -89,3 +89,14 @@ export function getClientIp(headers: Headers): string {
   if (realIp) return realIp;
   return 'unknown';
 }
+
+/**
+ * Rate limit é desabilitado em ambiente de teste (NODE_ENV=test).
+ *
+ * Suites E2E criam dezenas de usuários a partir do MESMO IP (localhost)
+ * — os limites de 5/min login e 3/h register bloqueiam a suíte inteira.
+ * Em produção/desenvolvimento o rate limit permanece ativo.
+ */
+export function isRateLimitEnabled(nodeEnv: string | undefined): boolean {
+  return nodeEnv !== 'test';
+}

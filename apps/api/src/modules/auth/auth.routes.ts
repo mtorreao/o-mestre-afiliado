@@ -4,6 +4,7 @@ import { createJwtPlugin, getAuthUser, getSuperAdminUser } from '../../middlewar
 import {
   getClientIp,
   IpRateLimiter,
+  isRateLimitEnabled,
   LOGIN_MAX_REQUESTS,
   LOGIN_WINDOW_MS,
   RateLimitError,
@@ -40,19 +41,21 @@ export const authRoutes = new Elysia()
   .post(
     '/api/auth/register',
     async ({ body, jwt, request, set }) => {
-      // Rate limit por IP (3 registros/hora)
+      // Rate limit por IP (3 registros/hora) — desabilitado em NODE_ENV=test
       const ip = getClientIp(request.headers);
-      try {
-        registerLimiter.check(ip);
-      } catch (err) {
-        if (err instanceof RateLimitError) {
-          set.status = 429;
-          set.headers['Retry-After'] = String(Math.ceil(err.retryAfterMs / 1000));
-          return { success: false, error: err.message, retryAfterMs: err.retryAfterMs };
+      if (isRateLimitEnabled(process.env.NODE_ENV)) {
+        try {
+          registerLimiter.check(ip);
+        } catch (err) {
+          if (err instanceof RateLimitError) {
+            set.status = 429;
+            set.headers['Retry-After'] = String(Math.ceil(err.retryAfterMs / 1000));
+            return { success: false, error: err.message, retryAfterMs: err.retryAfterMs };
+          }
+          throw err;
         }
-        throw err;
+        pruneLimiters();
       }
-      pruneLimiters();
 
       const { email, name, password } = body as { email: string; name: string; password: string };
 
@@ -104,19 +107,21 @@ export const authRoutes = new Elysia()
   .post(
     '/api/auth/login',
     async ({ body, jwt, request, set }) => {
-      // Rate limit por IP (5 tentativas/minuto) — brute force protection
+      // Rate limit por IP (5 tentativas/minuto) — desabilitado em NODE_ENV=test
       const ip = getClientIp(request.headers);
-      try {
-        loginLimiter.check(ip);
-      } catch (err) {
-        if (err instanceof RateLimitError) {
-          set.status = 429;
-          set.headers['Retry-After'] = String(Math.ceil(err.retryAfterMs / 1000));
-          return { success: false, error: err.message, retryAfterMs: err.retryAfterMs };
+      if (isRateLimitEnabled(process.env.NODE_ENV)) {
+        try {
+          loginLimiter.check(ip);
+        } catch (err) {
+          if (err instanceof RateLimitError) {
+            set.status = 429;
+            set.headers['Retry-After'] = String(Math.ceil(err.retryAfterMs / 1000));
+            return { success: false, error: err.message, retryAfterMs: err.retryAfterMs };
+          }
+          throw err;
         }
-        throw err;
+        pruneLimiters();
       }
-      pruneLimiters();
 
       const { email, password } = body as { email: string; password: string };
 
