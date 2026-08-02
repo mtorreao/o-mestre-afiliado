@@ -14,11 +14,17 @@ export default defineConfig({
   retries: 0,
   workers: 1,
 
+  // Report em CI: HTML (playwright-report/) + terminal. Screenshot e trace
+  // só em falha — o job e2e do GitHub Actions sobe esses artefatos.
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
+
   use: {
     baseURL: `http://localhost:${WEB_PORT}`,
     extraHTTPHeaders: {
       'Content-Type': 'application/json',
     },
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
   },
 
   projects: [

@@ -211,7 +211,7 @@ Use apenas em emergências — os guards existem para evitar pushes quebrados.
 
 ### Em CI (GitHub Actions)
 
-Os mesmos guards rodam em `.github/workflows/ci.yml` (typecheck + build + prettier no diff do PR). Commits com `--no-verify` ainda passam pelo CI.
+Os mesmos guards rodam em `.github/workflows/ci.yml`: job `build` (typecheck + build + unit tests + coverage + prettier no diff do PR) e job `e2e` (stack Docker própria + Playwright, com artefatos de report em falha). Commits com `--no-verify` ainda passam pelo CI.
 
 ---
 
