@@ -23,7 +23,7 @@ import {
   findUnknownPlaceholders,
 } from '@omestre/shared';
 import type { ConversionResult, TemplateContext } from '@omestre/shared';
-import { generateViaUrlParams } from '@omestre/converters';
+import { generateShortAffiliateLink } from '@omestre/converters';
 import { instanceNameFromUserId } from '../../services/evolution.ts';
 import { fetchGroupMessages } from '../../services/evolution.ts';
 
@@ -394,17 +394,35 @@ async function handleMlConversion(userId: number, url: string): Promise<Conversi
     };
   }
 
-  const affiliateUrl = generateViaUrlParams(url, {
-    meliid: mlAffiliate.meliid ?? undefined,
-    melitat: mlAffiliate.melitat,
-  });
+  if (!mlAffiliate.sessionCookies) {
+    return {
+      success: false,
+      originalUrl: url,
+      affiliateUrl: null,
+      marketplace: 'mercadolivre',
+      method: 'unknown',
+      error: 'Cookies do Mercado Livre não configurados. Importe os cookies para usar o Link Builder.',
+    };
+  }
+
+  const linkResult = await generateShortAffiliateLink(url, mlAffiliate.melitat, mlAffiliate.sessionCookies);
+  if (!linkResult.success || !linkResult.shortUrl) {
+    return {
+      success: false,
+      originalUrl: url,
+      affiliateUrl: null,
+      marketplace: 'mercadolivre',
+      method: 'api',
+      error: linkResult.error || 'Não foi possível gerar o link pelo Link Builder.',
+    };
+  }
 
   return {
     success: true,
     originalUrl: url,
-    affiliateUrl,
+    affiliateUrl: linkResult.shortUrl,
     marketplace: 'mercadolivre',
-    method: 'fallback',
+    method: 'api',
   };
 }
 
