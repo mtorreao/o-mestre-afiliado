@@ -68,7 +68,9 @@ await mock.module('@omestre/db', () => ({
   },
 }));
 
+const realAuth = await import('../../middleware/auth.ts');
 await mock.module('../../middleware/auth.ts', () => ({
+  ...realAuth,
   createJwtPlugin: realCreateJwtPlugin,
   getAuthUser: getAuthUserMock,
 }));

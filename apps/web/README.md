@@ -33,6 +33,7 @@
 Componente principal que orquestra todo o estado da aplicação.
 
 **Estado local:**
+
 - `url: string` — valor do input
 - `loading: boolean` — indicador de carregamento
 - `result: ConversionResult | null` — resultado da conversão
@@ -43,8 +44,8 @@ Componente principal que orquestra todo o estado da aplicação.
 ```
 Usuário digita URL → clica "Converter"
     │
-    ├── fetch POST /api/convert
-    │   ├── Vite proxy → http://localhost:3000/api/convert
+    ├── POST /api/affiliate (Shopee) / /api/ml/convert (Mercado Livre) / /api/magalu/convert (Magalu)
+    │   ├── Busca credenciais do afiliado logado (JWT + ownership)
     │   │
     │   ├── Response: { success: true, affiliateUrl: "...", ... }
     │   │   └── Renderiza ResultCard com link + botão Copiar
@@ -111,6 +112,7 @@ cd apps/web && bunx vite build
 ```
 
 Gera os arquivos estáticos em `apps/web/dist/`:
+
 ```
 dist/
 ├── index.html
@@ -144,13 +146,12 @@ ou remova o proxy e configure CORS na API para aceitar a origin de produção.
 
 ## 🧩 Dependências
 
-| Pacote | Versão | Uso |
-|--------|--------|-----|
-| `react` | ^19.0.0 | UI library |
-| `react-dom` | ^19.0.0 | Renderização DOM |
-| `vite` | ^6.0.0 | Bundler / dev server |
-| `@vitejs/plugin-react` | ^4.3.0 | React Fast Refresh |
-
+| Pacote                 | Versão  | Uso                  |
+| ---------------------- | ------- | -------------------- |
+| `react`                | ^19.0.0 | UI library           |
+| `react-dom`            | ^19.0.0 | Renderização DOM     |
+| `vite`                 | ^6.0.0  | Bundler / dev server |
+| `@vitejs/plugin-react` | ^4.3.0  | React Fast Refresh   |
 
 ## 📁 Estrutura de Arquivos
 

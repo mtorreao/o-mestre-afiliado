@@ -114,12 +114,19 @@ await mock.module('../../../middleware/auth.ts', () => ({
   getAuthUser: getAuthUserMock,
 }));
 
+const realGroupCache = await import('../../../services/group-cache.ts');
 await mock.module('../../../services/group-cache.ts', () => ({
+  ...realGroupCache,
   replaceSourceGroups: replaceSourceGroupsMock,
   removeSourceGroups: removeSourceGroupsMock,
 }));
 
+const realEvolution = await import('../../../services/evolution.ts');
+// Snapshot do módulo REAL: o mock de módulo do bun substitui o arquivo
+// inteiro, então precisamos espalhar os exports reais (ex.: fetchGroups,
+// usado por mirrors.routes.ts) e sobrescrever só o que o teste controla.
 await mock.module('../../../services/evolution.ts', () => ({
+  ...realEvolution,
   instanceNameFromUserId: instanceNameFromUserIdMock,
 }));
 
