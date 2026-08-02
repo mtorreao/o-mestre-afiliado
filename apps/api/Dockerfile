@@ -1,5 +1,14 @@
 # ─── Stage 1: Build API ────────────────────────────────────────────────
+# NODE_ENV em build-time: bun inline process.env.NODE_ENV no bundle.
+# E2E passa NODE_ENV=test (rate limit off); produção NODE_ENV=production
+# (swagger off + rate limit on). Default: development.
+ARG NODE_ENV=development
 FROM oven/bun:1.3 AS builder
+
+# ARG precisa ser redeclarado no stage para ser visível (ARG global
+# antes do FROM não é herdado automaticamente).
+ARG NODE_ENV
+ENV NODE_ENV=$NODE_ENV
 
 WORKDIR /app
 COPY package.json bun.lock tsconfig.json ./

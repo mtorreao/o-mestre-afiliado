@@ -180,6 +180,8 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
       target: api
+      args:
+        NODE_ENV: development
     container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_api
     restart: unless-stopped
     depends_on:

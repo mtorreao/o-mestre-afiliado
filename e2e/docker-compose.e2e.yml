@@ -118,6 +118,8 @@ services:
     build:
       context: ../
       dockerfile: apps/api/Dockerfile
+      args:
+        NODE_ENV: test
     restart: no
     ports:
       - '127.0.0.1:15442:5442'
@@ -131,7 +133,9 @@ services:
       POSTGRES_DATABASE: omestre_db
       POSTGRES_SCHEMA: omestre
       API_PORT: '5442'
+      NODE_ENV: test
       JWT_SECRET: e2e-jwt-secret-for-testing-only
+      ADMIN_EMAILS: e2e-admin@e2e.local
       EVOLUTION_API_URL: http://evolution-api-e2e:8080
       EVOLUTION_API_KEY: e2e-evolution-api-key
       WEBHOOK_URL: http://api-e2e:5442/webhook/message
@@ -227,6 +231,8 @@ services:
     build:
       context: ../
       dockerfile: apps/api/Dockerfile
+      args:
+        NODE_ENV: test
     restart: no
     ports:
       - '127.0.0.1:15447:5442'
@@ -240,7 +246,9 @@ services:
       POSTGRES_DATABASE: omestre_db
       POSTGRES_SCHEMA: omestre
       API_PORT: '5442'
+      NODE_ENV: test
       JWT_SECRET: e2e-jwt-secret-for-testing-only
+      ADMIN_EMAILS: e2e-admin@e2e.local
       EVOLUTION_API_URL: http://whatsapp-simulator-e2e:8080
       EVOLUTION_API_KEY: e2e-evolution-api-key
       WEBHOOK_URL: http://api-e2e-mirror:5442/webhook/message
