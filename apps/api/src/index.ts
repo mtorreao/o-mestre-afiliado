@@ -34,9 +34,9 @@ import { globalErrorHandler } from './error-handler.ts';
 
 const PORT = parseInt(config.API_PORT, 10);
 
-// ─── Origins permitidas no CORS ──────────────────────────────────────────
+// ─── Origins permitidas no CORS (#5) ──────────────────────────────────────
 // Em produção, restrinja ao FRONTEND_URL. Em dev, permite localhost
-// em portas comuns (web, swagger, tunel local).
+// em portas comuns (web, swagger, tunnel local).
 function getAllowedOrigins(): string[] {
   const origins: string[] = [];
   const frontend = config.FRONTEND_URL;
@@ -58,15 +58,17 @@ function getAllowedOrigins(): string[] {
 
 // ─── App ─────────────────────────────────────────────────────────────────
 
-const app = new Elysia()
-  .use(
-    cors({
-      origin: getAllowedOrigins(),
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    }),
-  )
-  .use(
+const app = new Elysia().use(
+  cors({
+    origin: getAllowedOrigins(),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  }),
+);
+
+// ─── Swagger (#8) — só exposto fora de produção ──────────────────────────
+if (process.env.NODE_ENV !== 'production') {
+  app.use(
     swagger({
       path: '/docs',
       documentation: {
@@ -78,7 +80,10 @@ const app = new Elysia()
         },
       },
     }),
-  )
+  );
+}
+
+app
   // ─── Error handler global ──────────────────────────────────────────
   // (VALIDAÇÃO → 400, banco → 503, resto → 500 — ver error-handler.ts)
   .onError(globalErrorHandler)
@@ -214,4 +219,6 @@ const app = new Elysia()
   .listen(PORT);
 
 console.log(`🟢 API rodando em http://localhost:${PORT}`);
-console.log(`📄 Swagger em http://localhost:${PORT}/docs`);
+if (process.env.NODE_ENV !== 'production') {
+  console.log(`📄 Swagger em http://localhost:${PORT}/docs`);
+}
