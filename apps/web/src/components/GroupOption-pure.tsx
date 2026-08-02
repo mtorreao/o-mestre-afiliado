@@ -18,6 +18,9 @@ export interface RenderGroupOptionInput {
   index: number;
   listboxId: string;
   highlighted: boolean;
+  /** Handlers opcionais (mousedown/mouseenter) — aplicados ao option raiz. */
+  onMouseDown?: (event: React.MouseEvent) => void;
+  onMouseEnter?: () => void;
 }
 
 /**
@@ -31,6 +34,8 @@ export function renderGroupOption({
   index,
   listboxId,
   highlighted,
+  onMouseDown,
+  onMouseEnter,
 }: RenderGroupOptionInput) {
   return (
     <div
@@ -38,6 +43,8 @@ export function renderGroupOption({
       id={`${listboxId}-option-${index}`}
       role="option"
       aria-selected={highlighted}
+      onMouseDown={onMouseDown}
+      onMouseEnter={onMouseEnter}
       style={{
         padding: '0.5rem 0.75rem',
         cursor: 'pointer',

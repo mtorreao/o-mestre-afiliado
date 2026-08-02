@@ -320,37 +320,20 @@ export function GroupOfferAutocomplete({
           >
             {filtered.map((g, i) => {
               const onSelect = () => handleSelect(g);
-              return (
-                <div
-                  key={g.jid}
-                  id={`${listboxId}-option-${i}`}
-                  role="option"
-                  aria-selected={highlightIndex === i}
-                  onMouseDown={(e) => {
-                    // Selecao no mousedown + preventDefault: impede o blur do input
-                    // (o blur antes do click desmontaria o dropdown e o click nunca
-                    // dispararia - regressao f58e818). Padrao robusto p/ autocomplete.
-                    e.preventDefault();
-                    onSelect();
-                  }}
-                  onMouseEnter={() => setHighlightIndex(i)}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    cursor: 'pointer',
-                    background: highlightIndex === i ? '#334155' : 'transparent',
-                    color: highlightIndex === i ? '#e2e8f0' : '#64748b',
-                    fontSize: '0.85rem',
-                    borderBottom: i < filtered.length - 1 ? '1px solid #1e293b' : 'none',
-                  }}
-                >
-                  {renderGroupOption({
-                    group: g,
-                    index: i,
-                    listboxId,
-                    highlighted: highlightIndex === i,
-                  })}
-                </div>
-              );
+              return renderGroupOption({
+                group: g,
+                index: i,
+                listboxId,
+                highlighted: highlightIndex === i,
+                onMouseDown: (e) => {
+                  // Selecao no mousedown + preventDefault: impede o blur do input
+                  // (o blur antes do click desmontaria o dropdown e o click nunca
+                  // dispararia - regressao f58e818). Padrao robusto p/ autocomplete.
+                  e.preventDefault();
+                  onSelect();
+                },
+                onMouseEnter: () => setHighlightIndex(i),
+              });
             })}
           </div>
         )}
