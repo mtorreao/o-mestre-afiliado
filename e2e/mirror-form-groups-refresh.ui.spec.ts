@@ -61,13 +61,31 @@ async function loginDirect(page: Page): Promise<string> {
   return token;
 }
 
-/** Mocka /api/whatsapp/groups com a fixture de grupos (com e sem pictureUrl). */
+/** PNG 1x1 transparente válido — as URLs de exemplo (example.com) não servem
+ *  imagem de verdade: devolvem HTML, o decode do <img> falha e o onError do
+ *  GroupAvatar troca por <span> com inicial. No runner do CI (rede rápida)
+ *  o erro chega antes do toBeVisible e o teste quebra; localmente a rede
+ *  lenta fazia o teste ganhar a corrida. Mockar com PNG real torna o teste
+ *  determinístico nos dois ambientes. */
+const MOCK_AVATAR_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+/** Mocka /api/whatsapp/groups com a fixture de grupos (com e sem pictureUrl)
+ *  e devolve um PNG válido para as URLs de avatar mockadas. */
 async function mockWhatsAppGroups(page: Page) {
   await page.route('**/api/whatsapp/groups**', (route) => {
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ success: true, groups: MOCK_GROUPS, fromCache: false }),
+    });
+  });
+  // Avatar: qualquer URL example.com responde com PNG 1x1 (nunca dispara onError).
+  await page.route('https://example.com/**', (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: Buffer.from(MOCK_AVATAR_PNG, 'base64'),
     });
   });
 }
