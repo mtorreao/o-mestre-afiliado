@@ -24,11 +24,57 @@ import { test, expect } from '@playwright/test';
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 
+// /api/worker/* exige super admin (ADMIN_EMAILS + is_admin no DB).
+// No E2E, o compose define ADMIN_EMAILS=e2e-admin@e2e.local; o register
+// promove o usuário a admin automaticamente via isEmailAdminAllowed.
+const ADMIN_EMAIL = 'e2e-admin@e2e.local';
+const ADMIN_PASSWORD = 'Test@123456';
+
+async function getAdminToken(): Promise<string> {
+  // Tenta login primeiro (idempotente entre execuções); se falhar, registra.
+  const loginRes = await fetch(`${API}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
+  });
+  if (loginRes.ok) {
+    const data = (await loginRes.json()) as { token: string };
+    return data.token;
+  }
+  const regRes = await fetch(`${API}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: ADMIN_EMAIL,
+      name: 'E2E Admin',
+      password: ADMIN_PASSWORD,
+    }),
+  });
+  if (!regRes.ok) {
+    const body = await regRes.json().catch(() => ({}));
+    throw new Error(`admin register failed: ${regRes.status} ${JSON.stringify(body)}`);
+  }
+  const data = (await regRes.json()) as { token: string };
+  return data.token;
+}
+
+async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = await getAdminToken();
+  return fetch(`${API}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(init.headers as Record<string, string> | undefined),
+    },
+  });
+}
+
 // ─── GET /api/worker/status ──────────────────────────────────────────
 
 test.describe('Worker Status — Agregador (Ingestor + Dispatcher)', () => {
   test('GET /api/worker/status retorna shape agregado', async () => {
-    const res = await fetch(`${API}/api/worker/status`);
+    const res = await authFetch('/api/worker/status');
     expect(res.status).toBe(200);
 
     const body = (await res.json()) as {
@@ -59,7 +105,7 @@ test.describe('Worker Status — Agregador (Ingestor + Dispatcher)', () => {
 
 test.describe('Worker DLQ — Listagem', () => {
   test('GET /api/worker/dlq retorna estrutura paginada', async () => {
-    const res = await fetch(`${API}/api/worker/dlq`);
+    const res = await authFetch('/api/worker/dlq');
     expect(res.status).toBe(200);
 
     const body = (await res.json()) as {
@@ -76,15 +122,15 @@ test.describe('Worker DLQ — Listagem', () => {
   });
 
   test('GET /api/worker/dlq aceita filtros server-side (queue, since)', async () => {
-    const res = await fetch(`${API}/api/worker/dlq?queue=A&since=24h&limit=50`);
+    const res = await authFetch('/api/worker/dlq?queue=A&since=24h&limit=50');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: unknown[] };
     expect(Array.isArray(body.items)).toBe(true);
   });
 
   test('GET /api/worker/dlq com since ISO não quebra', async () => {
-    const res = await fetch(
-      `${API}/api/worker/dlq?since=${encodeURIComponent('2020-01-01T00:00:00Z')}`,
+    const res = await authFetch(
+      `/api/worker/dlq?since=${encodeURIComponent('2020-01-01T00:00:00Z')}`,
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: unknown[] };
@@ -96,7 +142,7 @@ test.describe('Worker DLQ — Listagem', () => {
 
 test.describe('Worker DLQ — Operações', () => {
   test('POST /api/worker/dlq/requeue sem id retorna 400', async () => {
-    const res = await fetch(`${API}/api/worker/dlq/requeue`, { method: 'POST' });
+    const res = await authFetch('/api/worker/dlq/requeue', { method: 'POST' });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { success: boolean; error: string };
     expect(body.success).toBe(false);
@@ -105,7 +151,7 @@ test.describe('Worker DLQ — Operações', () => {
   test('POST /api/worker/dlq/requeue id inexistente retorna success=false', async () => {
     // Por convenção do projeto (AGENTS.md), erros de negócio NÃO retornam 4xx —
     // sempre HTTP 200 com { success: false }.
-    const res = await fetch(`${API}/api/worker/dlq/requeue?id=nao-existe-${Date.now()}`, {
+    const res = await authFetch(`/api/worker/dlq/requeue?id=nao-existe-${Date.now()}`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -114,12 +160,12 @@ test.describe('Worker DLQ — Operações', () => {
   });
 
   test('POST /api/worker/dlq/remove sem id retorna 400', async () => {
-    const res = await fetch(`${API}/api/worker/dlq/remove`, { method: 'POST' });
+    const res = await authFetch('/api/worker/dlq/remove', { method: 'POST' });
     expect(res.status).toBe(400);
   });
 
   test('POST /api/worker/dlq/remove id inexistente retorna false', async () => {
-    const res = await fetch(`${API}/api/worker/dlq/remove?id=nao-existe-${Date.now()}`, {
+    const res = await authFetch(`/api/worker/dlq/remove?id=nao-existe-${Date.now()}`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -128,7 +174,7 @@ test.describe('Worker DLQ — Operações', () => {
   });
 
   test('POST /api/worker/dlq/purge retorna número (itens removidos)', async () => {
-    const res = await fetch(`${API}/api/worker/dlq/purge`, { method: 'POST' });
+    const res = await authFetch('/api/worker/dlq/purge', { method: 'POST' });
     expect(res.status).toBe(200);
     const body = (await res.json()) as number;
     expect(typeof body).toBe('number');
