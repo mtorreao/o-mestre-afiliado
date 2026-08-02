@@ -114,7 +114,9 @@ await mock.module('../../../middleware/auth.ts', () => ({
   getAuthUser: getAuthUserMock,
 }));
 
+const realGroupCache = await import('../../../services/group-cache.ts');
 await mock.module('../../../services/group-cache.ts', () => ({
+  ...realGroupCache,
   replaceSourceGroups: replaceSourceGroupsMock,
   removeSourceGroups: removeSourceGroupsMock,
 }));
