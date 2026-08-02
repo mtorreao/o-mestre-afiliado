@@ -13,6 +13,11 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   workers: 1,
+  // Fail-fast: para a suíte no PRIMEIRO teste que falhar. No CI o job e2e
+  // tem timeout de 45min e ~224 testes; com uma falha, o restante é
+  // garantidamente ruído — parar cedo economiza minutos de Actions e
+  // acelera o feedback (o report de falha é o mesmo).
+  maxFailures: 1,
 
   // Report em CI: HTML (playwright-report/) + terminal. Screenshot e trace
   // só em falha — o job e2e do GitHub Actions sobe esses artefatos.
