@@ -165,10 +165,12 @@ export function SettingsPage({ user, token }: SettingsPageProps) {
                     style={{
                       fontSize: 'var(--text-xs)',
                       fontWeight: 500,
-                      color: ml.hasSessionCookies ? 'var(--color-success)' : 'var(--color-warning)',
+                      color: ml.hasSessionCookies
+                        ? 'var(--color-success)'
+                        : 'var(--color-text-muted)',
                     }}
                   >
-                    {ml.hasSessionCookies ? '✅ Cookies OK' : '⚠️ Sem cookies'}
+                    {ml.hasSessionCookies ? '🔗 Cookies OK' : '📎 Sem cookies'}
                   </span>
                 }
               >

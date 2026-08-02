@@ -102,15 +102,6 @@ export function MlConfigSection({
             ✅ Salvo!
           </span>
         )}
-        <span
-          style={{
-            fontSize: 'var(--text-xs)',
-            fontWeight: 500,
-            color: hasSessionCookies ? 'var(--color-success)' : 'var(--color-text-muted)',
-          }}
-        >
-          {hasSessionCookies ? '🔗 Cookies OK' : '📎 Sem cookies'}
-        </span>
       </div>
       <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: 0 }}>
         Para importar cookies de sessão, use a{' '}
