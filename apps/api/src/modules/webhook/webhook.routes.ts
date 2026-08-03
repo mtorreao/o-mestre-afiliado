@@ -23,7 +23,6 @@ import {
 import type { RawMessageEvent } from '@omestre/shared';
 import { streamAdd, cacheGet, cacheSet, cacheDel } from '../../services/redis.ts';
 import { getSourceGroupInfo, cacheSourceGroup } from '../../services/group-cache.ts';
-import { fetchGroupInfo } from '../../services/evolution.ts';
 
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
@@ -181,7 +180,11 @@ async function handleMessagesUpsert(
       continue;
     }
 
-    // Busca no cache Redis se este grupo é um sourceGroup configurado
+    // Busca no cache Redis se este grupo é um sourceGroup configurado.
+    // Decisão de publicar/ignorar fica no cache (com fallback PG em miss).
+    // O nome do grupo vem SÓ do cache — a resolução via Evolution API
+    // foi desacoplada para o ingestor (opção B) para não bloquear o
+    // caminho quente do webhook em I/O externo.
     const info = await getSourceGroupInfo(remoteJid);
     if (!info) {
       ignored++;
@@ -189,19 +192,8 @@ async function handleMessagesUpsert(
     }
     const { affiliateId, mirrorId, groupName } = info;
 
-    // Se o nome do grupo não está no cache, tenta buscar via Evolution API
-    let resolvedGroupName = groupName;
-    if (!resolvedGroupName) {
-      try {
-        const groupInfo = await fetchGroupInfo(instanceName, remoteJid);
-        if (groupInfo?.name) {
-          resolvedGroupName = groupInfo.name;
-          await cacheSourceGroup(remoteJid, affiliateId, resolvedGroupName, mirrorId);
-        }
-      } catch {
-        // Falha silenciosa — usa nome vazio
-      }
-    }
+    // Nome do grupo: do cache (sem chamar Evolution no hot path).
+    const resolvedGroupName = groupName ?? '';
 
     // ── Dedup de webhook (global, 30s) ──
     // Evita RawMessageEvent duplicado quando múltiplas instâncias

@@ -108,3 +108,18 @@ describe('Item #3 — safeEqual unit (constant-time)', () => {
     expect(elapsed).toBeLessThan(10); // ms
   });
 });
+
+describe('Item — Webhook desacoplado da Evolution no hot path (opção B)', () => {
+  it('NÃO importa fetchGroupInfo do services/evolution (resolução movida p/ ingestor)', () => {
+    expect(source).not.toContain("from '../../services/evolution.ts'");
+    expect(source).not.toContain('fetchGroupInfo(');
+  });
+
+  it('usa o nome já presente no cache (sem chamada externa ao hot path)', () => {
+    expect(source).toContain('const resolvedGroupName = groupName ??');
+  });
+
+  it('mantém getSourceGroupInfo para decidir publicar/ignorar', () => {
+    expect(source).toContain('getSourceGroupInfo(remoteJid)');
+  });
+});

@@ -45,7 +45,9 @@
     "dev:catalog-worker": "bun run --cwd apps/catalog-worker dev",
     "build:catalog-worker": "bun run --cwd apps/catalog-worker build",
     "backfill": "bun run --cwd apps/catalog-worker backfill",
-    "magalu": "bun run --cwd packages/converters magalu"
+    "magalu": "bun run --cwd packages/converters magalu",
+    "loadtest": "bun run apps/loadtest/src/index.ts",
+    "loadtest:mock": "bun run apps/loadtest/src/index.ts --mock --all"
   },
   "engines": {
     "bun": ">=1.3.0"
