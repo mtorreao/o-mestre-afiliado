@@ -6,15 +6,28 @@ const API_PORT = process.env.API_PORT || '15442';
 const API_MIRROR_PORT = process.env.API_MIRROR_PORT || '15447';
 const SIMULATOR_PORT = process.env.SIMULATOR_PORT || '15446';
 
-// Paralelização por arquivo (workers:2): isolado via escopo do simulador por
-// instanceName (apps/whatsapp-simulator/src/index.ts aceita ?instanceName= em
-// /__admin/messages e /__admin/reset). Cada teste usa seu proprio user-{id}
-// (unico via uniqueEmail), eliminando colisão no estado do simulador.
+// Paralelização por arquivo. Default 2 (validado empiricamente: ~1.83x mais
+// rapido que 1 worker; 223 passed em 2.8min vs 5.2min, sem diferenca no resultado).
 //
+// Isolamento: cada teste opera em seu proprio instanceName (user-{id}, unico
+// via uniqueEmail). O simulador escopa por instanceName via query param em
+// /__admin/messages e /__admin/reset (apps/whatsapp-simulator/src/index.ts).
 // Antes (workers:1): mirror-flow e mirror-pipeline colidiam no sentMessages
-// global → flake determinístico. Resolvido pela query ?instanceName=. Validado
-// empiricamente: 223 passed em 2.8min com workers=2.
-const WORKERS = 2;
+// global → flake determinístico. Resolvido pela query ?instanceName=.
+//
+// Customizacao via env var: E2E_WORKERS=N. Valores invalidos (<1, NaN)
+// caem no default. Exemplos:
+//   E2E_WORKERS=4 bun run test:e2e   # 4 workers paralelos
+//   E2E_WORKERS=1 bun run test:e2e   # serial (debug)
+//   bun run test:e2e                 # default 2
+function parseWorkers(): number {
+  const raw = process.env.E2E_WORKERS;
+  if (raw === undefined || raw === '') return 2;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return 2;
+  return Math.floor(n);
+}
+const WORKERS = parseWorkers();
 
 export default defineConfig({
   testDir: __dirname,
