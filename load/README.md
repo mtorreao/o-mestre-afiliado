@@ -4,15 +4,15 @@ Stack mínima para testes de carga, isolada de dev (545x) e prod (544x):
 
 | Serviço    | Container                   | Porta host | Limite CPU | Limite mem |
 | ---------- | --------------------------- | ---------- | ---------- | ---------- |
-| API        | omestre_loadtest_api        | 5502       | 1.0        | 1024M      |
-| Ingestor   | omestre_loadtest_ingestor   | 5506       | 0.75       | 768M       |
-| Dispatcher | omestre_loadtest_dispatcher | 5507       | 0.5        | 512M       |
-| PostgreSQL | omestre_loadtest_postgres   | 5503       | 1.0        | 768M       |
-| Redis      | omestre_loadtest_redis      | 5505       | 0.5        | 512M       |
-| Evolution  | omestre_loadtest_evolution  | 5504       | 0.5        | 512M       |
+| API        | omestre_loadtest_api        | 5502       | 0.7        | 768M       |
+| Ingestor   | omestre_loadtest_ingestor   | 5506       | 0.5        | 512M       |
+| Dispatcher | omestre_loadtest_dispatcher | 5507       | 0.3        | 256M       |
+| PostgreSQL | omestre_loadtest_postgres   | 5503       | 0.6        | 768M       |
+| Redis      | omestre_loadtest_redis      | 5505       | 0.3        | 256M       |
+| Evolution  | omestre_loadtest_evolution  | 5504       | 0.3        | 384M       |
 
-Total: ~4.25 CPU / ~3.3 GB — cabe em máquina com 12 CPUs / 7.3 GB Docker
-sem travar (os limites de recursos impedem OOM/stall).
+Total: ~2.7 CPU / ~2.9 GB — simula um host de 4 vCPU / 8 GB RAM (VPS pequeno).
+Sobra ~1.3 vCPU / ~5 GB pro Docker, OS e buffers; os limites impedem OOM/stall.
 
 ## Uso rápido
 
