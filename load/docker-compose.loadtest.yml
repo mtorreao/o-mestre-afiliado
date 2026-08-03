@@ -1,0 +1,266 @@
+# docker-compose.loadtest.yml — Stack mínima para testes de carga (Bun)
+#
+# DIFERENÇA do dev compose:
+#   - Stack pequena: postgres + redis + evolution + api + ingestor + dispatcher
+#   - Sem web, sem catalog-worker, sem tunnel
+#   - Portas isoladas (550x) — não conflita com dev (545x) nem prod (544x)
+#   - Limites de CPU/memória explícitos por serviço para não travar a máquina
+#   - Volume dedicado (omestre_loadtest_*) — recomeça do zero a cada bring-up
+#   - Imagem builtada a partir do branch corrente (loadtest-control.ts build)
+#
+# USO (via load/loadtest-control.ts):
+#   bun run load/loadtest-control.ts up --build
+#   bun run load/loadtest-control.ts ramp
+#   bun run load/loadtest-control.ts down
+#
+# Ou via docker compose direto:
+#   docker compose -f load/docker-compose.loadtest.yml up -d --build
+#
+# PORTAS (faixa 550x para isolar de dev=545x, prod=544x, e2e=1544x):
+#   API        5502  (container:5442)
+#   Ingestor   5506  (container:9092)
+#   Dispatcher 5507  (container:9093)
+#   PostgreSQL 5503  (container:5432)
+#   Redis      5505  (container:6379)
+#   Evolution  5504  (container:8080)
+#
+# RECURSOS (host: 12 CPUs / 7.3 GB Docker):
+#   Cada serviço tem deploy.resources.limits (CPU + mem) para impedir OOM
+#   ou stall da máquina inteira durante ramp-up.
+
+name: omestre-loadtest
+
+x-app-env: &app-env
+  env_file:
+    - ${LOADTEST_ENV_FILE:-.env}
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    container_name: omestre_loadtest_postgres
+    command:
+      - postgres
+      - -c
+      - max_connections=500
+      - -c
+      - listen_addresses=*
+    environment:
+      POSTGRES_DB: omestre_db
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+    volumes:
+      - omestre_loadtest_postgres_data:/var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:5503:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U evolution -d omestre_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [loadtest]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    container_name: omestre_loadtest_redis
+    # --save "" desabilita persistência (rdbs) e --appendonly no mantém AOF.
+    # Em teste de carga queremos medir o webhook in-process, não I/O de
+    # disco do Redis. Se a máquina reiniciar, o cache é warmado de novo.
+    command: redis-server --port 6379 --save "" --appendonly no --timeout 0 --maxmemory 384mb --maxmemory-policy allkeys-lru
+    ports:
+      - '127.0.0.1:5505:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [loadtest]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    container_name: omestre_loadtest_evolution
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:5504:8080'
+    volumes:
+      - omestre_loadtest_evolution_instances:/evolution/instances
+    environment:
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${POSTGRES_PASSWORD:-evolution_pass}@postgres:5432/omestre_db?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: omestre_afiliado_loadtest
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      DATABASE_SAVE_DATA_CONTACTS: 'true'
+      DATABASE_SAVE_DATA_CHATS: 'true'
+      DATABASE_SAVE_DATA_LABELS: 'true'
+      DATABASE_SAVE_DATA_HISTORIC: 'true'
+      SERVER_NAME: evolution
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: http://localhost:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-loadtest-key}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'true'
+      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_URI: redis://redis:6379
+      CACHE_LOCAL_ENABLED: 'false'
+    networks: [loadtest]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # APPS
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: api
+      args:
+        NODE_ENV: development
+    restart: unless-stopped
+    container_name: omestre_loadtest_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:5502:5442'
+    <<: *app-env
+    environment:
+      API_PORT: '5442'
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-loadtest-key}
+      FRONTEND_URL: http://localhost:5502
+      WORKER_METRICS_URL: http://ingestor:9092
+      DISPATCHER_METRICS_URL: http://dispatcher:9093
+      WEBHOOK_URL: http://api:5442/webhook/message
+      REDIS_URL: redis://redis:6379
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-loadtest-encryption-key-please-change}
+      METRICS_API_KEY: ${METRICS_API_KEY:-}
+      # NODE_ENV=development no build arg; runtime default do Dockerfile é production
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks: [loadtest]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+
+  ingestor:
+    build:
+      context: ..
+      dockerfile: apps/ingestor/Dockerfile
+    restart: unless-stopped
+    container_name: omestre_loadtest_ingestor
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:5506:9092'
+    <<: *app-env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-loadtest-key}
+      REDIS_URL: redis://redis:6379
+      METRICS_API_KEY: ${METRICS_API_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-loadtest-encryption-key-please-change}
+      BLACKLIST_PATH: /app/blacklist.json
+      WHITELIST_PATH: /app/whitelist.json
+      METRICS_PORT: '9092'
+    volumes:
+      - ../blacklist.json:/app/blacklist.json:ro
+      - ../whitelist.json:/app/whitelist.json:ro
+    networks: [loadtest]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 768M
+
+  dispatcher:
+    build:
+      context: ..
+      dockerfile: apps/dispatcher/Dockerfile
+    restart: unless-stopped
+    container_name: omestre_loadtest_dispatcher
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:5507:9093'
+    <<: *app-env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-loadtest-key}
+      REDIS_URL: redis://redis:6379
+      METRICS_API_KEY: ${METRICS_API_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-loadtest-encryption-key-please-change}
+      METRICS_PORT: '9093'
+    networks: [loadtest]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  loadtest:
+    name: omestre_loadtest_net
+    driver: bridge
+
+volumes:
+  omestre_loadtest_postgres_data:
+  omestre_loadtest_evolution_instances:
