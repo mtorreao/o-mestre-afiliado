@@ -13,7 +13,7 @@ import {
   authGet,
   authPost,
   authPut,
-} from './helpers.ts';
+} from '../../helpers/index.ts';
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 

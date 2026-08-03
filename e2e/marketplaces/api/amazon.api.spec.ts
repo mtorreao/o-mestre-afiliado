@@ -10,7 +10,7 @@
  *   - Edge cases de URL Amazon
  */
 import { test, expect } from '@playwright/test';
-import { createTestUser, authGet, authPost, authDelete } from './helpers.ts';
+import { createTestUser, authGet, authPost, authDelete } from '../../helpers/index.ts';
 
 const VALID_TAG = 'meusite-20';
 const VALID_TAG_2 = 'meusite-tg-20';

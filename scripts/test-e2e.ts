@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dir, '..');
-const COMPOSE_FILE = resolve(ROOT, 'e2e/docker-compose.e2e.yml');
+const COMPOSE_FILE = resolve(ROOT, 'e2e/infra/docker-compose.e2e.yml');
 
 function run(cmd: string, args: string[], label: string): void {
   console.log(`\n━━━ ${label} ━━━`);
@@ -37,10 +37,11 @@ function run(cmd: string, args: string[], label: string): void {
 run('bun', ['run', 'build:web'], 'Build web');
 
 // ─── 2. Subir stack ──────────────────────────────────────────────────
-run('docker', [
-  'compose', '-f', COMPOSE_FILE,
-  'up', '-d', '--wait', '--build', '--remove-orphans',
-], 'Subir stack E2E');
+run(
+  'docker',
+  ['compose', '-f', COMPOSE_FILE, 'up', '-d', '--wait', '--build', '--remove-orphans'],
+  'Subir stack E2E',
+);
 
 // ─── 2.5. Warmup: aguarda Evolution API ficar responsiva ───────────
 // Após o healthcheck passar, a Evolution API pode levar alguns
@@ -92,22 +93,25 @@ for (let attempt = 1; attempt <= 5; attempt++) {
 }
 
 // ─── 3. Rodar testes ────────────────────────────────────────────────
-const testResult = spawnSync('bun', [
-  'x', 'playwright', 'test', '--config', 'e2e/playwright.config.ts',
-], {
-  cwd: ROOT,
-  stdio: 'inherit',
-  shell: process.platform === 'win32',
-});
+const testResult = spawnSync(
+  'bun',
+  ['x', 'playwright', 'test', '--config', 'e2e/playwright.config.ts'],
+  {
+    cwd: ROOT,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  },
+);
 
 const testsPassed = testResult.status === 0;
 
 // ─── 4. Derrubar stack ───────────────────────────────────────────────
 if (!process.env.SKIP_TEARDOWN) {
-  run('docker', [
-    'compose', '-f', COMPOSE_FILE,
-    'down', '-v', '--remove-orphans', '--timeout', '15',
-  ], 'Derrubar stack E2E');
+  run(
+    'docker',
+    ['compose', '-f', COMPOSE_FILE, 'down', '-v', '--remove-orphans', '--timeout', '15'],
+    'Derrubar stack E2E',
+  );
 } else {
   console.log('\n⚠️  SKIP_TEARDOWN=1 — stack E2E mantido rodando');
 }

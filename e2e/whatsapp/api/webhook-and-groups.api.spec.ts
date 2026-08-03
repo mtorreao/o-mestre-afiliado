@@ -19,7 +19,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { createTestUser, authGet } from './helpers.ts';
+import { createTestUser, authGet } from '../../helpers/index.ts';
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 

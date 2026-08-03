@@ -7,7 +7,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { uniqueEmail, TEST_PASSWORD, TEST_NAME } from './helpers.ts';
+import { uniqueEmail, TEST_PASSWORD, TEST_NAME } from '../../helpers/index.ts';
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 

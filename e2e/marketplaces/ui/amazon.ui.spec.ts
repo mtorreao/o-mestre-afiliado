@@ -3,7 +3,7 @@
  */
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { uniqueEmail, TEST_NAME, TEST_PASSWORD } from './helpers.ts';
+import { uniqueEmail, TEST_NAME, TEST_PASSWORD } from '../../helpers/index.ts';
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 const TRACKING_ID = 'meusite-whatsapp-20';
