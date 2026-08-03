@@ -6,12 +6,15 @@ const API_PORT = process.env.API_PORT || '15442';
 const API_MIRROR_PORT = process.env.API_MIRROR_PORT || '15447';
 const SIMULATOR_PORT = process.env.SIMULATOR_PORT || '15446';
 
-// Manter SERIAL (workers:1): mirror-flow.api.spec.ts e mirror-pipeline.api.spec.ts
-// compartilham o estado globob de mensagens do simulador e ambos resetam tudo
-// via resetSimulator() (sentMessages global). Com workers>1, os 2 arquivos rodam
-// em paralelo e um apaga a mensagem que o outro verifica → flake determinístico.
-// Subir workers SÓ após isolar o simulador por instância (não feito). Local também 1.
-const WORKERS = 2; // EXPERIMENTO: paralelizar 2 arquivos p/ validar colisao do simulador
+// Paralelização por arquivo (workers:2): isolado via escopo do simulador por
+// instanceName (apps/whatsapp-simulator/src/index.ts aceita ?instanceName= em
+// /__admin/messages e /__admin/reset). Cada teste usa seu proprio user-{id}
+// (unico via uniqueEmail), eliminando colisão no estado do simulador.
+//
+// Antes (workers:1): mirror-flow e mirror-pipeline colidiam no sentMessages
+// global → flake determinístico. Resolvido pela query ?instanceName=. Validado
+// empiricamente: 223 passed em 2.8min com workers=2.
+const WORKERS = 2;
 
 export default defineConfig({
   testDir: __dirname,
