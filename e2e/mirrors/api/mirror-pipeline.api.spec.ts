@@ -32,12 +32,12 @@
 
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
-import { createTestUser } from './helpers.ts';
+import { createTestUser } from '../../helpers/index.ts';
 import {
   resetSimulatorInstance,
   getSimulatorMessagesFor,
   waitForMessagesOnInstance,
-} from './helpers.ts';
+} from '../../helpers/index.ts';
 
 const API_MIRROR = process.env.API_MIRROR_URL || 'http://localhost:15447';
 const SIMULATOR = process.env.SIMULATOR_URL || 'http://localhost:15446';

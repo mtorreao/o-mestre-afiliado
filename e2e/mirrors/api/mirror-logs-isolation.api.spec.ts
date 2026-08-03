@@ -13,7 +13,13 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { createTestUser, uniqueEmail, TEST_PASSWORD, TEST_NAME, authGet } from './helpers.ts';
+import {
+  createTestUser,
+  uniqueEmail,
+  TEST_PASSWORD,
+  TEST_NAME,
+  authGet,
+} from '../../helpers/index.ts';
 
 const API = process.env.API_URL || `http://localhost:${process.env.API_PORT || '15442'}`;
 const PG_CONTAINER = 'omestre_e2e_postgres';

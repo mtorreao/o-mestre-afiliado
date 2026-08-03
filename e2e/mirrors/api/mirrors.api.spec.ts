@@ -28,7 +28,7 @@ import {
   authGet,
   authPost,
   authPut,
-} from './helpers.ts';
+} from '../../helpers/index.ts';
 
 // CRUD de mirrors exige validação de admin no grupo destino (feature
 // "destino exige admin"). Isso consulta a Evolution API da instância —

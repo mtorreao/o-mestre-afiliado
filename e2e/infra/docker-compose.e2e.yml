@@ -116,7 +116,7 @@ services:
   api-e2e:
     container_name: omestre_e2e_api
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/api/Dockerfile
       cache_from:
         - type=gha
@@ -156,7 +156,7 @@ services:
   web-e2e:
     container_name: omestre_e2e_web
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/web/Dockerfile
       cache_from:
         - type=gha
@@ -176,7 +176,7 @@ services:
   ingestor-e2e:
     container_name: omestre_e2e_ingestor
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/ingestor/Dockerfile
       cache_from:
         - type=gha
@@ -203,7 +203,7 @@ services:
   dispatcher-e2e:
     container_name: omestre_e2e_dispatcher
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/dispatcher/Dockerfile
       cache_from:
         - type=gha
@@ -233,7 +233,7 @@ services:
   whatsapp-simulator-e2e:
     container_name: omestre_e2e_simulator
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/whatsapp-simulator/Dockerfile
       cache_from:
         - type=gha
@@ -249,7 +249,7 @@ services:
   api-e2e-mirror:
     container_name: omestre_e2e_api_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/api/Dockerfile
       cache_from:
         - type=gha
@@ -296,7 +296,7 @@ services:
   ingestor-e2e-mirror:
     container_name: omestre_e2e_ingestor_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/ingestor/Dockerfile
       cache_from:
         - type=gha
@@ -324,7 +324,7 @@ services:
   dispatcher-e2e-mirror:
     container_name: omestre_e2e_dispatcher_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/dispatcher/Dockerfile
       cache_from:
         - type=gha

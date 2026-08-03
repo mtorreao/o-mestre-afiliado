@@ -16,7 +16,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dir, '..');
-const E2E_COMPOSE = resolve(ROOT, 'e2e/docker-compose.e2e.yml');
+const E2E_COMPOSE = resolve(ROOT, 'e2e/infra/docker-compose.e2e.yml');
 const PROD_COMPOSE = resolve(ROOT, 'docker-compose.yml');
 const SKIP_E2E = process.env.SKIP_E2E === '1';
 
@@ -45,29 +45,35 @@ if (!SKIP_E2E) {
   console.log('\n━━━ Rodando testes E2E (pré-requisito para deploy) ━━━');
 
   // Sobe stack E2E
-  if (!run('docker', [
-    'compose', '-f', E2E_COMPOSE,
-    'up', '-d', '--wait', '--build', '--remove-orphans',
-  ], 'Subir stack E2E')) {
+  if (
+    !run(
+      'docker',
+      ['compose', '-f', E2E_COMPOSE, 'up', '-d', '--wait', '--build', '--remove-orphans'],
+      'Subir stack E2E',
+    )
+  ) {
     process.exit(1);
   }
 
   // Roda testes
-  const testResult = spawnSync('npx', [
-    'playwright', 'test', '--config', 'e2e/playwright.config.ts',
-  ], {
-    cwd: ROOT,
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-  });
+  const testResult = spawnSync(
+    'npx',
+    ['playwright', 'test', '--config', 'e2e/playwright.config.ts'],
+    {
+      cwd: ROOT,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    },
+  );
 
   const testsPassed = testResult.status === 0;
 
   // Derruba stack E2E (sempre, mesmo se falhar)
-  run('docker', [
-    'compose', '-f', E2E_COMPOSE,
-    'down', '-v', '--remove-orphans', '--timeout', '15',
-  ], 'Derrubar stack E2E');
+  run(
+    'docker',
+    ['compose', '-f', E2E_COMPOSE, 'down', '-v', '--remove-orphans', '--timeout', '15'],
+    'Derrubar stack E2E',
+  );
 
   if (!testsPassed) {
     console.error(`\n❌ ${testResult.status ?? 1} teste(s) falharam — deploy cancelado`);
@@ -81,23 +87,27 @@ if (!SKIP_E2E) {
 
 // ─── 3. Subir produção (com rebuild) ──────────────────────────────────
 console.log('\n━━━ Deploy produção ━━━');
-if (!run('docker', [
-  'compose', '-f', PROD_COMPOSE,
-  'up', '-d', '--build', '--remove-orphans',
-], 'Deploy produção')) {
+if (
+  !run(
+    'docker',
+    ['compose', '-f', PROD_COMPOSE, 'up', '-d', '--build', '--remove-orphans'],
+    'Deploy produção',
+  )
+) {
   process.exit(1);
 }
 
 // ─── 4. Verificar saúde ──────────────────────────────────────────────
 console.log('\n━━━ Verificando saúde ━━━');
-const healthResult = spawnSync('curl', [
-  '-s', '-o', '/dev/null', '-w', '%{http_code}',
-  'http://localhost:5442/health',
-], {
-  cwd: ROOT,
-  timeout: 30_000,
-  shell: process.platform === 'win32',
-});
+const healthResult = spawnSync(
+  'curl',
+  ['-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://localhost:5442/health'],
+  {
+    cwd: ROOT,
+    timeout: 30_000,
+    shell: process.platform === 'win32',
+  },
+);
 const healthStatus = parseInt(healthResult.stdout?.toString().trim() || '0', 10);
 
 if (healthStatus === 200) {
