@@ -178,14 +178,19 @@ async function cmdWait(flags: FlagMap): Promise<void> {
   console.error('Healthcheck NAO passou em ' + maxAttempts + ' tentativas.');
   process.exit(1);
 }
-function runLoadtest(flags: FlagMap, target: string): { code: number; stdout: string } {
+function runLoadtest(
+  flags: FlagMap,
+  target: string,
+  scenarioOverride?: string,
+): { code: number; stdout: string } {
   const key = getApiKey(flags);
-  const scenario = readFlag(flags, 'scenario', DEFAULT_SCENARIO);
+  const scenario = scenarioOverride ?? readFlag(flags, 'scenario', DEFAULT_SCENARIO);
   const stages = readFlag(flags, 'stages', DEFAULT_RAMP_STAGES);
   const ramp = flags.ramp === true || !!flags.stages || (flags.mode as string) === 'ramp';
   const args = ['run', '--cwd', 'apps/loadtest', 'src/index.ts'];
   if (flags.mock === true) args.push('--mock');
   args.push(ramp ? '--ramp' : '--all', '--target', target, '--key', key, '--scenario', scenario);
+  if (typeof flags.token === 'string' && flags.token.length > 0) args.push('--token', flags.token);
   if (ramp) args.push('--stages', stages);
   console.log(
     (ramp ? 'ramp' : 'all') +
@@ -218,6 +223,99 @@ function cmdRamp(flags: FlagMap): void {
   const out = runLoadtest(flags, target);
   console.log(out.stdout);
   if (out.code !== 0) process.exit(out.code);
+}
+
+const FLOW_SCENARIOS = [
+  'onboarding-auth-flow',
+  'affiliate-crud',
+  'webhook-ingest-burst',
+  'webhook-secondary',
+  'webhook-ignored',
+  'webhook-malformed',
+  'webhook-login-mixed',
+  'dashboard-reads',
+];
+
+async function cmdFlow(flags: FlagMap): Promise<void> {
+  const target = readFlag(flags, 'api-url', DEFAULT_API);
+  // Tenta obter um token real (register + login) para os cenarios autenticados.
+  let token = typeof flags.token === 'string' && flags.token.length > 0 ? flags.token : undefined;
+  if (!token) {
+    const email = 'flow-user@omestre.local';
+    const password = 'Flow@123456';
+    // SEM shell: no Windows o shell corrompe o JSON do -d (aspas). O Bun
+    // resolve o curl via PATH nativamente.
+    const curlNoShell = { stdio: 'pipe' as const, encoding: 'utf8' as const, shell: false };
+    const reg = spawnSync(
+      'curl',
+      [
+        '-sS',
+        '-m',
+        '5',
+        '-X',
+        'POST',
+        target + '/api/auth/register',
+        '-H',
+        'Content-Type: application/json',
+        '-d',
+        JSON.stringify({ email, name: 'Flow User', password }),
+      ],
+      curlNoShell,
+    );
+    const login = spawnSync(
+      'curl',
+      [
+        '-sS',
+        '-m',
+        '5',
+        '-X',
+        'POST',
+        target + '/api/auth/login',
+        '-H',
+        'Content-Type: application/json',
+        '-d',
+        JSON.stringify({ email, password }),
+      ],
+      curlNoShell,
+    );
+    try {
+      const parsed = JSON.parse((login.stdout ?? '') || (reg.stdout ?? ''));
+      if (parsed && typeof parsed.token === 'string') token = parsed.token;
+    } catch {
+      token = undefined;
+    }
+  }
+  const flowFlags = token ? { ...flags, token } : flags;
+  console.log('');
+  console.log('===== FLUXO COMPLETO (8 cenarios, etapa 1/8 .. 8/8) =====');
+  console.log('target: ' + target + (token ? ' (com token real)' : ' (sem token)'));
+  let failed = 0;
+  const results: Array<{ name: string; code: number; summary: string }> = [];
+  for (let i = 0; i < FLOW_SCENARIOS.length; i++) {
+    const name = FLOW_SCENARIOS[i]!;
+    console.log('');
+    console.log('--- [' + (i + 1) + '/' + FLOW_SCENARIOS.length + '] ' + name + ' ---');
+    const out = runLoadtest(flowFlags, target, name);
+    // Compacta o stdout: mostra so o fim (relatorio + SLO)
+    const lines = out.stdout.split(String.fromCharCode(10));
+    const tail = lines.slice(-18).join(String.fromCharCode(10));
+    console.log(tail);
+    const sloLine = lines.find((l) => l.includes('SLO'));
+    results.push({ name, code: out.code, summary: (sloLine ?? '').trim() });
+    if (out.code !== 0 && out.code !== 2) {
+      failed++;
+    }
+  }
+  console.log('');
+  console.log('===== RESUMO DO FLUXO =====');
+  for (const r of results) {
+    console.log('  ' + r.name.padEnd(28) + ' exit=' + r.code + '  ' + r.summary);
+  }
+  if (failed > 0) {
+    console.error('✗ ' + failed + ' cenário(s) falharam.');
+    process.exit(1);
+  }
+  console.log('✓ Fluxo completo concluído.');
 }
 
 interface StageRow {
@@ -383,6 +481,7 @@ function printHelp(): void {
   console.log('  wait [--api-url URL]    espera healthcheck da API passar');
   console.log('  smoke                   roda o loadtest contra o mock interno');
   console.log('  ramp [--stages SPEC]    ramp-up contra a stack loadtest');
+  console.log('  flow                    roda os 8 cenarios do fluxo completo');
   console.log('  compare <A> <B>         roda ramp contra 2 targets e imprime comparacao');
   console.log('  ps                      stats de CPU/mem dos containers (docker stats)');
   console.log('');
@@ -415,6 +514,8 @@ async function main(): Promise<void> {
       return cmdSmoke(flags);
     case 'ramp':
       return cmdRamp(flags);
+    case 'flow':
+      return cmdFlow(flags);
     case 'compare':
       return cmdCompare(flags, rest);
     case 'ps':

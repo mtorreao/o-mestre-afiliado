@@ -152,7 +152,9 @@ services:
       dockerfile: apps/api/Dockerfile
       target: api
       args:
-        NODE_ENV: development
+        # IMPORTANTE: o Dockerfile faz bun inline de process.env.NODE_ENV no
+        # bundle (build-time). test desliga os rate limits de auth para carga.
+        NODE_ENV: test
     restart: unless-stopped
     container_name: omestre_loadtest_api
     depends_on:
@@ -164,6 +166,8 @@ services:
       - '127.0.0.1:5502:5442'
     <<: *app-env
     environment:
+      # test desliga rate limits de auth (register 3/h, login 5/min) — carga
+      NODE_ENV: test
       API_PORT: '5442'
       POSTGRES_HOST: postgres
       POSTGRES_PORT: '5432'

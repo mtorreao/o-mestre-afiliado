@@ -14,6 +14,50 @@ Stack mínima para testes de carga, isolada de dev (545x) e prod (544x):
 Total: ~2.7 CPU / ~2.9 GB — simula um host de 4 vCPU / 8 GB RAM (VPS pequeno).
 Sobra ~1.3 vCPU / ~5 GB pro Docker, OS e buffers; os limites impedem OOM/stall.
 
+## Fluxo completo (8 cenários)
+
+`flow` encadeia todos os cenários na ordem do ciclo de vida do usuário e
+imprime um resumo final com o SLO de cada etapa:
+
+| Etapa | Cenário              | O que exercita                          |
+| ----- | -------------------- | --------------------------------------- |
+| 1     | onboarding-auth-flow | register + login + refresh + /me        |
+| 2     | affiliate-crud       | PUT profile + test-conversion + logs    |
+| 3     | webhook-ingest-burst | hot path (mensagens reais)              |
+| 4     | webhook-secondary    | connection/qrcode/groups updates        |
+| 5     | webhook-ignored      | grupos não monitorados (cache negativo) |
+| 6     | webhook-malformed    | payloads quebrados (rejeição graciosa)  |
+| 7     | webhook-login-mixed  | webhook + login misturados              |
+| 8     | dashboard-reads      | leituras autenticadas de painel         |
+
+```bash
+bun run load/loadtest-control.ts flow
+```
+
+## Resultado de referência (stack loadtest, 4 vCPU / 8 GB, 2026-08-03)
+
+`flow` contra `http://localhost:5502` (limites: api 0.7 CPU / 768 MB):
+
+| Etapa | Cenário              | 2xx | 4xx | 5xx | p95  | SLO |
+| ----- | -------------------- | --- | --- | --- | ---- | --- |
+| 1     | onboarding-auth-flow | 3   | 37  | 0   | 1610 | ✅  |
+| 2     | affiliate-crud       | 60  | 0   | 0   | 10   | ✅  |
+| 3     | webhook-ingest-burst | 200 | 0   | 0   | 20   | ✅  |
+| 4     | webhook-secondary    | 80  | 0   | 0   | 13   | ✅  |
+| 5     | webhook-ignored      | 100 | 0   | 0   | 14   | ✅  |
+| 6     | webhook-malformed    | 60  | 0   | 0   | 11   | ✅  |
+| 7     | webhook-login-mixed  | 76  | 24  | 0   | 2849 | ✅  |
+| 8     | dashboard-reads      | 40  | 20  | 0   | 16   | ✅  |
+
+Notas:
+
+- Os 4xx do onboarding (409/401) são esperados em rodadas repetidas (users já
+  cadastrados). O SLO monitora transporte + 5xx.
+- p95 alto em auth (1.6s / 2.8s) é o bcrypt (10 rounds) com CPU limitado —
+  custo real de register/login, não um vazamento.
+- Os 20×4xx do dashboard-reads são `/api/auth/me` com token de outro user
+  (rota exige o dono do token); worker/status e mirrors dão 200.
+
 ## Uso rápido
 
 ```bash
