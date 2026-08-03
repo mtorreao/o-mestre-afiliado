@@ -31,8 +31,7 @@ async function registerAndOpenAmazon(page: Page): Promise<void> {
 }
 
 test.describe('UI — integração Amazon', () => {
-  // EXPERIMENTO workers=2: spawn UNKNOWN ao subir 2º Chromium em paralelo (limitação local). Validar depois.
-  test.skip('exibe somente o cadastro de um Tracking ID', async ({ page }) => {
+  test('exibe somente o cadastro de um Tracking ID', async ({ page }) => {
     await registerAndOpenAmazon(page);
 
     const panel = page.getByRole('tabpanel', { name: 'Amazon' });
