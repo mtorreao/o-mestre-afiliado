@@ -132,13 +132,33 @@ const app = new Elysia()
   // ADMIN — para os testes inspecionarem o estado
   // ═══════════════════════════════════════════════════════════════════════
 
-  .get('/__admin/messages', () => ({
-    success: true,
-    messages: sentMessages,
-    count: sentMessages.length,
-  }))
+  .get('/__admin/messages', ({ query }) => {
+    const { instanceName } = (query || {}) as { instanceName?: string };
+    const filtered = instanceName
+      ? sentMessages.filter((m) => m.instanceName === instanceName)
+      : sentMessages;
+    return {
+      success: true,
+      messages: filtered,
+      count: filtered.length,
+    };
+  })
 
-  .post('/__admin/reset', () => {
+  .post('/__admin/reset', ({ query }) => {
+    const { instanceName } = (query || {}) as { instanceName?: string };
+    if (instanceName) {
+      // Escopo por instancia: limpa apenas instances/messages daquela instancia.
+      instances.delete(instanceName);
+      let i = sentMessages.length;
+      while (i--) {
+        if (sentMessages[i]!.instanceName === instanceName) sentMessages.splice(i, 1);
+      }
+      return {
+        success: true,
+        message: `Estado do simulador resetado para instanceName=${instanceName}`,
+      };
+    }
+    // Reset global (legado - usado para debug entre suites inteiras).
     instances.clear();
     sentMessages.length = 0;
     requestIdCounter = 1;

@@ -116,7 +116,7 @@ services:
   api-e2e:
     container_name: omestre_qa_api
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/api/Dockerfile
     restart: no
     ports:
@@ -148,7 +148,7 @@ services:
   web-e2e:
     container_name: omestre_qa_web
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/web/Dockerfile
     restart: no
     ports:
@@ -164,7 +164,7 @@ services:
   ingestor-e2e:
     container_name: omestre_qa_ingestor
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/ingestor/Dockerfile
     restart: no
     networks:
@@ -187,7 +187,7 @@ services:
   dispatcher-e2e:
     container_name: omestre_qa_dispatcher
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/dispatcher/Dockerfile
     restart: no
     networks:
@@ -213,7 +213,7 @@ services:
   whatsapp-simulator-e2e:
     container_name: omestre_qa_simulator
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/whatsapp-simulator/Dockerfile
     restart: no
     ports:
@@ -225,7 +225,7 @@ services:
   api-e2e-mirror:
     container_name: omestre_qa_api_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/api/Dockerfile
     restart: no
     ports:
@@ -264,7 +264,7 @@ services:
   ingestor-e2e-mirror:
     container_name: omestre_qa_ingestor_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/ingestor/Dockerfile
     restart: no
     networks:
@@ -288,7 +288,7 @@ services:
   dispatcher-e2e-mirror:
     container_name: omestre_qa_dispatcher_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/dispatcher/Dockerfile
     restart: no
     networks:

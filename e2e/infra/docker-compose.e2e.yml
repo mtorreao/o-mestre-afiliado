@@ -116,8 +116,12 @@ services:
   api-e2e:
     container_name: omestre_e2e_api
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/api/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
       args:
         NODE_ENV: test
     restart: no
@@ -152,8 +156,12 @@ services:
   web-e2e:
     container_name: omestre_e2e_web
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/web/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     ports:
       - '127.0.0.1:15441:5441'
@@ -168,8 +176,12 @@ services:
   ingestor-e2e:
     container_name: omestre_e2e_ingestor
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/ingestor/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     networks:
       - e2e-net
@@ -191,8 +203,12 @@ services:
   dispatcher-e2e:
     container_name: omestre_e2e_dispatcher
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/dispatcher/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     networks:
       - e2e-net
@@ -217,8 +233,12 @@ services:
   whatsapp-simulator-e2e:
     container_name: omestre_e2e_simulator
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/whatsapp-simulator/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     ports:
       - '127.0.0.1:15446:8080'
@@ -229,8 +249,12 @@ services:
   api-e2e-mirror:
     container_name: omestre_e2e_api_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/api/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
       args:
         NODE_ENV: test
     restart: no
@@ -272,8 +296,12 @@ services:
   ingestor-e2e-mirror:
     container_name: omestre_e2e_ingestor_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/ingestor/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     networks:
       - e2e-net
@@ -296,8 +324,12 @@ services:
   dispatcher-e2e-mirror:
     container_name: omestre_e2e_dispatcher_mirror
     build:
-      context: ../
+      context: ../../
       dockerfile: apps/dispatcher/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
     restart: no
     networks:
       - e2e-net

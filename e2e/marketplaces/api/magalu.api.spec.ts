@@ -9,7 +9,7 @@
  *   - Compatibilidade do perfil e do teste de conversão compartilhado
  */
 import { test, expect } from '@playwright/test';
-import { createTestUser, authGet, authPut, authDelete, authPost } from './helpers.ts';
+import { createTestUser, authGet, authPut, authDelete, authPost } from '../../helpers/index.ts';
 
 const VALID_SLUG = 'magazinee2e';
 const INVALID_SLUG = 'A'; // muito curto
