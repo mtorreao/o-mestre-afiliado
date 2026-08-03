@@ -73,14 +73,21 @@ export function firstTargetGroup(mirror: Pick<MirrorLike, 'targetGroups'>): {
 export function buildSourceGroupConfig(
   mirror: MirrorLike,
   affiliateId: number,
+  sourceGroupJid?: string,
 ): SourceGroupConfig | null {
   const targetGroup = firstTargetGroup(mirror);
   if (!targetGroup) return null;
+
+  const sourceGroups = mirror.sourceGroups as { jid: string; name: string }[] | null;
+  const sourceGroup = sourceGroupJid
+    ? sourceGroups?.find((group) => group.jid === sourceGroupJid)
+    : sourceGroups?.[0];
 
   return {
     affiliateId,
     mirrorId: mirror.id,
     instanceName: instanceNameFromMirror(mirror),
+    groupName: sourceGroup?.name,
     targetGroupJid: targetGroup.jid,
     targetGroupName: targetGroup.name,
     messageTemplate: mirror.messageTemplate as string | null,
@@ -171,4 +178,18 @@ export function buildLegacySourceGroupValue(
     mirrorId,
     groupName: groupName ?? '',
   });
+}
+
+/** Prefixo da chave de cache NEGATIVO (grupo não é sourceGroup). */
+export const NEGATIVE_CACHE_PREFIX = 'mirror:source-group:neg:';
+
+/** TTL do cache negativo (5 min): evita PostgreSQL a cada mensagem de grupo não-source. */
+export const NEGATIVE_CACHE_TTL = 300;
+
+/**
+ * Monta a chave Redis de cache negativo para um grupo que NÃO é sourceGroup.
+ * Usada para evitar consulta PostgreSQL repetida no hot path do webhook.
+ */
+export function negativeCacheKey(groupJid: string): string {
+  return `${NEGATIVE_CACHE_PREFIX}${groupJid}`;
 }

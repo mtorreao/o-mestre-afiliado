@@ -37,6 +37,8 @@ import {
   mirrorHasSourceGroup,
   parseCachedSourceGroupConfigs,
   sourceGroupCacheKey,
+  negativeCacheKey,
+  NEGATIVE_CACHE_TTL,
 } from './group-cache-pure.ts';
 
 const affiliatesRepo = new AffiliatesRepository();
@@ -87,6 +89,16 @@ export async function getSourceGroupConfigs(groupJid: string): Promise<SourceGro
     } catch {
       // fallback silencioso para PostgreSQL
     }
+
+    // Cache NEGATIVO: grupo já confirmado como não-source.
+    // Verificado só após o cache positivo para que uma configuração
+    // recém-criada tenha precedência assim que for persistida no Redis.
+    try {
+      const negative = await r.get(negativeCacheKey(groupJid));
+      if (negative) return [];
+    } catch {
+      // ignora falha de cache
+    }
   }
 
   // ── 2. Fallback: busca na tabela mirrors ─────────────────────────────
@@ -100,7 +112,7 @@ export async function getSourceGroupConfigs(groupJid: string): Promise<SourceGro
         const instanceName = instanceNameFromMirror(mirror);
         const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
         if (affiliate) {
-          const config = buildSourceGroupConfig(mirror, affiliate.id);
+          const config = buildSourceGroupConfig(mirror, affiliate.id, groupJid);
           if (config) configs.push(config);
         }
       }
@@ -112,14 +124,17 @@ export async function getSourceGroupConfigs(groupJid: string): Promise<SourceGro
         `[group-cache] Fallback mirror: sourceGroup ${groupJid} carregado ` +
           `com ${configs.length} config(s)`,
       );
+    } else if (r) {
+      // Só cacheia negativo após uma consulta PG bem-sucedida que confirmou
+      // ausência de configuração. Falha de DB não vira falso negativo.
+      await r.setex(negativeCacheKey(groupJid), NEGATIVE_CACHE_TTL, '1');
     }
 
     return configs;
   } catch {
-    // silencia falha de DB
+    // Falha de DB: não grava cache negativo, mantém modo fail-open.
+    return [];
   }
-
-  return [];
 }
 
 /**
@@ -134,6 +149,7 @@ export async function cacheSourceGroupConfigs(
   if (!r) return;
 
   try {
+    await r.del(negativeCacheKey(groupJid));
     await r.setex(`${CACHE_PREFIX}${groupJid}`, CACHE_TTL, JSON.stringify(configs));
     // Mantém um set com todas as chaves para refresh bulk
     await r.sadd(CACHE_SET_KEY, groupJid);
@@ -170,6 +186,7 @@ export async function cacheSourceGroup(
     }
 
     // Fallback: salva no formato antigo (será convertido em array no getSourceGroupConfigs)
+    await r.del(negativeCacheKey(groupJid));
     await r.setex(
       `${CACHE_PREFIX}${groupJid}`,
       CACHE_TTL,
@@ -191,6 +208,7 @@ export async function removeSourceGroup(groupJid: string): Promise<void> {
 
   try {
     await cacheDel(`${CACHE_PREFIX}${groupJid}`);
+    await r.del(negativeCacheKey(groupJid));
     await r.srem(CACHE_SET_KEY, groupJid);
   } catch {
     // silencia
@@ -209,6 +227,7 @@ export async function removeSourceGroups(jids: string[]): Promise<void> {
     const pipeline = r.pipeline();
     for (const jid of jids) {
       pipeline.del(`${CACHE_PREFIX}${jid}`);
+      pipeline.del(negativeCacheKey(jid));
       pipeline.srem(CACHE_SET_KEY, jid);
     }
     await pipeline.exec();
@@ -245,6 +264,7 @@ export async function replaceSourceGroups(
     const pipeline = r.pipeline();
     for (const jid of removed) {
       pipeline.del(`${CACHE_PREFIX}${jid}`);
+      pipeline.del(negativeCacheKey(jid));
       pipeline.srem(CACHE_SET_KEY, jid);
     }
 
@@ -253,12 +273,12 @@ export async function replaceSourceGroups(
       const mirrorRepo = new MirrorRepository();
       const mirror = await mirrorRepo.findById(mirrorId);
       if (mirror) {
-        const config = buildSourceGroupConfig(mirror, affiliateId);
-        if (config) {
-          for (const jid of newJids) {
-            pipeline.setex(`${CACHE_PREFIX}${jid}`, CACHE_TTL, JSON.stringify([config]));
-            pipeline.sadd(CACHE_SET_KEY, jid);
-          }
+        for (const jid of newJids) {
+          const config = buildSourceGroupConfig(mirror, affiliateId, jid);
+          if (!config) continue;
+          pipeline.del(negativeCacheKey(jid));
+          pipeline.setex(`${CACHE_PREFIX}${jid}`, CACHE_TTL, JSON.stringify([config]));
+          pipeline.sadd(CACHE_SET_KEY, jid);
         }
       }
     }
@@ -284,6 +304,7 @@ export async function clearSourceGroupCache(): Promise<void> {
     const pipeline = r.pipeline();
     for (const jid of members) {
       pipeline.del(`${CACHE_PREFIX}${jid}`);
+      pipeline.del(negativeCacheKey(jid));
     }
     pipeline.del(CACHE_SET_KEY);
     await pipeline.exec();
@@ -331,11 +352,9 @@ export async function warmSourceGroupCache(): Promise<void> {
       const affiliate = await affiliatesRepo.findByEvolutionInstanceId(instanceName);
       if (!affiliate) continue;
 
-      const config = buildSourceGroupConfig(mirror, affiliate.id);
-      if (!config) continue;
-
       for (const group of srcGroups) {
-        entries.push({ jid: group.jid, config });
+        const config = buildSourceGroupConfig(mirror, affiliate.id, group.jid);
+        if (config) entries.push({ jid: group.jid, config });
       }
     }
 
@@ -366,5 +385,23 @@ export async function warmSourceGroupCache(): Promise<void> {
     );
   } catch (error) {
     console.error('[group-cache] Erro ao warmar cache de sourceGroups:', error);
+  }
+}
+
+/**
+ * Lê APENAS o nome do grupo do cache Redis (sem fallback PostgreSQL).
+ * Usado no hot path do webhook para preencher `sourceGroupName` sem
+ * bloquear em banco. Retorna '' se o cache não tiver o nome resolvido.
+ */
+export async function getCachedSourceGroupName(groupJid: string): Promise<string> {
+  const r = getRedis();
+  if (!r) return '';
+  try {
+    const raw = await r.get(sourceGroupCacheKey(groupJid));
+    const parsed = parseCachedSourceGroupConfigs(raw);
+    const cfg = firstConfig(parsed ?? []);
+    return cfg?.groupName ?? '';
+  } catch {
+    return '';
   }
 }
