@@ -14,6 +14,7 @@
 
 import { test, expect } from '@playwright/test';
 import { createTestUser } from './helpers.ts';
+import { resetSimulatorInstance, getSimulatorMessagesFor } from './helpers.ts';
 
 const API_MIRROR = process.env.API_MIRROR_URL || 'http://localhost:15447';
 const SIMULATOR = process.env.SIMULATOR_URL || 'http://localhost:15446';
@@ -51,31 +52,11 @@ async function authPostMirror(path: string, token: string, body: Record<string, 
 }
 
 /**
- * Reseta o estado do simulador (limpa mensagens armazenadas).
- */
-async function resetSimulator() {
-  await fetch(`${SIMULATOR}/__admin/reset`, { method: 'POST' });
-}
-
-/**
- * Busca mensagens enviadas registradas no simulador.
- */
-async function getSimulatorMessages(): Promise<
-  Array<{ instanceName: string; number: string; text: string; timestamp: string }>
-> {
-  const res = await fetch(`${SIMULATOR}/__admin/messages`);
-  const data = (await res.json()) as {
-    success: boolean;
-    messages: Array<{ instanceName: string; number: string; text: string; timestamp: string }>;
-  };
-  return data.messages ?? [];
-}
-
-/**
- * Poll o simulador até encontrar uma mensagem que contenha o texto esperado,
- * ou até o timeout.
+ * Poll o simulador (escopo por instanceName) até encontrar uma mensagem
+ * que contenha o texto esperado, ou até o timeout.
  */
 async function waitForMessageInSimulator(
+  instanceName: string,
   textContains: string,
   timeoutMs: number = 15000,
   intervalMs: number = 1000,
@@ -85,7 +66,7 @@ async function waitForMessageInSimulator(
 }> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const messages = await getSimulatorMessages();
+    const messages = await getSimulatorMessagesFor(instanceName);
     const match = messages.find((m) => m.text.includes(textContains));
     if (match) {
       return { found: true, messages };
@@ -93,7 +74,7 @@ async function waitForMessageInSimulator(
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   // Timeout — retorna as mensagens encontradas até agora
-  return { found: false, messages: await getSimulatorMessages() };
+  return { found: false, messages: await getSimulatorMessagesFor(instanceName) };
 }
 
 /**
@@ -134,20 +115,24 @@ async function createUserWithConnectedWhatsApp(): Promise<{
 
 // ─── Tests ───────────────────────────────────────────────────────────
 
-test.describe('Mirror Flow — Simulator', () => {
+// Estes 2 testes verificam o comportamento GLOBAL do admin do simulador
+// (reset limpo + mensagens vazias). Por design, nao podem ser escopados por
+// instanceName — dependem do estado global compartilhado. Rodam em serial
+// (mesmo worker) para nao colidir com os testes paralelos acima/abaixo.
+test.describe.serial('Mirror Flow — Simulator (admin global, serial)', () => {
   test('GET /__admin/messages deve retornar lista vazia após reset', async () => {
-    await resetSimulator();
-    const messages = await getSimulatorMessages();
-    expect(messages).toEqual([]);
+    await fetch(`${SIMULATOR}/__admin/reset`, { method: 'POST' });
+    const res = await fetch(`${SIMULATOR}/__admin/messages`);
+    const data = (await res.json()) as { messages: unknown[] };
+    expect(data.messages).toEqual([]);
   });
 
   test('POST /__admin/reset deve limpar estado', async () => {
-    await resetSimulator();
     const res = await fetch(`${SIMULATOR}/__admin/reset`, { method: 'POST' });
     const body = (await res.json()) as { success: boolean };
     expect(body.success).toBe(true);
 
-    const messages = await getSimulatorMessages();
+    const messages = await getSimulatorMessagesFor('any'); // qualquer escopo: vazio
     expect(messages).toEqual([]);
   });
 });
@@ -199,9 +184,9 @@ test.describe('Mirror Flow — Groups + Mirror CRUD (via Simulator)', () => {
 });
 
 test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
-  test.beforeEach(async () => {
-    await resetSimulator();
-  });
+  // Antes: test.beforeEach com resetSimulator() global — quebrava paralelismo (workers=2).
+  // Agora: cada teste chama resetSimulatorInstance(instanceName) escopo por usuario,
+  // eliminando colisão no estado do simulador.
 
   test('Mensagem com link Shopee é processada (sem conversão real → não vazia para o target)', async () => {
     // ── 1. Setup: cria usuário, conecta WhatsApp, configura grupos ──
@@ -265,13 +250,15 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     // no container, fora do escopo do test E2E. Este test valida o smoke do
     // pipeline + proteção anti-vazamento (sem credenciais → sem envio).
     await new Promise((r) => setTimeout(r, 5000));
-    const messages = await getSimulatorMessages();
+    const messages = await getSimulatorMessagesFor(instanceName);
     const mirrorMessages = messages.filter((m) => m.number === '120363000000000003@g.us');
     expect(mirrorMessages.length).toBe(0);
   });
 
   test('Mensagem de grupo sem link de marketplace é ignorada', async () => {
-    const { token } = await createUserWithConnectedWhatsApp();
+    const { token, user } = await createUserWithConnectedWhatsApp();
+    const instanceName = `user-${user.id}`;
+    await resetSimulatorInstance(instanceName);
 
     // Configura grupos
     await authPostMirror('/api/mirrors', token, {
@@ -286,7 +273,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
       headers: { 'Content-Type': 'application/json', apikey: 'e2e-evolution-api-key' },
       body: JSON.stringify({
         event: 'messages.upsert',
-        instance: 'user-1',
+        instance: instanceName,
         data: [
           {
             key: {
@@ -304,16 +291,18 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
 
     // Aguarda um momento e verifica que NADA foi enviado
     await new Promise((r) => setTimeout(r, 3000));
-    const messages = await getSimulatorMessages();
+    const messages = await getSimulatorMessagesFor(instanceName);
     // Nenhuma mensagem do ingestor/dispatcher deve ter sido enviada
     const mirrorMessages = messages.filter(
-      (m) => m.instanceName === 'user-1' && m.number === '120363000000000003@g.us',
+      (m) => m.instanceName === instanceName && m.number === '120363000000000003@g.us',
     );
     expect(mirrorMessages.length).toBe(0);
   });
 
   test('Mensagem de grupo desconhecido (sem cache) é ignorada', async () => {
-    const { token } = await createUserWithConnectedWhatsApp();
+    const { token, user } = await createUserWithConnectedWhatsApp();
+    const instanceName = `user-${user.id}`;
+    await resetSimulatorInstance(instanceName);
 
     // Configura grupos
     await authPostMirror('/api/mirrors', token, {
@@ -328,7 +317,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
       headers: { 'Content-Type': 'application/json', apikey: 'e2e-evolution-api-key' },
       body: JSON.stringify({
         event: 'messages.upsert',
-        instance: 'user-1',
+        instance: instanceName,
         data: [
           {
             key: {
@@ -346,7 +335,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
 
     // Aguarda e verifica que NADA foi enviado para grupo destino
     await new Promise((r) => setTimeout(r, 3000));
-    const messages = await getSimulatorMessages();
+    const messages = await getSimulatorMessagesFor(instanceName);
     const mirrorMessages = messages.filter((m) =>
       m.text.includes('shopee.com.br/produto-Unknown-Group'),
     );
@@ -354,7 +343,9 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
   });
 
   test('Mensagem fromMe (enviada pelo próprio bot) é ignorada', async () => {
-    const { token } = await createUserWithConnectedWhatsApp();
+    const { token, user } = await createUserWithConnectedWhatsApp();
+    const instanceName = `user-${user.id}`;
+    await resetSimulatorInstance(instanceName);
 
     await authPostMirror('/api/mirrors', token, {
       name: 'E2E Test Mirror',
@@ -368,7 +359,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
       headers: { 'Content-Type': 'application/json', apikey: 'e2e-evolution-api-key' },
       body: JSON.stringify({
         event: 'messages.upsert',
-        instance: 'user-1',
+        instance: instanceName,
         data: [
           {
             key: {
@@ -385,7 +376,7 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
     });
 
     await new Promise((r) => setTimeout(r, 3000));
-    const messages = await getSimulatorMessages();
+    const messages = await getSimulatorMessagesFor(instanceName);
     const mirrorMessages = messages.filter((m) => m.text.includes('shopee.com.br/produto-FromMe'));
     expect(mirrorMessages.length).toBe(0);
   });
@@ -394,9 +385,9 @@ test.describe('Mirror Flow — Webhook → Worker → Simulator', () => {
 // ─── ML /social/ URL Resolution (HTTP real, sem Evolution API) ─────────
 
 test.describe('Mirror Flow — ML /social/ Resolution', () => {
-  test.beforeEach(async () => {
-    await resetSimulator();
-  });
+  // Antes: test.beforeEach com resetSimulator() global — quebrava paralelismo (workers=2).
+  // Agora: cada teste chama resetSimulatorInstance(instanceName) escopo por usuario,
+  // eliminando colisão no estado do simulador.
 
   /**
    * Testa o fluxo de resolução de URL /social/ do Mercado Livre até a Queue A.

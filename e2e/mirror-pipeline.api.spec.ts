@@ -33,6 +33,11 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { createTestUser } from './helpers.ts';
+import {
+  resetSimulatorInstance,
+  getSimulatorMessagesFor,
+  waitForMessagesOnInstance,
+} from './helpers.ts';
 
 const API_MIRROR = process.env.API_MIRROR_URL || 'http://localhost:15447';
 const SIMULATOR = process.env.SIMULATOR_URL || 'http://localhost:15446';
@@ -88,39 +93,6 @@ async function authDeleteMirror(path: string, token: string) {
 }
 
 // ─── Simulador ───────────────────────────────────────────────────────
-
-async function resetSimulator() {
-  await fetch(`${SIMULATOR}/__admin/reset`, { method: 'POST' });
-}
-
-interface SimMessage {
-  instanceName: string;
-  number: string;
-  text: string;
-  hasMedia?: boolean;
-  mediaUrl?: string;
-}
-
-async function getSimulatorMessages(): Promise<SimMessage[]> {
-  const res = await fetch(`${SIMULATOR}/__admin/messages`);
-  const data = (await res.json()) as { success: boolean; messages: SimMessage[] };
-  return data.messages ?? [];
-}
-
-async function waitForMessages(
-  predicate: (msgs: SimMessage[]) => boolean,
-  timeoutMs = 20000,
-  intervalMs = 1000,
-): Promise<SimMessage[]> {
-  const start = Date.now();
-  let last: SimMessage[] = [];
-  while (Date.now() - start < timeoutMs) {
-    last = await getSimulatorMessages();
-    if (predicate(last)) return last;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  return last;
-}
 
 // ─── Postgres seed (via docker exec) ─────────────────────────────────
 
@@ -255,19 +227,20 @@ async function postWebhook(payload: unknown): Promise<Response> {
 // ─── P1: Oferta Amazon chega ao destino ──────────────────────────────
 
 test.describe('Pipeline v2 — Amazon end-to-end', () => {
-  test.beforeEach(async () => {
-    await resetSimulator();
-  });
+  // Antes: test.beforeEach com resetSimulator() global — quebrava paralelismo (workers=2)
+  // colidiam no estado do simulador. Agora: cada teste chama resetSimulatorInstance
+  // (escopo por instanceName) logo apos seedAmazonMirror/seedMagaluMirror.
 
   // EXPERIMENTO workers=2: este teste depende do estado global do simulador (sentMessages);
   // com workers=2 ele colide com mirror-flow que reseta/usa o mesmo state. Validar 1-a-1 depois.
-  test.skip(st('P1 — Oferta Amazon é convertida e enviada ao grupo destino', async () => {
+  test('P1 — Oferta Amazon é convertida e enviada ao grupo destino', async () => {
     const sourceGroup = genSourceJid('p1');
     const { instanceName, token } = await seedAmazonMirror({
       affiliateName: 'E2E Amazon P1',
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     const messageId = `e2e_amz_p1_${Date.now()}`;
     const res = await postWebhook(
@@ -276,7 +249,7 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
     expect(res.status).toBe(200);
 
     // Aguarda a mensagem aparecer no simulador (enviada ao grupo destino)
-    const msgs = await waitForMessages((m) =>
+    const msgs = await waitForMessagesOnInstance(instanceName, (m) =>
       m.some((x) => x.number === TARGET_GROUP.jid && x.text.includes(`tag=${AMAZON_TAG}`)),
     );
 
@@ -301,13 +274,16 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     const messageId = `e2e_amz_p2_${Date.now()}`;
     await postWebhook(
       offerWebhook({ messageId, instance: instanceName, groupJid: sourceGroup.jid }),
     );
 
-    const msgs = await waitForMessages((m) => m.some((x) => x.number === TARGET_GROUP.jid));
+    const msgs = await waitForMessagesOnInstance(instanceName, (m) =>
+      m.some((x) => x.number === TARGET_GROUP.jid),
+    );
     const sent = msgs.find((m) => m.number === TARGET_GROUP.jid);
     expect(sent, 'Oferta sem imagem deveria ter sido enviada como texto').toBeDefined();
     expect(sent!.text).toContain(`tag=${AMAZON_TAG}`);
@@ -315,19 +291,21 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
 
   // EXPERIMENTO workers=2: este teste depende do estado global do simulador (sentMessages);
   // com workers=2 ele colide com mirror-flow que reseta/usa o mesmo state. Validar 1-a-1 depois.
-  test.skip(st('P3 — Fan-out 1:N: 2 mirrors no mesmo sourceGroup geram 2 envios', async () => {
+  test('P3 — Fan-out 1:N: 2 mirrors no mesmo sourceGroup geram 2 envios', async () => {
     const sourceGroup = genSourceJid('p3');
     const a = await seedAmazonMirror({
       affiliateName: 'E2E Amazon Fanout A',
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(a.instanceName);
     // Segundo afiliado, instância diferente, MESMO sourceGroup, destino diferente
     const b = await seedAmazonMirror({
       affiliateName: 'E2E Amazon Fanout B',
       targetGroup: TARGET_GROUP_2,
       sourceGroup,
     });
+    await resetSimulatorInstance(b.instanceName);
 
     // O webhook chega por UMA instância; o Ingestor faz fan-out via cache 1:N.
     // O create de mirror sobrescreve o cache com 1 config por vez, então
@@ -340,21 +318,25 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
       offerWebhook({ messageId, instance: a.instanceName, groupJid: sourceGroup.jid }),
     );
 
-    const msgs = await waitForMessages(
-      (m) =>
-        m.some((x) => x.number === TARGET_GROUP.jid) &&
+    // P3 eh fan-out 1:N: a API envia 1 webhook mas o ingestor despacha para
+    // os 2 mirrors (a e b). Cada mirror tem seu proprio instanceName, entao
+    // precisamos inspecionar AMBAS as instancias do simulador para validar.
+    const [msgsA, msgsB] = await Promise.all([
+      waitForMessagesOnInstance(a.instanceName, (m) =>
+        m.some((x) => x.number === TARGET_GROUP.jid),
+      ),
+      waitForMessagesOnInstance(b.instanceName, (m) =>
         m.some((x) => x.number === TARGET_GROUP_2.jid),
-    );
+      ),
+    ]);
 
-    const toA = msgs.filter((m) => m.number === TARGET_GROUP.jid);
-    const toB = msgs.filter((m) => m.number === TARGET_GROUP_2.jid);
     expect(
-      toA.length,
-      `esperava envio ao destino A. msgs=${JSON.stringify(msgs)}`,
+      msgsA.filter((m) => m.number === TARGET_GROUP.jid).length,
+      `esperava envio ao destino A. msgs=${JSON.stringify(msgsA)}`,
     ).toBeGreaterThanOrEqual(1);
     expect(
-      toB.length,
-      `esperava envio ao destino B. msgs=${JSON.stringify(msgs)}`,
+      msgsB.filter((m) => m.number === TARGET_GROUP_2.jid).length,
+      `esperava envio ao destino B. msgs=${JSON.stringify(msgsB)}`,
     ).toBeGreaterThanOrEqual(1);
 
     await authDeleteMirror('/api/whatsapp/disconnect', a.token);
@@ -363,13 +345,14 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
 
   // EXPERIMENTO workers=2: este teste depende do estado global do simulador (sentMessages);
   // com workers=2 ele colide com mirror-flow que reseta/usa o mesmo state. Validar 1-a-1 depois.
-  test.skip(st('P4 — Dedup webhook: 2 webhooks com mesmo messageId geram 1 envio', async () => {
+  test('P4 — Dedup webhook: 2 webhooks com mesmo messageId geram 1 envio', async () => {
     const sourceGroup = genSourceJid('p4');
     const { instanceName } = await seedAmazonMirror({
       affiliateName: 'E2E Amazon Dedup',
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     const messageId = `e2e_amz_p4_${Date.now()}`;
     // Duas instâncias diferentes disparam o webhook para a MESMA mensagem
@@ -383,30 +366,35 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
     );
 
     // Aguarda o primeiro envio chegar
-    await waitForMessages((m) => m.some((x) => x.number === TARGET_GROUP.jid));
+    await waitForMessagesOnInstance(instanceName, (m) =>
+      m.some((x) => x.number === TARGET_GROUP.jid),
+    );
     // Dá tempo para um eventual segundo envio (não deveria acontecer)
     await new Promise((r) => setTimeout(r, 4000));
 
-    const msgs = await getSimulatorMessages();
+    const msgs = await getSimulatorMessagesFor(instanceName);
     const toTarget = msgs.filter((m) => m.number === TARGET_GROUP.jid);
     expect(toTarget.length, `dedup falhou — ${toTarget.length} envios`).toBe(1);
   });
 
   // EXPERIMENTO workers=2: este teste depende do estado global do simulador (sentMessages);
   // com workers=2 ele colide com mirror-flow que reseta/usa o mesmo state. Validar 1-a-1 depois.
-  test.skip(st('P5 — Dedup send-completed: reenvio do mesmo messageId não duplica', async () => {
+  test('P5 — Dedup send-completed: reenvio do mesmo messageId não duplica', async () => {
     const sourceGroup = genSourceJid('p5');
     const { instanceName } = await seedAmazonMirror({
       affiliateName: 'E2E Amazon SendDedup',
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     const messageId = `e2e_amz_p5_${Date.now()}`;
     await postWebhook(
       offerWebhook({ messageId, instance: instanceName, groupJid: sourceGroup.jid }),
     );
-    await waitForMessages((m) => m.some((x) => x.number === TARGET_GROUP.jid));
+    await waitForMessagesOnInstance(instanceName, (m) =>
+      m.some((x) => x.number === TARGET_GROUP.jid),
+    );
 
     // Reenvia o MESMO messageId após o primeiro envio já ter sido concluído.
     // O send-dedup (Dispatcher, 24h) evita reenvio ao grupo destino.
@@ -416,7 +404,7 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
     );
     await new Promise((r) => setTimeout(r, 4000));
 
-    const msgs = await getSimulatorMessages();
+    const msgs = await getSimulatorMessagesFor(instanceName);
     const toTarget = msgs.filter((m) => m.number === TARGET_GROUP.jid);
     expect(toTarget.length, `send-completed falhou — ${toTarget.length} envios`).toBe(1);
   });
@@ -428,6 +416,7 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     // Desativa o mirror APÓS o cache ter sido populado com status active.
     // O Dispatcher resolve a config do mirror e descarta se status=inactive.
@@ -439,7 +428,7 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
     );
 
     await new Promise((r) => setTimeout(r, 6000));
-    const msgs = await getSimulatorMessages();
+    const msgs = await getSimulatorMessagesFor(instanceName);
     const toTarget = msgs.filter((m) => m.number === TARGET_GROUP.jid);
     expect(toTarget.length, `mirror inativo não deveria enviar — ${toTarget.length}`).toBe(0);
   });
@@ -448,9 +437,9 @@ test.describe('Pipeline v2 — Amazon end-to-end', () => {
 // ─── Casos negativos (mantidos/consolidados) ─────────────────────────
 
 test.describe('Pipeline v2 — Casos negativos', () => {
-  test.beforeEach(async () => {
-    await resetSimulator();
-  });
+  // Antes: test.beforeEach com resetSimulator() global — quebrava paralelismo (workers=2)
+  // colidiam no estado do simulador. Agora: cada teste chama resetSimulatorInstance
+  // (escopo por instanceName) logo apos seedAmazonMirror/seedMagaluMirror.
 
   test('P7 — Mensagem sem link de marketplace é ignorada', async () => {
     const sourceGroup = genSourceJid('p7');
@@ -459,6 +448,7 @@ test.describe('Pipeline v2 — Casos negativos', () => {
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     await postWebhook(
       offerWebhook({
@@ -470,7 +460,7 @@ test.describe('Pipeline v2 — Casos negativos', () => {
     );
 
     await new Promise((r) => setTimeout(r, 4000));
-    const msgs = await getSimulatorMessages();
+    const msgs = await getSimulatorMessagesFor(instanceName);
     expect(msgs.filter((m) => m.number === TARGET_GROUP.jid).length).toBe(0);
   });
 
@@ -481,6 +471,7 @@ test.describe('Pipeline v2 — Casos negativos', () => {
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     await postWebhook(
       offerWebhook({
@@ -491,19 +482,20 @@ test.describe('Pipeline v2 — Casos negativos', () => {
     );
 
     await new Promise((r) => setTimeout(r, 4000));
-    const msgs = await getSimulatorMessages();
+    const msgs = await getSimulatorMessagesFor(instanceName);
     expect(msgs.filter((m) => m.number === TARGET_GROUP.jid).length).toBe(0);
   });
 
   // EXPERIMENTO workers=2: este teste depende do estado global do simulador (sentMessages);
   // com workers=2 ele colide com mirror-flow que reseta/usa o mesmo state. Validar 1-a-1 depois.
-  test.skip(st('P9 — Mensagem fromMe é ignorada', async () => {
+  test('P9 — Mensagem fromMe é ignorada', async () => {
     const sourceGroup = genSourceJid('p9');
     const { instanceName } = await seedAmazonMirror({
       affiliateName: 'E2E Neg FromMe',
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     await postWebhook(
       offerWebhook({
@@ -515,7 +507,7 @@ test.describe('Pipeline v2 — Casos negativos', () => {
     );
 
     await new Promise((r) => setTimeout(r, 4000));
-    const msgs = await getSimulatorMessages();
+    const msgs = await getSimulatorMessagesFor(instanceName);
     expect(msgs.filter((m) => m.number === TARGET_GROUP.jid).length).toBe(0);
   });
 });
@@ -594,9 +586,9 @@ function magaluOfferWebhook(opts: {
 }
 
 test.describe('Pipeline v2 — Magalu end-to-end', () => {
-  test.beforeEach(async () => {
-    await resetSimulator();
-  });
+  // Antes: test.beforeEach com resetSimulator() global — quebrava paralelismo (workers=2)
+  // colidiam no estado do simulador. Agora: cada teste chama resetSimulatorInstance
+  // (escopo por instanceName) logo apos seedAmazonMirror/seedMagaluMirror.
 
   test('P11 — Oferta Magalu /p/{id} é convertida e enviada ao grupo destino', async () => {
     const sourceGroup = genSourceJid('p11');
@@ -605,6 +597,7 @@ test.describe('Pipeline v2 — Magalu end-to-end', () => {
       targetGroup: TARGET_GROUP,
       sourceGroup,
     });
+    await resetSimulatorInstance(instanceName);
 
     const messageId = `e2e_mag_p11_${Date.now()}`;
     const res = await postWebhook(
@@ -613,7 +606,7 @@ test.describe('Pipeline v2 — Magalu end-to-end', () => {
     expect(res.status).toBe(200);
 
     // Aguarda a mensagem aparecer no simulador (enviada ao grupo destino)
-    const msgs = await waitForMessages((m) =>
+    const msgs = await waitForMessagesOnInstance(instanceName, (m) =>
       m.some(
         (x) =>
           x.number === TARGET_GROUP.jid && x.text.includes(`magazinevoce.com.br/${MAGALU_SLUG}/`),
