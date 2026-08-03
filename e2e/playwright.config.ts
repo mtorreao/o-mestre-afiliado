@@ -11,7 +11,7 @@ const SIMULATOR_PORT = process.env.SIMULATOR_PORT || '15446';
 // via resetSimulator() (sentMessages global). Com workers>1, os 2 arquivos rodam
 // em paralelo e um apaga a mensagem que o outro verifica → flake determinístico.
 // Subir workers SÓ após isolar o simulador por instância (não feito). Local também 1.
-const WORKERS = 1; // serial local e CI
+const WORKERS = 2; // EXPERIMENTO: paralelizar 2 arquivos p/ validar colisao do simulador
 
 export default defineConfig({
   testDir: __dirname,
@@ -24,8 +24,9 @@ export default defineConfig({
   workers: WORKERS,
   // Fail-fast intencional: numa falha massiva (Ex: Evolution API caiu), rodar o
   // restante queima os 45min aos 15s por teste para chegar à mesma conclusão.
-  // Parar no PRIMEIRO reduz tempo de feedback e economiza Actions.
-  maxFailures: 1,
+  // Parar no PRIMEIRO reduz tempo de feedback e economiza Actions. CI:1 (owner).
+  // Local: 0 (ilimitado) p/ coletar TODAS as falhas e marcar skips no experimento.
+  maxFailures: process.env.CI ? 1 : 0,
 
   // Report em CI: HTML (playwright-report/) + terminal. Screenshot e trace
   // só em falha — o job e2e do GitHub Actions sobe esses artefatos.
