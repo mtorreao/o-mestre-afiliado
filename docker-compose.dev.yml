@@ -13,13 +13,13 @@
 # USO:
 #   bun run dev
 #
-# Com override de portas do .env.infra (se 5453 estiver ocupada):
+# Com override de portas via DEV_PORT_BASE (se 5453 estiver ocupada):
 #   DEV_PORT_BASE=6000 bun run dev
 #
 # Com tunnel Cloudflare (requer ~/.cloudflared/omestre-afiliado.yml):
 #   bun run dev  # cria/reutiliza o tunnel da branch automaticamente
 #
-# PORTAS (dev compose — faixa 545x para evitar conflito com docker-compose.infra.yml que usa 544x):
+# PORTAS (dev compose — faixa 545x para evitar conflito com a stack de produção que usa 544x):
 #   API        5452  (container:5442)
 #   Web        5451  (container:5441)
 #   PostgreSQL 5453  (container:5432)  ← override via POSTGRES_PORT
