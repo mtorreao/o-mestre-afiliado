@@ -21,8 +21,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # fetch-depth 0: o diff docs-only precisa do histórico completo
+          # (base.sha/event.before não existem em clone raso).
+          fetch-depth: 0
+
+      # PRs/pushes só de documentação (docs/, *.md, imagens...) fazem early-exit
+      # verde aqui — sem bun install, build, testes nem e2e (~15s em vez de 45min).
+      # Os checks obrigatórios ("typecheck + build", "e2e") continuam sendo
+      # reportados como success, então o branch protection não trava o merge.
+      - name: Detectar mudança docs-only (skip CI)
+        id: docs-only
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          [ -n "$BASE" ] || BASE="${{ github.event.before }}"
+          RESULT=$(bash scripts/ci/check-docs-only.sh "$BASE")
+          echo "$RESULT" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$RESULT (diff: $(git diff --name-only "$BASE"...HEAD | tr '\n' ' '))"
 
       - name: Setup Bun
+        if: steps.docs-only.outputs.docs_only == 'false'
         uses: oven-sh/setup-bun@v2
         with:
           # 1.3.0 tem bug de hoisting de 'catalog:' + workspaces que instala
@@ -31,6 +49,7 @@ jobs:
           bun-version: 1.3.14
 
       - name: Cache bun install (workspaces)
+        if: steps.docs-only.outputs.docs_only == 'false'
         uses: actions/cache@v4
         with:
           path: |
@@ -41,18 +60,23 @@ jobs:
             bun-${{ runner.os }}-
 
       - name: Install dependencies
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: bun install --frozen-lockfile
 
       - name: Typecheck
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: bun run typecheck
 
       - name: Build
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: bun run build
 
       - name: Unit tests
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: bun run test:unit
 
       - name: Coverage (relatório agregado)
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: bun run test:coverage
 
       - name: Upload coverage report
@@ -68,6 +92,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Prettier check (apenas arquivos do diff)
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: |
           if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
             BASE=${{ github.event.pull_request.base.sha }}
@@ -90,13 +115,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Mesmo early-exit do job build — docs-only conclui verde em segundos.
+      - name: Detectar mudança docs-only (skip CI)
+        id: docs-only
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          [ -n "$BASE" ] || BASE="${{ github.event.before }}"
+          RESULT=$(bash scripts/ci/check-docs-only.sh "$BASE")
+          echo "$RESULT" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$RESULT (diff: $(git diff --name-only "$BASE"...HEAD | tr '\n' ' '))"
 
       - name: Setup Bun
+        if: steps.docs-only.outputs.docs_only == 'false'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
 
       - name: Cache bun install (workspaces)
+        if: steps.docs-only.outputs.docs_only == 'false'
         uses: actions/cache@v4
         with:
           path: |
@@ -107,9 +146,11 @@ jobs:
             bun-${{ runner.os }}-
 
       - name: Install dependencies
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: bun install --frozen-lockfile
 
       - name: Cache browser do Playwright
+        if: steps.docs-only.outputs.docs_only == 'false'
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
@@ -118,12 +159,15 @@ jobs:
             pw-${{ runner.os }}-
 
       - name: Instalar browser do Playwright
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: bunx playwright install --with-deps chromium
 
       - name: Setup Buildx (buildkit p/ cache GHA das imagens)
+        if: steps.docs-only.outputs.docs_only == 'false'
         uses: docker/setup-buildx-action@v3
 
       - name: Rodar testes E2E (sobe stack própria, executa specs, derruba)
+        if: steps.docs-only.outputs.docs_only == 'false'
         run: E2E_WORKERS=4 bun run test:e2e
 
       - name: Upload report do Playwright (screenshots/traces de falha)
