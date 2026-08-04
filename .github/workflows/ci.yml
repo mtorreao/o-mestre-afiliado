@@ -30,14 +30,22 @@ jobs:
       # verde aqui — sem bun install, build, testes nem e2e (~15s em vez de 45min).
       # Os checks obrigatórios ("typecheck + build", "e2e") continuam sendo
       # reportados como success, então o branch protection não trava o merge.
+      #
+      # Diff do PR: o checkout é o merge ref (refs/pull/N/merge), então
+      # HEAD^1 = base (main) e HEAD^2 = head do PR. git diff HEAD^1...HEAD^2
+      # devolve EXATAMENTE os arquivos do PR — mesmo se a main avançou depois
+      # da abertura (base.sha do evento pode estar defasado).
       - name: Detectar mudança docs-only (skip CI)
         id: docs-only
         run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          [ -n "$BASE" ] || BASE="${{ github.event.before }}"
-          RESULT=$(bash scripts/ci/check-docs-only.sh "$BASE")
-          echo "$RESULT" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$RESULT (diff: $(git diff --name-only "$BASE"...HEAD | tr '\n' ' '))"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only HEAD^1...HEAD^2 2>/dev/null || git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD)
+          else
+            FILES=$(git diff --name-only "${{ github.event.before }}"...HEAD 2>/dev/null || git diff --name-only HEAD~1...HEAD 2>/dev/null || true)
+          fi
+          RESULT=$(printf '%s\n' "$FILES" | bash scripts/ci/check-docs-only.sh)
+          echo "docs_only=$RESULT" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$RESULT (files: $(echo "$FILES" | tr '\n' ' '))"
 
       - name: Setup Bun
         if: steps.docs-only.outputs.docs_only == 'false'
@@ -119,14 +127,18 @@ jobs:
           fetch-depth: 0
 
       # Mesmo early-exit do job build — docs-only conclui verde em segundos.
+      # (HEAD^1 = base, HEAD^2 = head do PR no checkout do merge ref.)
       - name: Detectar mudança docs-only (skip CI)
         id: docs-only
         run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          [ -n "$BASE" ] || BASE="${{ github.event.before }}"
-          RESULT=$(bash scripts/ci/check-docs-only.sh "$BASE")
-          echo "$RESULT" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$RESULT (diff: $(git diff --name-only "$BASE"...HEAD | tr '\n' ' '))"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only HEAD^1...HEAD^2 2>/dev/null || git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD)
+          else
+            FILES=$(git diff --name-only "${{ github.event.before }}"...HEAD 2>/dev/null || git diff --name-only HEAD~1...HEAD 2>/dev/null || true)
+          fi
+          RESULT=$(printf '%s\n' "$FILES" | bash scripts/ci/check-docs-only.sh)
+          echo "docs_only=$RESULT" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$RESULT (files: $(echo "$FILES" | tr '\n' ' '))"
 
       - name: Setup Bun
         if: steps.docs-only.outputs.docs_only == 'false'
