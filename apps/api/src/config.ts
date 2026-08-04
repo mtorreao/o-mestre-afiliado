@@ -16,6 +16,14 @@ const SCHEMA = {
   REDIS_URL: str('REDIS_URL', { default: 'redis://localhost:5455' }),
   EVOLUTION_API_URL: str('EVOLUTION_API_URL', { default: 'http://localhost:5444' }),
   EVOLUTION_API_KEY: str('EVOLUTION_API_KEY', { default: '' }),
+  /**
+   * Secret usado pela Evolution API para assinar webhooks (JWT HS256).
+   * A Evolution recebe este valor como `jwt_key` no webhook.headers e envia
+   * `Authorization: Bearer <jwt>` em cada POST /webhook/message.
+   * SEPARADO de EVOLUTION_API_KEY — a chave de auth da Evolution (saída)
+   * não deve autenticar webhooks de entrada (privilégio de autenticação mútuo).
+   */
+  OMA_WEBHOOK_SECRET: str('OMA_WEBHOOK_SECRET', { default: '' }),
   WEBHOOK_URL: str('WEBHOOK_URL', { default: 'http://localhost:5442/webhook/message' }),
   WORKER_METRICS_URL: str('WORKER_METRICS_URL', { default: 'http://localhost:9092' }),
   DISPATCHER_METRICS_URL: str('DISPATCHER_METRICS_URL', { default: 'http://localhost:9093' }),

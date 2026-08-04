@@ -55,25 +55,35 @@ export function buildCreateInstanceBody(
   instanceName: string,
   token: string,
   webhookUrl: string,
+  webhookSecret?: string,
 ): Record<string, unknown> {
+  const webhook: Record<string, unknown> = {
+    enabled: true,
+    url: webhookUrl,
+    events: [
+      'messages.upsert',
+      'connection.update',
+      'qrcode.updated',
+      'groups.upsert',
+      'group-participants.update',
+    ],
+    byEvents: true,
+    base64: false,
+  };
+
+  // jwt_key: a Evolution gera JWT HS256 assinado com este secret e envia
+  // `Authorization: Bearer <jwt>` em cada POST /webhook/message.
+  // O webhook.routes.ts valida o token contra OMA_WEBHOOK_SECRET.
+  if (webhookSecret) {
+    webhook.headers = { jwt_key: webhookSecret };
+  }
+
   return {
     instanceName,
     token,
     integration: 'WHATSAPP-BAILEYS',
     qrcode: true,
-    webhook: {
-      enabled: true,
-      url: webhookUrl,
-      events: [
-        'messages.upsert',
-        'connection.update',
-        'qrcode.updated',
-        'groups.upsert',
-        'group-participants.update',
-      ],
-      byEvents: true,
-      base64: false,
-    },
+    webhook,
   };
 }
 
