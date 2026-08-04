@@ -1,6 +1,148 @@
 name: o-mestre-afiliado
 
 services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # INFRAESTRUTURA  (PostgreSQL, Redis, Evolution API)
+  # Self-contained: mesma stack que o docker-compose.dev.yml, mas produção.
+  # Decisão do owner (2026-08-04): manter tudo num único compose.
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: omestre_postgres
+    restart: always
+    command:
+      - postgres
+      - -c
+      - max_connections=1000
+      - -c
+      - listen_addresses=*
+    environment:
+      POSTGRES_DB: omestre_db
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
+    volumes:
+      - omestre_prod_postgres_data:/var/lib/postgresql/data
+    # Apenas loopback — para pg_dump do host e ferramentas de admin.
+    # NÃO expor em 0.0.0.0.
+    ports:
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5446:5432}'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U evolution -d omestre_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: omestre_redis
+    restart: always
+    command: redis-server --port 6379 --appendonly yes --timeout 0
+    volumes:
+      - omestre_prod_redis_data:/data
+    # Sem porta exposta no host — acesso só via rede Docker.
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: omestre_evolution
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Sem porta exposta no host — acessada via rede Docker (api, ingestor, dispatcher).
+    volumes:
+      - omestre_prod_evolution_instances:/evolution/instances
+    environment:
+      # ── Database ──────────────────────────────────────────────────────
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: >-
+        postgresql://evolution:${POSTGRES_PASSWORD:-evolution_pass}@postgres:5432/omestre_db?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: omestre_afiliado_prod
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      DATABASE_SAVE_DATA_CONTACTS: 'true'
+      DATABASE_SAVE_DATA_CHATS: 'true'
+      DATABASE_SAVE_DATA_LABELS: 'true'
+      DATABASE_SAVE_DATA_HISTORIC: 'true'
+
+      # ── Server ────────────────────────────────────────────────────────
+      SERVER_NAME: evolution
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: http://localhost:8080
+
+      # ── Cache (Redis) ─────────────────────────────────────────────────
+      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_TTL: 604800
+      CACHE_REDIS_PREFIX_KEY: ${CACHE_PREFIX:-evolution_omestre_prod}
+
+      # ── Auth ──────────────────────────────────────────────────────────
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'true'
+
+      # ── Webhook Global ────────────────────────────────────────────────
+      # Aponta para o container api na rede Docker (porta 5442)
+      WEBHOOK_GLOBAL_ENABLED: 'true'
+      WEBHOOK_GLOBAL_URL: http://api:5442/webhook/message
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: 'true'
+      WEBHOOK_EVENTS_CONNECTION_UPDATE: 'true'
+      WEBHOOK_EVENTS_QRCODE_UPDATED: 'true'
+      WEBHOOK_EVENTS_GROUPS_UPSERT: 'true'
+      WEBHOOK_EVENTS_GROUPS_UPDATE: 'true'
+      WEBHOOK_EVENTS_GROUP_PARTICIPANTS_UPDATE: 'true'
+
+      # ── Logs ──────────────────────────────────────────────────────────
+      LOG_LEVEL: ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS,WEBSOCKET
+      LOG_BAILEYS: error
+
+      # ── QR Code ───────────────────────────────────────────────────────
+      QRCODE_LIMIT: 30
+      QRCODE_COLOR: '#175197'
+
+      # ── Misc ──────────────────────────────────────────────────────────
+      DEL_INSTANCE: 'false'
+      LANGUAGE: pt-BR
+      CONFIG_SESSION_PHONE_CLIENT: 'O Mestre Afiliado (Prod)'
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      CORS_ORIGIN: '*'
+      CORS_CREDENTIALS: 'true'
+
+      # ── Desabilitar integrações não utilizadas ────────────────────────
+      TYPEBOT_ENABLED: 'false'
+      CHATWOOT_ENABLED: 'false'
+      OPENAI_ENABLED: 'false'
+      DIFY_ENABLED: 'false'
+      N8N_ENABLED: 'false'
+      EVOAI_ENABLED: 'false'
+      S3_ENABLED: 'false'
+      RABBITMQ_ENABLED: 'false'
+      KAFKA_ENABLED: 'false'
+      SQS_ENABLED: 'false'
+      PUSHER_ENABLED: 'false'
+      WEBSOCKET_ENABLED: 'false'
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # APLICAÇÕES  (build local)
+  # ═══════════════════════════════════════════════════════════════════════════
+
   # ─── API ──────────────────────────────────────────────────────────────
   api:
     build:
@@ -28,9 +170,6 @@ services:
       FRONTEND_URL: '${FRONTEND_URL:-http://localhost:5441}'
       ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
       METRICS_API_KEY: '${METRICS_API_KEY}'
-    networks:
-      - omestre-prod-net
-      - omestre-infra-net
     healthcheck:
       test:
         [
@@ -43,6 +182,9 @@ services:
       timeout: 10s
       retries: 5
       start_period: 15s
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
 
   # ─── Web ──────────────────────────────────────────────────────────────
   web:
@@ -182,6 +324,8 @@ services:
       - omestre-infra-net
 
   # ─── Cloudflare Tunnel ────────────────────────────────────────────────
+  # NÃO usado em produção: o tunnel roda como systemd service no HOST
+  # (ver deploy/cloudflared/). Mantido como fallback/documentação.
   cloudflared:
     image: cloudflare/cloudflared:2024.10.0
     container_name: omestre_cloudflared
@@ -202,3 +346,11 @@ networks:
   omestre-infra-net:
     name: omestre-infra-net
     external: true
+
+volumes:
+  omestre_prod_postgres_data:
+    name: omestre-prod-postgres-data
+  omestre_prod_redis_data:
+    name: omestre-prod-redis-data
+  omestre_prod_evolution_instances:
+    name: omestre-prod-evolution-instances
