@@ -10,7 +10,8 @@
     "elysia": "^1.2.0",
     "ioredis": "^5.4.1",
     "drizzle-orm": "^0.38.0",
-    "drizzle-kit": "^0.30.0"
+    "drizzle-kit": "^0.30.0",
+    "hono": "^4.6.0"
   },
   "scripts": {
     "dev": "bun run scripts/dev.ts",
@@ -18,12 +19,16 @@
     "dev:ingestor": "bun run --cwd apps/ingestor dev",
     "dev:dispatcher": "bun run --cwd apps/dispatcher dev",
     "dev:web": "bun run --cwd apps/web dev",
+    "dev:admin-api": "bun run --cwd apps/admin-api dev",
+    "dev:admin-web": "bun run --cwd apps/admin-web dev",
     "build:api": "bun run --cwd apps/api build",
     "build:ingestor": "bun run --cwd apps/ingestor build",
     "build:dispatcher": "bun run --cwd apps/dispatcher build",
     "build:web": "bun run --cwd apps/web build",
+    "build:admin-api": "bun run --cwd apps/admin-api build",
+    "build:admin-web": "bun run --cwd apps/admin-web build",
     "build:extension": "bun run scripts/build-extension-config.ts",
-    "build": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:catalog-worker && bun run build:web",
+    "build": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:catalog-worker && bun run build:web && bun run build:admin-api && bun run build:admin-web",
     "build:v2": "bun run build:api && bun run build:ingestor && bun run build:dispatcher && bun run build:catalog-worker && bun run build:web",
     "shopee": "bun run --cwd packages/converters shopee",
     "mercadolivre": "bun run --cwd packages/converters mercadolivre",

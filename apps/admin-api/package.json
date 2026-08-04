@@ -1,0 +1,25 @@
+{
+  "name": "@omestre/admin-api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "dev": "bun --env-file ../../.env run --hot src/index.ts",
+    "build": "bun build src/index.ts --outdir=dist --target=bun",
+    "start": "bun run dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src/**/*.test.ts",
+    "test:unit": "bun test src/**/*.test.ts",
+    "hash-password": "bun run src/scripts/hash-password.ts"
+  },
+  "dependencies": {
+    "@omestre/worker-common": "workspace:*",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
