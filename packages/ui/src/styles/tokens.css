@@ -21,6 +21,7 @@
   --color-primary-hover: #4338ca;
   --color-primary-light: #eef2ff;
   --color-primary-subtle: rgba(99, 102, 241, 0.08);
+  --color-on-primary: #ffffff;
 
   --color-success: #10b981;
   --color-success-hover: #059669;
@@ -122,6 +123,7 @@
   --color-primary-hover: #6366f1;
   --color-primary-light: #1e1b4b;
   --color-primary-subtle: rgba(129, 140, 248, 0.1);
+  --color-on-primary: #0f172a; /* texto escuro sobre primária clara */
 
   --color-success: #22c55e;
   --color-success-hover: #16a34a;

@@ -15,7 +15,14 @@ interface DialogProps {
   className?: string;
 }
 
-export function Dialog({ open, onOpenChange, title, description, children, className }: DialogProps) {
+export function Dialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+  className,
+}: DialogProps) {
   const closeButtonStyle: React.CSSProperties = {
     position: 'absolute',
     top: '1rem',
@@ -39,20 +46,44 @@ export function Dialog({ open, onOpenChange, title, description, children, class
         <RadixDialog.Overlay className="DialogOverlay" />
         <RadixDialog.Content className={clsx('DialogContent', className)}>
           <div style={{ padding: '1.5rem 1.5rem 0.5rem' }}>
-            <RadixDialog.Title style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--color-text-primary)', margin: 0, paddingRight: '2rem' }}>
+            <RadixDialog.Title
+              style={{
+                fontSize: 'var(--text-lg)',
+                fontWeight: 600,
+                color: 'var(--color-text-primary)',
+                margin: 0,
+                paddingRight: '2rem',
+              }}
+            >
               {title}
             </RadixDialog.Title>
             {description && (
-              <RadixDialog.Description style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>
+              <RadixDialog.Description
+                style={{
+                  fontSize: 'var(--text-sm)',
+                  color: 'var(--color-text-secondary)',
+                  marginTop: '0.25rem',
+                }}
+              >
                 {description}
               </RadixDialog.Description>
             )}
           </div>
-          <div style={{ padding: '0.5rem 1.5rem 1.5rem' }}>
-            {children}
-          </div>
+          <div style={{ padding: '0.5rem 1.5rem 1.5rem' }}>{children}</div>
           <RadixDialog.Close asChild>
-            <button style={closeButtonStyle} onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-primary)'; }} onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)'; }} aria-label="Close">
+            <button
+              style={closeButtonStyle}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  'var(--color-bg-secondary)';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)';
+              }}
+              aria-label="Close"
+            >
               <X size={16} />
             </button>
           </RadixDialog.Close>

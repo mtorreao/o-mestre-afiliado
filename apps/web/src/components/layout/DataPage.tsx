@@ -41,8 +41,7 @@ import React from 'react';
 import { RotateCw } from 'lucide-react';
 import { PageLayout } from './PageLayout.tsx';
 import { PageHeader } from './PageHeader.tsx';
-import { Card, Button, LoadingSkeleton } from '../ui/index.ts';
-import { useMediaQuery } from '../../hooks/useMediaQuery.ts';
+import { Card, Button, LoadingSkeleton, useMediaQuery } from '@omestre/ui';
 
 // ─── Tipos ─────────────────────────────────────────────────────────
 
@@ -72,7 +71,7 @@ interface DataPageProps {
 
 export interface TableColumn<T> {
   label: string;
-  width: string;       // CSS grid value, e.g. '1fr', '100px'
+  width: string; // CSS grid value, e.g. '1fr', '100px'
   render: (row: T) => React.ReactNode;
   align?: 'left' | 'right' | 'center';
 }
@@ -127,14 +126,19 @@ export function DataPage({
   const bodyContent: React.ReactNode[] = [];
 
   React.Children.forEach(children, (child) => {
-    if (!React.isValidElement(child)) { bodyContent.push(child); return; }
+    if (!React.isValidElement(child)) {
+      bodyContent.push(child);
+      return;
+    }
     const el = child as React.ReactElement<{ children?: React.ReactNode }>;
     switch (el.type) {
       case Desktop:
-        if (el.props.children) React.Children.forEach(el.props.children, (c) => desktopContent.push(c));
+        if (el.props.children)
+          React.Children.forEach(el.props.children, (c) => desktopContent.push(c));
         break;
       case Mobile:
-        if (el.props.children) React.Children.forEach(el.props.children, (c) => mobileContent.push(c));
+        if (el.props.children)
+          React.Children.forEach(el.props.children, (c) => mobileContent.push(c));
         break;
       default:
         bodyContent.push(child);
@@ -147,13 +151,21 @@ export function DataPage({
     <PageLayout maxWidth="960px">
       <PageHeader
         title={title}
-        subtitle={subtitle || (total !== undefined ? `${total} registro(s)` : loading ? 'Carregando...' : undefined)}
+        subtitle={
+          subtitle ||
+          (total !== undefined ? `${total} registro(s)` : loading ? 'Carregando...' : undefined)
+        }
         actions={
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             {headerActions}
             {onRefresh && (
-              <Button variant="ghost" size="md" onClick={onRefresh} disabled={loading}
-                icon={<RotateCw size={14} className={loading ? 'spin' : ''} />}>
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={onRefresh}
+                disabled={loading}
+                icon={<RotateCw size={14} className={loading ? 'spin' : ''} />}
+              >
                 Atualizar
               </Button>
             )}
@@ -161,7 +173,9 @@ export function DataPage({
         }
       />
 
-      {isWide ? desktopContent.length > 0 && <>{desktopContent}</> : mobileContent.length > 0 && <>{mobileContent}</>}
+      {isWide
+        ? desktopContent.length > 0 && <>{desktopContent}</>
+        : mobileContent.length > 0 && <>{mobileContent}</>}
 
       <Card>
         {loading && !error ? (
@@ -200,14 +214,16 @@ function TableComponent<T extends { id: number | string }>({
   if (!data || data.length === 0) return null;
 
   if (isMobile) {
-    return <MobileCardView
-      columns={columns}
-      data={data}
-      keyExtractor={keyExtractor}
-      onRowClick={onRowClick}
-      expandedRow={expandedRow}
-      renderExpanded={renderExpanded}
-    />;
+    return (
+      <MobileCardView
+        columns={columns}
+        data={data}
+        keyExtractor={keyExtractor}
+        onRowClick={onRowClick}
+        expandedRow={expandedRow}
+        renderExpanded={renderExpanded}
+      />
+    );
   }
 
   const gridTemplateColumns = columns.map((c) => c.width).join(' ');
@@ -215,9 +231,24 @@ function TableComponent<T extends { id: number | string }>({
   return (
     <div style={{ overflowX: 'auto' }}>
       {/* Header */}
-      <div style={{ display: 'grid', gridTemplateColumns, gap: '0.5rem', padding: '0.625rem 1rem', borderBottom: '2px solid var(--color-border)', fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns,
+          gap: '0.5rem',
+          padding: '0.625rem 1rem',
+          borderBottom: '2px solid var(--color-border)',
+          fontSize: 'var(--text-xs)',
+          fontWeight: 600,
+          color: 'var(--color-text-secondary)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+        }}
+      >
         {columns.map((col, i) => (
-          <span key={i} style={{ textAlign: col.align || 'left' }}>{col.label}</span>
+          <span key={i} style={{ textAlign: col.align || 'left' }}>
+            {col.label}
+          </span>
         ))}
       </div>
 
@@ -230,19 +261,49 @@ function TableComponent<T extends { id: number | string }>({
           <div key={key}>
             <div
               onClick={() => onRowClick?.(row)}
-              style={{ display: 'grid', gridTemplateColumns, gap: '0.5rem', padding: '0.75rem 1rem', borderBottom: '1px solid var(--color-border-light)', cursor: onRowClick ? 'pointer' : undefined, alignItems: 'center', background: isExpanded ? 'var(--color-bg-secondary)' : 'transparent', transition: 'background var(--transition-fast)' }}
-              onMouseEnter={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface-hover)'; }}
-              onMouseLeave={(e) => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+              style={{
+                display: 'grid',
+                gridTemplateColumns,
+                gap: '0.5rem',
+                padding: '0.75rem 1rem',
+                borderBottom: '1px solid var(--color-border-light)',
+                cursor: onRowClick ? 'pointer' : undefined,
+                alignItems: 'center',
+                background: isExpanded ? 'var(--color-bg-secondary)' : 'transparent',
+                transition: 'background var(--transition-fast)',
+              }}
+              onMouseEnter={(e) => {
+                if (!isExpanded)
+                  (e.currentTarget as HTMLDivElement).style.background =
+                    'var(--color-surface-hover)';
+              }}
+              onMouseLeave={(e) => {
+                if (!isExpanded)
+                  (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+              }}
             >
               {columns.map((col, i) => (
-                <div key={i} style={{ textAlign: col.align || 'left', fontSize: 'var(--text-sm)', color: col.align === 'right' ? undefined : 'var(--color-text-primary)' }}>
+                <div
+                  key={i}
+                  style={{
+                    textAlign: col.align || 'left',
+                    fontSize: 'var(--text-sm)',
+                    color: col.align === 'right' ? undefined : 'var(--color-text-primary)',
+                  }}
+                >
                   {col.render(row)}
                 </div>
               ))}
             </div>
 
             {isExpanded && renderExpanded && (
-              <div style={{ padding: '0.75rem 1rem', background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border-light)' }}>
+              <div
+                style={{
+                  padding: '0.75rem 1rem',
+                  background: 'var(--color-bg)',
+                  borderBottom: '1px solid var(--color-border-light)',
+                }}
+              >
                 {renderExpanded(row)}
               </div>
             )}
@@ -277,29 +338,46 @@ function MobileCardView<T extends { id: number | string }>({
         const isExpanded = expandedRow != null && expandedRow === key;
 
         return (
-          <div key={key} style={{
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-lg)',
-            boxShadow: 'var(--shadow-sm)',
-            overflow: 'hidden',
-            transition: 'box-shadow var(--transition-fast)',
-            cursor: onRowClick ? 'pointer' : undefined,
-          }}>
+          <div
+            key={key}
+            style={{
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-sm)',
+              overflow: 'hidden',
+              transition: 'box-shadow var(--transition-fast)',
+              cursor: onRowClick ? 'pointer' : undefined,
+            }}
+          >
             {/* Card header — clickable if onRowClick */}
             <div onClick={() => onRowClick?.(row)} style={{ padding: '0.75rem 0.875rem' }}>
               {/* Title row */}
-              {titleCol && (
-                <div style={{ marginBottom: '0.5rem' }}>
-                  {titleCol.render(row)}
-                </div>
-              )}
+              {titleCol && <div style={{ marginBottom: '0.5rem' }}>{titleCol.render(row)}</div>}
 
               {/* Info rows */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
                 {infoCols.map((col, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 'var(--text-sm)' }}>
-                    <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', fontWeight: 500, minWidth: '70px', flexShrink: 0 }}>{col.label}</span>
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      fontSize: 'var(--text-sm)',
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: 'var(--color-text-muted)',
+                        fontSize: 'var(--text-xs)',
+                        fontWeight: 500,
+                        minWidth: '70px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {col.label}
+                    </span>
                     {col.render(row)}
                   </div>
                 ))}
@@ -308,23 +386,31 @@ function MobileCardView<T extends { id: number | string }>({
 
             {/* Expanded detail */}
             {isExpanded && renderExpanded && (
-              <div style={{ padding: '0 0.875rem 0.75rem', borderTop: '1px solid var(--color-border-light)', background: 'var(--color-bg-secondary)', fontSize: 'var(--text-sm)' }}>
-                <div style={{ paddingTop: '0.75rem' }}>
-                  {renderExpanded(row)}
-                </div>
+              <div
+                style={{
+                  padding: '0 0.875rem 0.75rem',
+                  borderTop: '1px solid var(--color-border-light)',
+                  background: 'var(--color-bg-secondary)',
+                  fontSize: 'var(--text-sm)',
+                }}
+              >
+                <div style={{ paddingTop: '0.75rem' }}>{renderExpanded(row)}</div>
               </div>
             )}
 
             {/* Actions footer */}
             {actionCols.length > 0 && (
-              <div style={{
-                display: 'flex',
-                gap: '0.25rem',
-                justifyContent: 'flex-end',
-                padding: '0.5rem 0.875rem',
-                borderTop: '1px solid var(--color-border-light)',
-                background: 'var(--color-bg)',
-              }} onClick={(e) => e.stopPropagation()}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '0.25rem',
+                  justifyContent: 'flex-end',
+                  padding: '0.5rem 0.875rem',
+                  borderTop: '1px solid var(--color-border-light)',
+                  background: 'var(--color-bg)',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
                 {actionCols.map((col, i) => (
                   <div key={i}>{col.render(row)}</div>
                 ))}
@@ -339,21 +425,31 @@ function MobileCardView<T extends { id: number | string }>({
 
 // ─── PaginationControls — navegação responsiva (mobile/desktop) ────
 
-function PaginationControls({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (p: number) => void }) {
+function PaginationControls({
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
+}) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const btnVariant = isMobile ? 'secondary' : 'ghost';
   const btnSize = isMobile ? 'md' : 'sm';
 
   return (
-    <div style={{
-      padding: isMobile ? '0.875rem 1rem' : '0.75rem 1rem',
-      borderTop: '1px solid var(--color-border-light)',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      gap: isMobile ? '0.75rem' : '0.5rem',
-      fontSize: 'var(--text-sm)',
-    }}>
+    <div
+      style={{
+        padding: isMobile ? '0.875rem 1rem' : '0.75rem 1rem',
+        borderTop: '1px solid var(--color-border-light)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: isMobile ? '0.75rem' : '0.5rem',
+        fontSize: 'var(--text-sm)',
+      }}
+    >
       <Button
         variant={btnVariant}
         size={btnSize}
@@ -383,16 +479,34 @@ function PaginationControls({ page, totalPages, onPageChange }: { page: number; 
 
 function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+    <div
+      style={{
+        padding: '2rem',
+        textAlign: 'center',
+        color: 'var(--color-text-muted)',
+        fontSize: 'var(--text-sm)',
+      }}
+    >
       <p style={{ color: 'var(--color-error)', marginBottom: '0.75rem' }}>{message}</p>
-      {onRetry && <Button variant="outline" size="sm" onClick={onRetry}>Tentar novamente</Button>}
+      {onRetry && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Tentar novamente
+        </Button>
+      )}
     </div>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+    <div
+      style={{
+        padding: '2rem',
+        textAlign: 'center',
+        color: 'var(--color-text-muted)',
+        fontSize: 'var(--text-sm)',
+      }}
+    >
       {message}
     </div>
   );

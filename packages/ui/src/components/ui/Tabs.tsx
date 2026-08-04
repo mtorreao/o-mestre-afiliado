@@ -30,13 +30,19 @@ export function Tabs({ tabs, value, onValueChange, children, className }: TabsPr
       <RadixTabs.List className="TabsList" aria-label="Navegação por abas">
         {tabs.map((tab) => (
           <RadixTabs.Trigger key={tab.value} value={tab.value} className="TabsTrigger">
-            {tab.icon && <span style={{ display: 'inline-flex', marginRight: '0.35rem' }}>{tab.icon}</span>}
+            {tab.icon && (
+              <span style={{ display: 'inline-flex', marginRight: '0.35rem' }}>{tab.icon}</span>
+            )}
             {tab.label}
           </RadixTabs.Trigger>
         ))}
       </RadixTabs.List>
       {React.Children.map(children, (child, i) => (
-        <RadixTabs.Content key={tabs[i]?.value ?? i} value={tabs[i]?.value ?? ''} style={contentStyle}>
+        <RadixTabs.Content
+          key={tabs[i]?.value ?? i}
+          value={tabs[i]?.value ?? ''}
+          style={contentStyle}
+        >
           {child}
         </RadixTabs.Content>
       ))}

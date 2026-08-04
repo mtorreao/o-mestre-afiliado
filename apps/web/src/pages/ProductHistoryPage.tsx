@@ -16,9 +16,9 @@ import './product-history.css';
 import { useAuth } from '../hooks/useAuth.ts';
 import { DataPage } from '../components/layout/DataPage.tsx';
 import type { TableColumn } from '../components/layout/DataPage.tsx';
-import { Badge, Button, Dialog, Input, Select, Card } from '../components/ui/index.ts';
-import { FilterBar, MobileFilterBar } from '../components/ui/index.ts';
-import { useMediaQuery } from '../hooks/useMediaQuery.ts';
+import { Badge, Button, Dialog, Input, Select, Card } from '@omestre/ui';
+import { FilterBar, MobileFilterBar } from '@omestre/ui';
+import { useMediaQuery } from '@omestre/ui';
 import {
   formatPrice,
   formatDateTime,

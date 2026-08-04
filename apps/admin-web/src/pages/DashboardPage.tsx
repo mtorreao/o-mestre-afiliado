@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Badge, Button, Card, Input } from '@omestre/ui';
 import {
   listDeploys,
   logout,
@@ -8,11 +9,11 @@ import {
   type DeployRecord,
 } from '../lib/api.ts';
 
-const STATUS_BADGE: Record<DeployRecord['status'], string> = {
-  running: 'badge-running',
-  success: 'badge-success',
-  failed: 'badge-failed',
-  timeout: 'badge-timeout',
+const STATUS_BADGE: Record<DeployRecord['status'], 'success' | 'error' | 'info' | 'warning'> = {
+  running: 'info',
+  success: 'success',
+  failed: 'error',
+  timeout: 'warning',
 };
 
 const STATUS_LABEL: Record<DeployRecord['status'], string> = {
@@ -99,16 +100,12 @@ export default function DashboardPage({ onLogout }: Props) {
           <div className="page-subtitle">Deploys e operações do O Mestre Afiliado</div>
         </div>
         <div className="row">
-          <button
-            className="btn"
-            onClick={handleTestTelegram}
-            title="Envia mensagem de teste no Telegram"
-          >
-            📨 Testar Telegram
-          </button>
-          <button className="btn btn-danger" onClick={handleLogout}>
+          <Button variant="secondary" onClick={handleTestTelegram} icon={<span>📨</span>}>
+            Testar Telegram
+          </Button>
+          <Button variant="danger" onClick={handleLogout}>
             Sair
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -116,44 +113,39 @@ export default function DashboardPage({ onLogout }: Props) {
       {error && <div className="status-line status-error">⚠️ {error}</div>}
 
       {/* Deploy manual */}
-      <div className="card mb-12">
-        <div className="card-title">Deploy manual</div>
+      <Card title="Deploy manual" className="mb-12">
         <form className="row" onSubmit={handleManualDeploy}>
-          <input
-            className="input"
-            style={{ maxWidth: 220 }}
+          <Input
             placeholder="ref (ex: v0.4.2)"
             value={manualRef}
             onChange={(e) => setManualRef(e.target.value)}
-          />
-          <input
-            className="input"
             style={{ maxWidth: 220 }}
+          />
+          <Input
             placeholder="sha (opcional)"
             value={manualSha}
             onChange={(e) => setManualSha(e.target.value)}
+            style={{ maxWidth: 220 }}
           />
-          <button
-            className="btn btn-primary"
-            type="submit"
-            disabled={manualBusy || !manualRef.trim()}
-          >
+          <Button variant="primary" type="submit" loading={manualBusy} disabled={!manualRef.trim()}>
             {manualBusy ? 'Disparando…' : 'Disparar'}
-          </button>
+          </Button>
         </form>
-      </div>
+      </Card>
 
       {/* Histórico */}
-      <div className="card">
-        <div className="card-title">
-          Histórico de deploys{' '}
-          {loading && (
-            <span className="muted" style={{ fontSize: 12 }}>
-              (atualizando…)
-            </span>
-          )}
-        </div>
-
+      <Card
+        title={
+          <>
+            Histórico de deploys{' '}
+            {loading && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                (atualizando…)
+              </span>
+            )}
+          </>
+        }
+      >
         {deploys.length === 0 && !loading ? (
           <div className="muted">Nenhum deploy registrado ainda.</div>
         ) : (
@@ -176,9 +168,7 @@ export default function DashboardPage({ onLogout }: Props) {
                   <td className="mono muted">{d.sha.slice(0, 7)}</td>
                   <td>{d.triggeredBy === 'github' ? '🤖 GitHub' : '🖐️ Manual'}</td>
                   <td>
-                    <span className={`badge ${STATUS_BADGE[d.status]}`}>
-                      {STATUS_LABEL[d.status]}
-                    </span>
+                    <Badge variant={STATUS_BADGE[d.status]}>{STATUS_LABEL[d.status]}</Badge>
                   </td>
                   <td className="muted">
                     {d.durationMs ? `${(d.durationMs / 1000).toFixed(1)}s` : '—'}
@@ -194,7 +184,7 @@ export default function DashboardPage({ onLogout }: Props) {
             </tbody>
           </table>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
