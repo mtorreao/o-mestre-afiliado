@@ -32,6 +32,20 @@ export {
 } from './notifier.ts';
 export type { UserFixableType, SilentType, FailureType } from './notifier.ts';
 
+// Funções puras do notifier — reutilizadas pelo admin-api (Telegram) sem
+// puxar a dependência de Redis/Evolution que `notifier.ts` tem.
+export {
+  buildTelegramApiUrl,
+  buildTelegramPayload,
+  buildEvolutionApiUrl,
+  buildEvolutionHeaders,
+  buildWhatsAppPayload,
+  resolveNotificationConfig,
+  shouldSendViaChannel,
+  resolveNotificationMessage,
+  isGroupedReport,
+} from './notifier-pure.ts';
+
 export {
   startMetricsServer,
   stopMetricsServer,
