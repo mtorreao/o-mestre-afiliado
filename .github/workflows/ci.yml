@@ -44,8 +44,8 @@ jobs:
             FILES=$(git diff --name-only "${{ github.event.before }}"...HEAD 2>/dev/null || git diff --name-only HEAD~1...HEAD 2>/dev/null || true)
           fi
           RESULT=$(printf '%s\n' "$FILES" | bash scripts/ci/check-docs-only.sh)
-          echo "docs_only=$RESULT" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$RESULT (files: $(echo "$FILES" | tr '\n' ' '))"
+          echo "$RESULT" >> "$GITHUB_OUTPUT"
+          echo "$RESULT (files: $(echo "$FILES" | tr '\n' ' '))"
 
       - name: Setup Bun
         if: steps.docs-only.outputs.docs_only == 'false'
@@ -137,8 +137,8 @@ jobs:
             FILES=$(git diff --name-only "${{ github.event.before }}"...HEAD 2>/dev/null || git diff --name-only HEAD~1...HEAD 2>/dev/null || true)
           fi
           RESULT=$(printf '%s\n' "$FILES" | bash scripts/ci/check-docs-only.sh)
-          echo "docs_only=$RESULT" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$RESULT (files: $(echo "$FILES" | tr '\n' ' '))"
+          echo "$RESULT" >> "$GITHUB_OUTPUT"
+          echo "$RESULT (files: $(echo "$FILES" | tr '\n' ' '))"
 
       - name: Setup Bun
         if: steps.docs-only.outputs.docs_only == 'false'
