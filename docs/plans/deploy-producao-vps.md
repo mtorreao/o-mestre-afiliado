@@ -325,16 +325,22 @@ echo "OMA_WEBHOOK_SECRET_LEN=${#OMA_WEBHOOK_SECRET}"
 # Deve printar: OMA_WEBHOOK_SECRET_LEN=64
 ```
 
-**Mudanças no código que ficam pra depois (não escopo da Fase 3.5):**
+**Mudanças no código (implementadas no PR #9, commit `df81cd2`, 2026-08-04):**
 
-- `apps/api/src/modules/webhook/webhook.routes.ts` — substituir validação `apikey === EVOLUTION_API_KEY` por `jwt.verify(token, OMA_WEBHOOK_SECRET)`. **Não pode ser feito até o admin reconectar as instâncias WhatsApp com o novo header configurado**, senão quebra webhooks das instâncias existentes.
-- `apps/api/src/services/evolution.ts:97` — adicionar `headers: { jwt_key: config.OMA_WEBHOOK_SECRET }` no body do `createInstance`.
+- ✅ `apps/api/src/modules/webhook/webhook-jwt-pure.ts` — módulo puro de verificação JWT HS256 (base64url, parse, claims, HMAC via Web Crypto — zero dependência)
+- ✅ `apps/api/src/modules/webhook/webhook-jwt-pure.test.ts` — 23 testes (parse, claims, assinatura válida/inválida, tamper, expiração, clock skew)
+- ✅ `apps/api/src/modules/webhook/webhook.routes.ts` — valida `Authorization: Bearer <jwt>` quando `OMA_WEBHOOK_SECRET` configurado; fallback legacy `apikey` apenas se secret vazio (migração suave)
+- ✅ `apps/api/src/services/evolution-pure.ts` — `buildCreateInstanceBody` aceita `webhookSecret` e injeta `headers.jwt_key`
+- ✅ `apps/api/src/services/evolution.ts:97` — passa `config.OMA_WEBHOOK_SECRET` no createInstance
+- ✅ `apps/api/src/config.ts` — env `OMA_WEBHOOK_SECRET` registrada
+- ✅ `.env.example` — documentada a nova env
 
 **Estado real após Fase 3.5 (2026-08-04):**
 
 - ✅ `OMA_WEBHOOK_SECRET` gerado e adicionado ao `.env` (64 chars hex, `chmod 600`)
-- ✅ Plano documenta a estratégia JWT + header `Authorization: Bearer`
-- ⚠️ Mudanças no código (`webhook.routes.ts` + `evolution.ts`) **NÃO aplicadas ainda** — aguardam primeira reconexão de instância WhatsApp pra serem ativadas com segurança (zero-downtime).
+- ✅ Código de verificação JWT implementado + testado (23 testes)
+- ✅ Typecheck 11/11 + 599 testes API passando (worktree limpa)
+- ⚠️ **Ativação em prod:** instâncias WhatsApp existentes ainda não têm `jwt_key` configurado no webhook. Ao **reconectar** cada instância via `/api/whatsapp/connect` em prod, a nova instância já nasce com o header JWT. O fallback legacy `apikey` garante que nada quebra durante a migração.
 
 **Critério de aceite:** ✅ `OMA_WEBHOOK_SECRET` presente no `.env`, 64 chars hex, plano documenta estratégia JWT.
 
@@ -842,4 +848,5 @@ Criar `docs/specs/deploy-producao.md` (status: ✅ validated após deploy real) 
 | 2026-08-04 | 0.4.0   | **Fase 1 executada no VPS.** Docker 29.1.3 + Compose 2.40.3 instalados via `apt-get install --no-install-recommends` (pitfall documentado: sem a flag, install trava 20+min). Daemon funcional (`docker run hello-world` OK). Logrotate configurado. Disco 185GB livre.                                                                                                                                                                                                                                                                                                | Owner pediu pra começar Fase 1                                                                        |
 | 2026-08-04 | 0.5.0   | **Fase 2 executada no VPS.** Chave SSH Ed25519 gerada no VPS (`vps-deploy-oma`), cadastrada manualmente pelo owner no GitHub. Repo clonado em `/root/o-mestre-afiliado` (branch `main` @ `e518177`). Rede Docker `omestre-infra-net` criada (ID `addc195ed9...`). Diretórios `/root/.oma` e `/root/.ssh/deploy` criados (perm 700) pra Fase 6.                                                                                                                                                                                                                         | Owner confirmou cadastro da chave no GitHub                                                           |
 | 2026-08-04 | 0.6.0   | **Fase 3 executada no VPS.** `.env` e `.env.infra` gerados com secrets fortes (5 secrets via `openssl rand -hex`). ML OAuth desabilitado no MVP (vars vazias). Diretório `/var/backups/oma-pg` criado (perm 700). **Bug encontrado + corrigido:** `.gitignore` no VPS não tinha `.env.infra` — commit `8b87678` criado pra consertar (push rejeitado por branch protection, owner precisa abrir PR).                                                                                                                                                                   | Owner pediu pra pular ML OAuth no MVP                                                                 |
-| 2026-08-04 | 0.7.0   | **Fase 3.5 adicionada e executada no VPS:** separar webhook secret do Evolution auth. Investigação oficial do repo Evolution API v2.3.7 confirmou que `webhook.headers` aceita headers customizados E suporta `jwt_key` (gera JWT auto). Estratégia escolhida: `OMA_WEBHOOK_SECRET` + header `Authorization: Bearer <jwt>`. Env var adicionada ao `.env` (64 chars hex, `chmod 600` preservado). Mudanças no código (`webhook.routes.ts` + `evolution.ts:97`) **NÃO aplicadas ainda** — aguardam reconexão de instância WhatsApp pra serem ativadas com zero-downtime. | Owner identificou compartilhamento inseguro de secret; pediu investigação antes de decidir estratégia |
+| 2026-08-04 | 0.7.0   | **Fase 3.5 adicionada e executada no VPS:** separar webhook secret do Evolution auth. Investigação oficial do repo Evolution API v2.3.7 confirmou que `webhook.headers` aceita headers customizados E suporta `jwt_key` (gera JWT auto). Estratégia escolhida: `OMA_WEBHOOK_SECRET` + header `Authorization: Bearer <jwt>`. Env var adicionada ao `.env` (64 chars hex, `chmod 600` preservado). | Owner identificou compartilhamento inseguro de secret; pediu investigação antes de decidir estratégia |
+| 2026-08-04 | 0.8.0   | **Código da Fase 3.5 implementado no PR #9 (commit `df81cd2`):** `webhook-jwt-pure.ts` (verificação JWT HS256 via Web Crypto, zero dep), 23 testes, `webhook.routes.ts` com validação JWT + fallback legacy, `evolution-pure.ts`/`evolution.ts` injetam `jwt_key`, `config.ts` + `.env.example` atualizados. Verificado: typecheck 11/11, 599 testes API. Ativação em prod depende de reconectar instâncias WhatsApp. | Owner pediu pra incluir `.env.example` + código relacionado na mudança |
