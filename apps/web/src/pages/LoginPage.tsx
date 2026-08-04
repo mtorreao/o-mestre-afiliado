@@ -2,7 +2,7 @@
  * LoginPage — Tela de login refatorada com novo design system
  */
 import { useState } from 'react';
-import { Button, Input } from '../components/ui/index.ts';
+import { Button, Input } from '@omestre/ui';
 import { LogIn } from 'lucide-react';
 
 interface LoginPageProps {
@@ -58,9 +58,16 @@ export function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
           <img
             src="/logos/logo_full_square.png"
             alt="O Mestre Afiliado"
-            style={{ width: '72px', height: '72px', marginBottom: '1rem', borderRadius: 'var(--radius-xl)' }}
+            style={{
+              width: '72px',
+              height: '72px',
+              marginBottom: '1rem',
+              borderRadius: 'var(--radius-xl)',
+            }}
           />
-          <h1 style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 700 }}>O Mestre Afiliado</h1>
+          <h1 style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 700 }}>
+            O Mestre Afiliado
+          </h1>
           <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
             Faça login para continuar
           </p>
@@ -86,7 +93,10 @@ export function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+        >
           <Input
             label="Email"
             type="email"
@@ -114,7 +124,14 @@ export function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
           </Button>
         </form>
 
-        <div style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+        <div
+          style={{
+            textAlign: 'center',
+            marginTop: '1.5rem',
+            fontSize: 'var(--text-sm)',
+            color: 'var(--color-text-muted)',
+          }}
+        >
           Não tem conta?{' '}
           <button
             onClick={onSwitchToRegister}

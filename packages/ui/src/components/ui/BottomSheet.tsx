@@ -8,7 +8,7 @@
  */
 import React from 'react';
 import * as RadixDialog from '@radix-ui/react-dialog';
-import { X, Filter } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface BottomSheetProps {
   open: boolean;
@@ -23,11 +23,7 @@ interface BottomSheetProps {
 export function BottomSheet({ open, onOpenChange, title, children, trigger }: BottomSheetProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
-      {trigger && (
-        <RadixDialog.Trigger asChild>
-          {trigger}
-        </RadixDialog.Trigger>
-      )}
+      {trigger && <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>}
       <RadixDialog.Portal>
         {/* Overlay escuro */}
         <RadixDialog.Overlay

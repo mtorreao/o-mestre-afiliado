@@ -8,16 +8,9 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Button,
-  Badge,
-  Dialog,
-  FilterBar,
-  Input,
-  MobileFilterBar,
-} from '../components/ui/index.ts';
+import { Button, Badge, Dialog, FilterBar, Input, MobileFilterBar } from '@omestre/ui';
 import { DataPage } from '../components/layout/DataPage.tsx';
-import { useToast } from '../components/ui/Toast.tsx';
+import { useToast } from '@omestre/ui';
 import { Search, RotateCw, Eye, Edit3, Power, PowerOff, Trash2 } from 'lucide-react';
 import type { TableColumn } from '../components/layout/DataPage.tsx';
 

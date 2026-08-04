@@ -14,11 +14,23 @@ interface BadgeProps {
 }
 
 const variantMap: Record<BadgeVariant, { bg: string; color: string; border: string }> = {
-  success: { bg: 'var(--color-success-subtle)', color: 'var(--color-success)', border: 'transparent' },
-  warning: { bg: 'var(--color-warning-subtle)', color: 'var(--color-warning)', border: 'transparent' },
+  success: {
+    bg: 'var(--color-success-subtle)',
+    color: 'var(--color-success)',
+    border: 'transparent',
+  },
+  warning: {
+    bg: 'var(--color-warning-subtle)',
+    color: 'var(--color-warning)',
+    border: 'transparent',
+  },
   error: { bg: 'var(--color-error-subtle)', color: 'var(--color-error)', border: 'transparent' },
   info: { bg: 'var(--color-primary-subtle)', color: 'var(--color-primary)', border: 'transparent' },
-  neutral: { bg: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: 'transparent' },
+  neutral: {
+    bg: 'var(--color-bg-secondary)',
+    color: 'var(--color-text-secondary)',
+    border: 'transparent',
+  },
 };
 
 export function Badge({ children, variant = 'neutral', className, style }: BadgeProps) {

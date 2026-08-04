@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth.ts';
-import { Card } from '../components/ui/Card.tsx';
-import { Switch } from '../components/ui/Switch.tsx';
-import { Badge } from '../components/ui/Badge.tsx';
+import { Card } from '@omestre/ui';
+import { Switch } from '@omestre/ui';
+import { Badge } from '@omestre/ui';
 
 interface FlagData {
   key: string;

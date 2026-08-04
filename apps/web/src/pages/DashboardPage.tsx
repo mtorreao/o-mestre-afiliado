@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
-import { Card, Badge, Button, Loading } from '../components/ui/index.ts';
+import { Card, Badge, Button, Loading } from '@omestre/ui';
 import { fetchApi } from '../lib/api-client.ts';
 import {
   Users,

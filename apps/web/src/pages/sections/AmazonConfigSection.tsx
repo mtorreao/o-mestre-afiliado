@@ -6,8 +6,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ShoppingBag, Trash2 } from 'lucide-react';
-import { Button, Card, Input, Loading } from '../../components/ui/index.ts';
-import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
+import { Button, Card, Input, Loading } from '@omestre/ui';
+import { showErrorToast, showSuccessToast } from '@omestre/ui';
 
 interface AmazonTrackingId {
   tag: string;

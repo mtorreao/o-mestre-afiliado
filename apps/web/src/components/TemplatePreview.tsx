@@ -9,7 +9,7 @@
  *   5. Exibe preview + metadata (length, placeholders desconhecidos)
  */
 import { useState } from 'react';
-import { Card, Button, Input } from './ui/index.ts';
+import { Card, Button, Input } from '@omestre/ui';
 import { Play, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react';
 import { fetchApi } from '../lib/api-client.ts';
 
@@ -33,7 +33,12 @@ const cardStyle: React.CSSProperties = {
   borderLeft: '4px solid var(--color-primary)',
 };
 
-export function TemplatePreview({ token, template, sourceGroupName, targetGroupName }: TemplatePreviewProps) {
+export function TemplatePreview({
+  token,
+  template,
+  sourceGroupName,
+  targetGroupName,
+}: TemplatePreviewProps) {
   const [testUrl, setTestUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -189,7 +194,10 @@ export function TemplatePreview({ token, template, sourceGroupName, targetGroupN
               }}
             >
               <span>
-                <ExternalLink size={12} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+                <ExternalLink
+                  size={12}
+                  style={{ verticalAlign: 'middle', marginRight: '0.2rem' }}
+                />
                 {result.length} caracteres
               </span>
               {result.isEmpty && (
@@ -199,22 +207,26 @@ export function TemplatePreview({ token, template, sourceGroupName, targetGroupN
               )}
               {result.unknownPlaceholders.length > 0 && (
                 <span style={{ color: 'var(--color-warning)' }}>
-                  <AlertTriangle size={12} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+                  <AlertTriangle
+                    size={12}
+                    style={{ verticalAlign: 'middle', marginRight: '0.2rem' }}
+                  />
                   Placeholders desconhecidos: {result.unknownPlaceholders.join(', ')}
                 </span>
               )}
               {result.unknownPlaceholders.length === 0 && !result.isEmpty && (
                 <span style={{ color: 'var(--color-success)' }}>
-                  <CheckCircle size={12} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+                  <CheckCircle
+                    size={12}
+                    style={{ verticalAlign: 'middle', marginRight: '0.2rem' }}
+                  />
                   Template OK
                 </span>
               )}
             </div>
 
             {/* Preview */}
-            <div style={previewContainerStyle}>
-              {result.preview}
-            </div>
+            <div style={previewContainerStyle}>{result.preview}</div>
           </div>
         )}
       </Card>

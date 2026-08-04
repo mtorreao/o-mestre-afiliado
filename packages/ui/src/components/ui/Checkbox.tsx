@@ -15,7 +15,14 @@ interface CheckboxProps {
   className?: string;
 }
 
-export function Checkbox({ id, label, checked, onCheckedChange, disabled, className }: CheckboxProps) {
+export function Checkbox({
+  id,
+  label,
+  checked,
+  onCheckedChange,
+  disabled,
+  className,
+}: CheckboxProps) {
   const containerStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',

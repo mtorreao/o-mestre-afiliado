@@ -16,7 +16,7 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth.ts';
-import { ThemeProvider } from './hooks/useTheme.tsx';
+import { ThemeProvider } from '@omestre/ui';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
@@ -29,8 +29,7 @@ import { FeatureFlagsPage } from './pages/FeatureFlagsPage.tsx';
 import { ProductHistoryPage } from './pages/ProductHistoryPage.tsx';
 import { MaintenancePage } from './pages/MaintenancePage.tsx';
 import { AppShellLayout } from './components/layout/AppShell.tsx';
-import { ToastProvider } from './components/ui/index.ts';
-import { ThemeToggle } from './components/ui/ThemeToggle.tsx';
+import { ToastProvider, ThemeToggle } from '@omestre/ui';
 import { Loader2 } from 'lucide-react';
 
 // ─── Protected route guard ──────────────────────────────

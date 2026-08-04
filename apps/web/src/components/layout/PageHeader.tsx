@@ -6,7 +6,7 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import clsx from 'clsx';
-import { Button } from '../ui/Button.tsx';
+import { Button } from '@omestre/ui';
 
 interface PageHeaderProps {
   title: string;

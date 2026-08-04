@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { Button, Card } from '@omestre/ui';
 import { getDeployLog } from '../lib/api.ts';
 
 export default function DeployDetailPage() {
@@ -37,21 +38,20 @@ export default function DeployDetailPage() {
           <div className="page-title">Deploy #{id?.slice(0, 8)}</div>
           <div className="page-subtitle">Log completo do deploy</div>
         </div>
-        <Link className="btn" to="/">
+        <Button variant="ghost" onClick={() => window.history.back()}>
           ← Voltar
-        </Link>
+        </Button>
       </div>
 
       {error && <div className="status-line status-error">⚠️ {error}</div>}
 
-      <div className="card">
-        <div className="card-title">Log</div>
+      <Card title="Log">
         {loading && !log ? (
           <div className="muted">Carregando…</div>
         ) : (
           <pre className="log-viewer">{log ?? '(sem log)'}</pre>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

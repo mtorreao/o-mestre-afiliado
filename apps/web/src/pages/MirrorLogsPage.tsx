@@ -4,17 +4,10 @@
  * Tabela com filtros por status, marketplace, período e busca textual.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  Button,
-  Input,
-  Select,
-  Badge,
-  FilterBar,
-  MobileFilterBar,
-} from '../components/ui/index.ts';
+import { Button, Input, Select, Badge, FilterBar, MobileFilterBar } from '@omestre/ui';
 import { DataPage } from '../components/layout/DataPage.tsx';
 import { Filter, Search, X, ChevronDown, ChevronUp, Copy } from 'lucide-react';
-import { useMediaQuery } from '../hooks/useMediaQuery.ts';
+import { useMediaQuery } from '@omestre/ui';
 
 // ─── Types ──────────────────────────────────────────
 

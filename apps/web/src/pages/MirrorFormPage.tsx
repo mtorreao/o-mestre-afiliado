@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Card, Button, Input } from '../components/ui/index.ts';
+import { Card, Button, Input } from '@omestre/ui';
 import { GroupOfferAutocomplete } from '../components/GroupOfferAutocomplete.tsx';
 import { GroupDestAutocomplete } from '../components/GroupDestAutocomplete.tsx';
 import { TemplateEditor } from '../components/TemplateEditor.tsx';

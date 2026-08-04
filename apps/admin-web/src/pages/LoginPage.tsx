@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Button, Card, Input } from '@omestre/ui';
 import { login } from '../lib/api.ts';
 
 interface Props {
@@ -27,29 +28,23 @@ export default function LoginPage({ onLogin }: Props) {
 
   return (
     <div className="login-wrap">
-      <div className="card login-card">
+      <Card className="login-card">
         <div className="login-logo">⚙️ Admin Center</div>
         <div className="login-sub">O Mestre Afiliado — painel administrativo</div>
 
         <form onSubmit={handleSubmit}>
-          <div className="form-field">
-            <label htmlFor="user">Usuário</label>
-            <input
-              id="user"
-              className="input"
-              value={user}
-              onChange={(e) => setUser(e.target.value)}
-              autoComplete="username"
-              required
-            />
-          </div>
+          <Input
+            label="Usuário"
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            autoComplete="username"
+            required
+          />
 
-          <div className="form-field">
-            <label htmlFor="password">Senha</label>
-            <input
-              id="password"
+          <div style={{ marginTop: 14 }}>
+            <Input
+              label="Senha"
               type="password"
-              className="input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
@@ -63,16 +58,16 @@ export default function LoginPage({ onLogin }: Props) {
             </div>
           )}
 
-          <button
-            className="btn btn-primary"
+          <Button
+            variant="primary"
             type="submit"
-            disabled={loading}
+            loading={loading}
             style={{ width: '100%', marginTop: 16 }}
           >
             {loading ? 'Entrando…' : 'Entrar'}
-          </button>
+          </Button>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }

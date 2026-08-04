@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MessageCircle, Gauge } from 'lucide-react';
-import { Card, Button, Badge, Loading, Input } from './ui/index.ts';
+import { Card, Button, Badge, Loading, Input } from '@omestre/ui';
 
 interface WppConnectionProps {
   token: string;
@@ -23,7 +23,13 @@ type WppState =
   | { status: 'disconnected' }
   | { status: 'connecting'; message?: string }
   | { status: 'awaiting_scan'; qrcode: string; instanceId?: string }
-  | { status: 'connected'; phone: string | null; instanceId?: number; rateLimitMaxMsgs?: number; rateLimitWindowSec?: number }
+  | {
+      status: 'connected';
+      phone: string | null;
+      instanceId?: number;
+      rateLimitMaxMsgs?: number;
+      rateLimitWindowSec?: number;
+    }
   | { status: 'error'; message: string };
 
 const POLL_INTERVAL = 5000; // 5 segundos
@@ -40,7 +46,7 @@ export function WppConnection({ token }: WppConnectionProps) {
       const res = await fetch('/api/whatsapp/status', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json() as {
+      const data = (await res.json()) as {
         success: boolean;
         status?: string;
         connected?: boolean;
@@ -66,7 +72,7 @@ export function WppConnection({ token }: WppConnectionProps) {
         const res = await fetch('/api/whatsapp/status', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const data = await res.json() as {
+        const data = (await res.json()) as {
           success: boolean;
           status: string;
           connected: boolean;
@@ -101,7 +107,7 @@ export function WppConnection({ token }: WppConnectionProps) {
                   Authorization: `Bearer ${token}`,
                 },
               });
-              const regData = await regRes.json() as {
+              const regData = (await regRes.json()) as {
                 success: boolean;
                 qrcode?: string;
                 error?: string;
@@ -116,14 +122,20 @@ export function WppConnection({ token }: WppConnectionProps) {
                   clearInterval(pollRef.current);
                   pollRef.current = null;
                 }
-                setState({ status: 'error', message: regData.error || 'QR Code expirou. Clique em Regenerar QR Code.' });
+                setState({
+                  status: 'error',
+                  message: regData.error || 'QR Code expirou. Clique em Regenerar QR Code.',
+                });
               }
             } catch {
               if (pollRef.current) {
                 clearInterval(pollRef.current);
                 pollRef.current = null;
               }
-              setState({ status: 'error', message: 'QR Code expirou. Clique em Regenerar QR Code.' });
+              setState({
+                status: 'error',
+                message: 'QR Code expirou. Clique em Regenerar QR Code.',
+              });
             } finally {
               regeneratingRef.current = false;
             }
@@ -177,7 +189,7 @@ export function WppConnection({ token }: WppConnectionProps) {
           Authorization: `Bearer ${token}`,
         },
       });
-      const data = await res.json() as {
+      const data = (await res.json()) as {
         success: boolean;
         qrcode?: string;
         error?: string;
@@ -196,7 +208,10 @@ export function WppConnection({ token }: WppConnectionProps) {
         setState({ status: 'error', message: 'QR Code não retornado pela Evolution API' });
       }
     } catch (err) {
-      setState({ status: 'error', message: err instanceof Error ? err.message : 'Erro de conexão' });
+      setState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Erro de conexão',
+      });
     } finally {
       connectingRef.current = false;
     }
@@ -219,7 +234,7 @@ export function WppConnection({ token }: WppConnectionProps) {
           Authorization: `Bearer ${token}`,
         },
       });
-      const data = await res.json() as { success: boolean };
+      const data = (await res.json()) as { success: boolean };
 
       if (data.success) {
         setState({ status: 'disconnected' });
@@ -227,7 +242,10 @@ export function WppConnection({ token }: WppConnectionProps) {
         setState({ status: 'error', message: 'Falha ao desconectar' });
       }
     } catch (err) {
-      setState({ status: 'error', message: err instanceof Error ? err.message : 'Erro de conexão' });
+      setState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Erro de conexão',
+      });
     }
   }
 
@@ -246,7 +264,7 @@ export function WppConnection({ token }: WppConnectionProps) {
           Authorization: `Bearer ${token}`,
         },
       });
-      const data = await res.json() as {
+      const data = (await res.json()) as {
         success: boolean;
         qrcode?: string;
         error?: string;
@@ -265,7 +283,10 @@ export function WppConnection({ token }: WppConnectionProps) {
         setState({ status: 'error', message: 'QR Code não retornado pela Evolution API' });
       }
     } catch (err) {
-      setState({ status: 'error', message: err instanceof Error ? err.message : 'Erro de conexão' });
+      setState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Erro de conexão',
+      });
     } finally {
       regeneratingRef.current = false;
     }
@@ -289,9 +310,16 @@ export function WppConnection({ token }: WppConnectionProps) {
       case 'disconnected':
         return (
           <div style={centeredStyle}>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', textAlign: 'center', margin: 0 }}>
-              Conecte seu WhatsApp para receber notificações e gerenciar
-              os grupos de afiliados diretamente pelo app.
+            <p
+              style={{
+                color: 'var(--color-text-muted)',
+                fontSize: 'var(--text-sm)',
+                textAlign: 'center',
+                margin: 0,
+              }}
+            >
+              Conecte seu WhatsApp para receber notificações e gerenciar os grupos de afiliados
+              diretamente pelo app.
             </p>
             <Button variant="primary" icon={<MessageCircle size={18} />} onClick={handleConnect}>
               Conectar WhatsApp
@@ -305,26 +333,54 @@ export function WppConnection({ token }: WppConnectionProps) {
       case 'awaiting_scan':
         return (
           <div style={centeredStyle}>
-            <div style={{
-              background: 'white',
-              borderRadius: 'var(--radius-xl)',
-              padding: '1rem',
-              display: 'flex',
-              justifyContent: 'center',
-            }}>
+            <div
+              style={{
+                background: 'white',
+                borderRadius: 'var(--radius-xl)',
+                padding: '1rem',
+                display: 'flex',
+                justifyContent: 'center',
+              }}
+            >
               <img
-                src={state.qrcode.startsWith('data:') ? state.qrcode : `data:image/png;base64,${state.qrcode}`}
+                src={
+                  state.qrcode.startsWith('data:')
+                    ? state.qrcode
+                    : `data:image/png;base64,${state.qrcode}`
+                }
                 alt="QR Code WhatsApp"
                 style={{ width: '220px', height: '220px', imageRendering: 'pixelated' }}
               />
             </div>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', textAlign: 'center', margin: 0 }}>
+            <p
+              style={{
+                color: 'var(--color-text-muted)',
+                fontSize: 'var(--text-xs)',
+                textAlign: 'center',
+                margin: 0,
+              }}
+            >
               Escaneie o QR Code com o WhatsApp
             </p>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', textAlign: 'center', margin: 0 }}>
-              Abra o WhatsApp no celular → Menu ou Configurações → Dispositivos Conectados → Conectar um dispositivo
+            <p
+              style={{
+                color: 'var(--color-text-muted)',
+                fontSize: 'var(--text-xs)',
+                textAlign: 'center',
+                margin: 0,
+              }}
+            >
+              Abra o WhatsApp no celular → Menu ou Configurações → Dispositivos Conectados →
+              Conectar um dispositivo
             </p>
-            <p style={{ color: 'var(--color-warning)', fontSize: 'var(--text-xs)', textAlign: 'center', margin: 0 }}>
+            <p
+              style={{
+                color: 'var(--color-warning)',
+                fontSize: 'var(--text-xs)',
+                textAlign: 'center',
+                margin: 0,
+              }}
+            >
               ⏱ Este QR expira em ~60 segundos
             </p>
           </div>
@@ -333,38 +389,51 @@ export function WppConnection({ token }: WppConnectionProps) {
       case 'connected':
         return (
           <div style={centeredStyle}>
-            <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              background: 'var(--color-success-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'var(--color-success-subtle)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
               <MessageCircle size={32} style={{ color: 'var(--color-success)' }} />
             </div>
-            <p style={{ color: 'var(--color-success)', fontSize: 'var(--text-base)', fontWeight: 600, margin: 0 }}>
+            <p
+              style={{
+                color: 'var(--color-success)',
+                fontSize: 'var(--text-base)',
+                fontWeight: 600,
+                margin: 0,
+              }}
+            >
               ✅ WhatsApp Conectado
             </p>
             {state.phone && (
-              <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: 0 }}>
+              <p
+                style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: 0 }}
+              >
                 {state.phone}
               </p>
             )}
 
             {/* Rate limit info */}
-            <div style={{
-              padding: '0.5rem 0.75rem',
-              background: 'var(--color-bg-secondary)',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 'var(--text-xs)',
-              color: 'var(--color-text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              border: '1px solid var(--color-border-light)',
-            }}>
+            <div
+              style={{
+                padding: '0.5rem 0.75rem',
+                background: 'var(--color-bg-secondary)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: 'var(--text-xs)',
+                color: 'var(--color-text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                border: '1px solid var(--color-border-light)',
+              }}
+            >
               <Gauge size={16} style={{ color: 'var(--color-primary)' }} />
               <span>
                 Limite de envio: <strong>{state.rateLimitMaxMsgs ?? 15}</strong> mensagens a cada{' '}
@@ -381,22 +450,35 @@ export function WppConnection({ token }: WppConnectionProps) {
       case 'error':
         return (
           <div style={centeredStyle}>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              background: 'var(--color-error-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.5rem',
-            }}>
+            <div
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                background: 'var(--color-error-subtle)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.5rem',
+              }}
+            >
               ❌
             </div>
-            <p style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)', textAlign: 'center', margin: 0 }}>
+            <p
+              style={{
+                color: 'var(--color-error)',
+                fontSize: 'var(--text-sm)',
+                textAlign: 'center',
+                margin: 0,
+              }}
+            >
               {state.message}
             </p>
-            <Button variant="outline" onClick={handleRegenerateQR} loading={regeneratingRef.current}>
+            <Button
+              variant="outline"
+              onClick={handleRegenerateQR}
+              loading={regeneratingRef.current}
+            >
               🔄 Regenerar QR Code
             </Button>
           </div>
@@ -407,28 +489,35 @@ export function WppConnection({ token }: WppConnectionProps) {
   // ─── Badge de status no header ────────────────────────────────────────
 
   const badgeVariant: 'success' | 'warning' | 'info' | 'error' | 'neutral' =
-    state.status === 'connected' ? 'success'
-    : state.status === 'awaiting_scan' ? 'warning'
-    : state.status === 'connecting' ? 'info'
-    : state.status === 'loading' ? 'info'
-    : state.status === 'error' ? 'error'
-    : 'neutral';
+    state.status === 'connected'
+      ? 'success'
+      : state.status === 'awaiting_scan'
+        ? 'warning'
+        : state.status === 'connecting'
+          ? 'info'
+          : state.status === 'loading'
+            ? 'info'
+            : state.status === 'error'
+              ? 'error'
+              : 'neutral';
 
   const badgeText =
-    state.status === 'connected' ? '✅ Conectado'
-    : state.status === 'awaiting_scan' ? '⏳ Aguardando scan'
-    : state.status === 'connecting' ? '🔄 Conectando'
-    : state.status === 'loading' ? '🔄 Verificando'
-    : state.status === 'error' ? '❌ Erro'
-    : '⚪ Desconectado';
+    state.status === 'connected'
+      ? '✅ Conectado'
+      : state.status === 'awaiting_scan'
+        ? '⏳ Aguardando scan'
+        : state.status === 'connecting'
+          ? '🔄 Conectando'
+          : state.status === 'loading'
+            ? '🔄 Verificando'
+            : state.status === 'error'
+              ? '❌ Erro'
+              : '⚪ Desconectado';
 
   // ─── Render ──────────────────────────────────────────────────────────
 
   return (
-    <Card
-      title="💬 WhatsApp"
-      action={<Badge variant={badgeVariant}>{badgeText}</Badge>}
-    >
+    <Card title="💬 WhatsApp" action={<Badge variant={badgeVariant}>{badgeText}</Badge>}>
       {renderBody()}
     </Card>
   );
