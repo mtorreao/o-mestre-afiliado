@@ -21,6 +21,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # fetch-depth 0: o diff docs-only precisa do histórico completo
+          # (base.sha/event.before não existem em clone raso).
+          fetch-depth: 0
 
       # PRs/pushes só de documentação (docs/, *.md, imagens...) fazem early-exit
       # verde aqui — sem bun install, build, testes nem e2e (~15s em vez de 45min).
@@ -31,7 +35,9 @@ jobs:
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           [ -n "$BASE" ] || BASE="${{ github.event.before }}"
-          echo "docs_only=$(bash scripts/ci/check-docs-only.sh "$BASE")" >> "$GITHUB_OUTPUT"
+          RESULT=$(bash scripts/ci/check-docs-only.sh "$BASE")
+          echo "$RESULT" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$RESULT (diff: $(git diff --name-only "$BASE"...HEAD | tr '\n' ' '))"
 
       - name: Setup Bun
         if: steps.docs-only.outputs.docs_only == 'false'
@@ -109,6 +115,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Mesmo early-exit do job build — docs-only conclui verde em segundos.
       - name: Detectar mudança docs-only (skip CI)
@@ -116,7 +124,9 @@ jobs:
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           [ -n "$BASE" ] || BASE="${{ github.event.before }}"
-          echo "docs_only=$(bash scripts/ci/check-docs-only.sh "$BASE")" >> "$GITHUB_OUTPUT"
+          RESULT=$(bash scripts/ci/check-docs-only.sh "$BASE")
+          echo "$RESULT" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$RESULT (diff: $(git diff --name-only "$BASE"...HEAD | tr '\n' ' '))"
 
       - name: Setup Bun
         if: steps.docs-only.outputs.docs_only == 'false'
