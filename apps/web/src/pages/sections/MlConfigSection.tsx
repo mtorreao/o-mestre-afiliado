@@ -4,9 +4,9 @@
  * Mantido como componente separado para ser usado dentro do dashboard.
  */
 import { useState } from 'react';
-import { Button, Input, Dialog } from '../../components/ui/index.ts';
+import { Button, Input, Dialog } from '@omestre/ui';
 import { Save, ExternalLink, Trash2 } from 'lucide-react';
-import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
+import { showErrorToast, showSuccessToast } from '@omestre/ui';
 
 interface MlConfigSectionProps {
   mlUserId: string;

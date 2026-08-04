@@ -12,7 +12,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Card, Badge, Button, Loading, Switch } from '../components/ui/index.ts';
+import { Card, Badge, Button, Loading, Switch } from '@omestre/ui';
 import {
   RefreshCw,
   AlertTriangle,
@@ -50,7 +50,10 @@ import type {
 
 // ─── Meta por serviço ─────────────────────────────────
 
-const SERVICE_META: Record<WorkerServiceName, { label: string; icon: string; desc: string; accent: string }> = {
+const SERVICE_META: Record<
+  WorkerServiceName,
+  { label: string; icon: string; desc: string; accent: string }
+> = {
   ingestor: {
     label: 'Ingestor',
     icon: '📥',
@@ -65,7 +68,10 @@ const SERVICE_META: Record<WorkerServiceName, { label: string; icon: string; des
   },
 };
 
-function healthBadge(svc: ServiceStatus): { label: string; variant: 'success' | 'error' | 'warning' } {
+function healthBadge(svc: ServiceStatus): {
+  label: string;
+  variant: 'success' | 'error' | 'warning';
+} {
   if (!svc.reachable) return { label: 'Inacessível', variant: 'error' };
   if (svc.status === 'healthy') return { label: 'Saudável', variant: 'success' };
   return { label: 'Desconhecido', variant: 'warning' };
@@ -83,9 +89,21 @@ function PipelineView({ data }: { data: AggregatedWorkerStatus }) {
 
   const nodes = [
     { key: 'queueA', label: 'Queue A', sub: 'raw', value: data.pipeline.queueA, healthy: true },
-    { key: 'ingestor', label: 'Ingestor', sub: 'conversão', value: null as number | null, healthy: ingestor?.reachable ?? false },
+    {
+      key: 'ingestor',
+      label: 'Ingestor',
+      sub: 'conversão',
+      value: null as number | null,
+      healthy: ingestor?.reachable ?? false,
+    },
     { key: 'queueB', label: 'Queue B', sub: 'send', value: data.pipeline.queueB, healthy: true },
-    { key: 'dispatcher', label: 'Dispatcher', sub: 'envio', value: null as number | null, healthy: dispatcher?.reachable ?? false },
+    {
+      key: 'dispatcher',
+      label: 'Dispatcher',
+      sub: 'envio',
+      value: null as number | null,
+      healthy: dispatcher?.reachable ?? false,
+    },
     { key: 'evolution', label: 'Evolution', sub: 'WhatsApp', value: null, healthy: true },
   ];
 
@@ -109,7 +127,16 @@ function PipelineView({ data }: { data: AggregatedWorkerStatus }) {
         }}
       >
         {nodes.map((node, i) => (
-          <div key={node.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flex: '1 1 0', minWidth: 0 }}>
+          <div
+            key={node.key}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              flex: '1 1 0',
+              minWidth: 0,
+            }}
+          >
             <div
               style={{
                 flex: 1,
@@ -126,10 +153,25 @@ function PipelineView({ data }: { data: AggregatedWorkerStatus }) {
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div
+                style={{
+                  fontSize: 'var(--text-xs)',
+                  fontWeight: 600,
+                  color: 'var(--color-text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
                 {node.label}
               </div>
-              <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
+              <div
+                style={{
+                  fontSize: '0.65rem',
+                  color: 'var(--color-text-muted)',
+                  marginTop: '0.1rem',
+                }}
+              >
                 {node.sub}
               </div>
               {node.value !== null && (
@@ -145,10 +187,19 @@ function PipelineView({ data }: { data: AggregatedWorkerStatus }) {
                 </div>
               )}
               {node.value !== null && (
-                <div style={{ fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>pendentes</div>
+                <div style={{ fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>
+                  pendentes
+                </div>
               )}
               {node.value === null && !node.healthy && (
-                <div style={{ marginTop: '0.4rem', fontSize: '0.65rem', color: 'var(--color-error)', fontWeight: 600 }}>
+                <div
+                  style={{
+                    marginTop: '0.4rem',
+                    fontSize: '0.65rem',
+                    color: 'var(--color-error)',
+                    fontWeight: 600,
+                  }}
+                >
                   offline
                 </div>
               )}
@@ -168,7 +219,13 @@ function PipelineView({ data }: { data: AggregatedWorkerStatus }) {
 function HealthSummary({ data }: { data: AggregatedWorkerStatus }) {
   return (
     <Card title="📊 Resumo de Saúde" subtitle="Estado operacional de cada worker">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: '0.75rem',
+        }}
+      >
         {data.services.map((svc) => (
           <ServiceSummary key={svc.name} svc={svc} />
         ))}
@@ -192,15 +249,37 @@ function ServiceSummary({ svc }: { svc: ServiceStatus }) {
         borderLeft: `3px solid ${meta.accent}`,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, fontSize: 'var(--text-sm)' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '0.5rem',
+        }}
+      >
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            fontWeight: 600,
+            fontSize: 'var(--text-sm)',
+          }}
+        >
           <span>{meta.icon}</span>
           <span>{meta.label}</span>
         </span>
         <Badge variant={health.variant}>{health.label}</Badge>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', fontSize: 'var(--text-xs)' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '0.5rem',
+          fontSize: 'var(--text-xs)',
+        }}
+      >
         <Field label="Uptime" value={svc.uptime || '—'} />
         <Field label="Modo" value={svc.mode || '—'} />
         <Field
@@ -237,7 +316,11 @@ function ServiceSummary({ svc }: { svc: ServiceStatus }) {
 function Field({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
     <div>
-      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.65rem', marginBottom: '0.1rem' }}>{label}</div>
+      <div
+        style={{ color: 'var(--color-text-muted)', fontSize: '0.65rem', marginBottom: '0.1rem' }}
+      >
+        {label}
+      </div>
       <div style={{ fontWeight: 600, color: accent ?? 'var(--color-text-primary)' }}>{value}</div>
     </div>
   );
@@ -265,10 +348,24 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
       style={{ borderLeft: `3px solid ${meta.accent}` }}
     >
       {!svc.reachable ? (
-        <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
-          <AlertTriangle size={24} style={{ color: 'var(--color-error)', marginBottom: '0.5rem' }} />
-          <p style={{ color: 'var(--color-error)', marginBottom: '0.25rem' }}>Serviço inacessível</p>
-          <p style={{ fontSize: 'var(--text-xs)' }}>{svc.error || 'O servidor de métricas pode estar offline ou reiniciando.'}</p>
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '1rem',
+            color: 'var(--color-text-muted)',
+            fontSize: 'var(--text-sm)',
+          }}
+        >
+          <AlertTriangle
+            size={24}
+            style={{ color: 'var(--color-error)', marginBottom: '0.5rem' }}
+          />
+          <p style={{ color: 'var(--color-error)', marginBottom: '0.25rem' }}>
+            Serviço inacessível
+          </p>
+          <p style={{ fontSize: 'var(--text-xs)' }}>
+            {svc.error || 'O servidor de métricas pode estar offline ou reiniciando.'}
+          </p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -280,7 +377,9 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
             <div>
               <SectionTitle>Latência por etapa</SectionTitle>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-xs)' }}>
+                <table
+                  style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-xs)' }}
+                >
                   <thead>
                     <tr style={{ color: 'var(--color-text-muted)', textAlign: 'left' }}>
                       <th style={th()}>Etapa</th>
@@ -296,7 +395,9 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
                         <td style={td()}>{stepLabel(name)}</td>
                         <td style={td('right')}>{formatMs(v.avg)}</td>
                         <td style={td('right')}>{formatMs(v.p50)}</td>
-                        <td style={td('right', v.p99 > 5000 ? 'var(--color-warning)' : undefined)}>{formatMs(v.p99)}</td>
+                        <td style={td('right', v.p99 > 5000 ? 'var(--color-warning)' : undefined)}>
+                          {formatMs(v.p99)}
+                        </td>
                         <td style={td('right', 'var(--color-text-muted)')}>{v.count}</td>
                       </tr>
                     ))}
@@ -310,7 +411,9 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
           <div>
             <SectionTitle>Últimos erros</SectionTitle>
             {!svc.errors || svc.errors.length === 0 ? (
-              <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>Nenhum erro registrado ✓</div>
+              <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+                Nenhum erro registrado ✓
+              </div>
             ) : (
               <div>
                 {svc.errors.slice(0, 5).map((err, i) => (
@@ -322,18 +425,55 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
                       alignItems: 'center',
                       gap: '0.5rem',
                       padding: '0.4rem 0',
-                      borderBottom: i < Math.min(svc.errors!.length, 5) - 1 ? '1px solid var(--color-border-light)' : 'none',
+                      borderBottom:
+                        i < Math.min(svc.errors!.length, 5) - 1
+                          ? '1px solid var(--color-border-light)'
+                          : 'none',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: 1, minWidth: 0 }}>
-                      <AlertTriangle size={13} style={{ color: 'var(--color-error)', flexShrink: 0 }} />
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      <AlertTriangle
+                        size={13}
+                        style={{ color: 'var(--color-error)', flexShrink: 0 }}
+                      />
+                      <span
+                        style={{
+                          fontSize: 'var(--text-xs)',
+                          color: 'var(--color-text-primary)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
                         {err.message}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '0.4rem',
+                        alignItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
                       {err.count > 1 && <Badge variant="error">{err.count}x</Badge>}
-                      <span style={{ color: 'var(--color-text-muted)', fontSize: '0.65rem', whiteSpace: 'nowrap' }}>{relativeTime(err.time)}</span>
+                      <span
+                        style={{
+                          color: 'var(--color-text-muted)',
+                          fontSize: '0.65rem',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {relativeTime(err.time)}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -377,7 +517,13 @@ function td(align: 'left' | 'right' = 'left', color?: string): React.CSSProperti
 
 // ─── Métricas por serviço (agregadas por label) ───────
 
-function ServiceMetrics({ serviceName, counters }: { serviceName: WorkerServiceName; counters: Record<string, number | string> }) {
+function ServiceMetrics({
+  serviceName,
+  counters,
+}: {
+  serviceName: WorkerServiceName;
+  counters: Record<string, number | string>;
+}) {
   if (serviceName === 'ingestor') {
     return <IngestorMetrics counters={counters} />;
   }
@@ -394,7 +540,13 @@ function IngestorMetrics({ counters }: { counters: Record<string, number | strin
   const missingFallback = sumByName(counters, 'pipeline_image_missing_fallback_total');
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.5rem' }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+        gap: '0.5rem',
+      }}
+    >
       <MetricTile label="Mensagens recebidas" value={received} />
       <div>
         <MetricTile
@@ -402,9 +554,7 @@ function IngestorMetrics({ counters }: { counters: Record<string, number | strin
           value={blockedTotal}
           accent={blockedTotal > 0 ? 'var(--color-warning)' : undefined}
         />
-        {blockedByReason.length > 0 && (
-          <Breakdown items={blockedByReason} labelName="reason" />
-        )}
+        {blockedByReason.length > 0 && <Breakdown items={blockedByReason} labelName="reason" />}
       </div>
       <MetricTile label="Eventos publicados" value={published} accent="var(--color-primary)" />
       <div>
@@ -420,7 +570,11 @@ function IngestorMetrics({ counters }: { counters: Record<string, number | strin
         )}
       </div>
       {missingFallback > 0 && (
-        <MetricTile label="Sem imagem (fallback)" value={missingFallback} accent="var(--color-text-muted)" />
+        <MetricTile
+          label="Sem imagem (fallback)"
+          value={missingFallback}
+          accent="var(--color-text-muted)"
+        />
       )}
     </div>
   );
@@ -438,14 +592,27 @@ function DispatcherMetrics({ counters }: { counters: Record<string, number | str
 
   if (isEmpty(received, sentTotal, skippedTotal, failuresTotal) && sentWithImage === 0) {
     return (
-      <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', textAlign: 'center', padding: '0.75rem' }}>
+      <div
+        style={{
+          color: 'var(--color-text-muted)',
+          fontSize: 'var(--text-sm)',
+          textAlign: 'center',
+          padding: '0.75rem',
+        }}
+      >
         Nenhuma atividade registrada ainda — aguarde o envio da primeira mensagem.
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.5rem' }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+        gap: '0.5rem',
+      }}
+    >
       <MetricTile label="SendEvents recebidos" value={received} />
       <div>
         <MetricTile label="Enviadas" value={sentTotal} accent="var(--color-success)" />
@@ -478,7 +645,15 @@ function DispatcherMetrics({ counters }: { counters: Record<string, number | str
   );
 }
 
-function MetricTile({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
+function MetricTile({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  accent?: string;
+}) {
   return (
     <div
       style={{
@@ -498,7 +673,13 @@ function MetricTile({ label, value, accent }: { label: string; value: string | n
       >
         {label}
       </div>
-      <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: accent ?? 'var(--color-primary)' }}>
+      <div
+        style={{
+          fontSize: 'var(--text-lg)',
+          fontWeight: 700,
+          color: accent ?? 'var(--color-primary)',
+        }}
+      >
         {value}
       </div>
     </div>
@@ -578,7 +759,15 @@ function DLQItem({
       }}
     >
       {/* Linha 1: badges + timestamp relativo (com tooltip absoluto) */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.4rem' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: '0.5rem',
+          marginBottom: '0.4rem',
+        }}
+      >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
             <Badge variant="error">{item.failureReason}</Badge>
@@ -633,18 +822,39 @@ function DLQItem({
         <span style={{ color: 'var(--color-text-muted)' }}>Etapa:</span>{' '}
         <span style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{meta.stage}</span>
       </div>
-      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', marginBottom: '0.4rem', wordBreak: 'break-word' }}>
+      <div
+        style={{
+          fontSize: 'var(--text-xs)',
+          color: 'var(--color-text-secondary)',
+          marginBottom: '0.4rem',
+          wordBreak: 'break-word',
+        }}
+      >
         {item.lastError}
       </div>
 
       {item.originalUrl && (
-        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginBottom: '0.4rem', wordBreak: 'break-all' }}>
+        <div
+          style={{
+            fontSize: '0.7rem',
+            color: 'var(--color-text-muted)',
+            marginBottom: '0.4rem',
+            wordBreak: 'break-all',
+          }}
+        >
           🔗 {item.originalUrl}
         </div>
       )}
 
       {/* Linha 3: ações + toggle de detalhes */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}
+      >
         <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
           {item.attempts} tentativa(s)
         </span>
@@ -746,80 +956,93 @@ function DLQItemDetails({ item, event }: { item: DLQEntry; event: DLQEvent }) {
     }
   }
 
-  const bodyContent = event.kind === 'raw' ? (
-    <>
-      <DetailRow label="messageId" value={event.messageId} mono />
-      {event.instanceName && <DetailRow label="instanceName" value={event.instanceName} mono />}
-      {event.sourceGroupJid && <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />}
-      {event.sourceGroupName && <DetailRow label="sourceGroupName" value={event.sourceGroupName} />}
-      {event.affiliateId != null && <DetailRow label="affiliateId" value={String(event.affiliateId)} />}
-      {event.mirrorId != null && <DetailRow label="mirrorId" value={String(event.mirrorId)} />}
-      {event.timestamp != null && (
-        <DetailRow
-          label="timestamp"
-          value={`${event.timestamp} (${formatDate(new Date(event.timestamp * 1000).toISOString())})`}
-          mono
-        />
-      )}
-      {event.text && (
-        <div>
-          <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.2rem' }}>text (mensagem original)</div>
-          <pre
-            style={{
-              margin: 0,
-              padding: '0.5rem',
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border-light)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.7rem',
-              fontFamily: 'var(--font-mono, monospace)',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              maxHeight: 200,
-              overflow: 'auto',
-            }}
-          >
-            {event.text}
-          </pre>
-        </div>
-      )}
-    </>
-  ) : (
-    <>
-      <DetailRow label="id" value={event.id} mono />
-      <DetailRow label="sourceMessageId" value={event.sourceMessageId} mono />
-      {event.sourceGroupJid && <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />}
-      <DetailRow label="mirrorId" value={String(event.mirrorId)} />
-      <DetailRow label="marketplace" value={event.marketplace} />
-      <DetailRow label="originalUrl" value={event.originalUrl} mono />
-      {event.convertedUrl && event.convertedUrl !== event.originalUrl && (
-        <DetailRow label="convertedUrl" value={event.convertedUrl} mono />
-      )}
-      {event.imageUrl && <DetailRow label="imageUrl" value={event.imageUrl} mono />}
-      {event.text && (
-        <div>
-          <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.2rem' }}>text (template resolvido)</div>
-          <pre
-            style={{
-              margin: 0,
-              padding: '0.5rem',
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border-light)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.7rem',
-              fontFamily: 'var(--font-mono, monospace)',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              maxHeight: 200,
-              overflow: 'auto',
-            }}
-          >
-            {event.text}
-          </pre>
-        </div>
-      )}
-    </>
-  );
+  const bodyContent =
+    event.kind === 'raw' ? (
+      <>
+        <DetailRow label="messageId" value={event.messageId} mono />
+        {event.instanceName && <DetailRow label="instanceName" value={event.instanceName} mono />}
+        {event.sourceGroupJid && (
+          <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />
+        )}
+        {event.sourceGroupName && (
+          <DetailRow label="sourceGroupName" value={event.sourceGroupName} />
+        )}
+        {event.affiliateId != null && (
+          <DetailRow label="affiliateId" value={String(event.affiliateId)} />
+        )}
+        {event.mirrorId != null && <DetailRow label="mirrorId" value={String(event.mirrorId)} />}
+        {event.timestamp != null && (
+          <DetailRow
+            label="timestamp"
+            value={`${event.timestamp} (${formatDate(new Date(event.timestamp * 1000).toISOString())})`}
+            mono
+          />
+        )}
+        {event.text && (
+          <div>
+            <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.2rem' }}>
+              text (mensagem original)
+            </div>
+            <pre
+              style={{
+                margin: 0,
+                padding: '0.5rem',
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border-light)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.7rem',
+                fontFamily: 'var(--font-mono, monospace)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: 200,
+                overflow: 'auto',
+              }}
+            >
+              {event.text}
+            </pre>
+          </div>
+        )}
+      </>
+    ) : (
+      <>
+        <DetailRow label="id" value={event.id} mono />
+        <DetailRow label="sourceMessageId" value={event.sourceMessageId} mono />
+        {event.sourceGroupJid && (
+          <DetailRow label="sourceGroupJid" value={event.sourceGroupJid} mono />
+        )}
+        <DetailRow label="mirrorId" value={String(event.mirrorId)} />
+        <DetailRow label="marketplace" value={event.marketplace} />
+        <DetailRow label="originalUrl" value={event.originalUrl} mono />
+        {event.convertedUrl && event.convertedUrl !== event.originalUrl && (
+          <DetailRow label="convertedUrl" value={event.convertedUrl} mono />
+        )}
+        {event.imageUrl && <DetailRow label="imageUrl" value={event.imageUrl} mono />}
+        {event.text && (
+          <div>
+            <div style={{ color: 'var(--color-text-muted)', marginBottom: '0.2rem' }}>
+              text (template resolvido)
+            </div>
+            <pre
+              style={{
+                margin: 0,
+                padding: '0.5rem',
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border-light)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.7rem',
+                fontFamily: 'var(--font-mono, monospace)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: 200,
+                overflow: 'auto',
+              }}
+            >
+              {event.text}
+            </pre>
+          </div>
+        )}
+      </>
+    );
 
   return (
     <div
@@ -860,7 +1083,13 @@ function DLQItemDetails({ item, event }: { item: DLQEntry; event: DLQEvent }) {
             fontFamily: 'inherit',
           }}
         >
-          {copied ? <Check size={12} /> : copyError ? <AlertTriangle size={12} /> : <Copy size={12} />}
+          {copied ? (
+            <Check size={12} />
+          ) : copyError ? (
+            <AlertTriangle size={12} />
+          ) : (
+            <Copy size={12} />
+          )}
           {copied ? 'Copiado!' : copyError ? 'Falhou' : 'Copiar JSON'}
         </button>
       </div>
@@ -872,7 +1101,9 @@ function DLQItemDetails({ item, event }: { item: DLQEntry; event: DLQEvent }) {
 function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'baseline' }}>
-      <span style={{ color: 'var(--color-text-muted)', minWidth: 130, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: 'var(--color-text-muted)', minWidth: 130, flexShrink: 0 }}>
+        {label}
+      </span>
       <span
         style={{
           color: 'var(--color-text-primary)',
@@ -1033,11 +1264,7 @@ function DLQSection() {
           <span>🗑️</span>
           <span>Dead Letter Queue</span>
           {total > 0 && (
-            <Badge
-              key={badgeBump}
-              variant="error"
-              className="dlq-badge-bump"
-            >
+            <Badge key={badgeBump} variant="error" className="dlq-badge-bump">
               {total}
             </Badge>
           )}
@@ -1047,7 +1274,13 @@ function DLQSection() {
       action={
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {total > 0 && (
-            <Button variant="outline" size="sm" onClick={handlePurge} loading={purging} icon={<Trash size={13} />}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePurge}
+              loading={purging}
+              icon={<Trash size={13} />}
+            >
               Limpar antigos
             </Button>
           )}
@@ -1063,12 +1296,20 @@ function DLQSection() {
       }
     >
       {total === 0 ? (
-        <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '1rem',
+            color: 'var(--color-text-muted)',
+            fontSize: 'var(--text-sm)',
+          }}
+        >
           DLQ vazia ✓ — nenhuma falha permanente
         </div>
       ) : !expanded ? (
         <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
-          {total} {total === 1 ? 'item com' : 'itens com'} falha permanente. Clique em "Ver itens" para gerenciar.
+          {total} {total === 1 ? 'item com' : 'itens com'} falha permanente. Clique em "Ver itens"
+          para gerenciar.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -1091,7 +1332,14 @@ function DLQSection() {
           />
 
           {totalFiltered === 0 ? (
-            <div style={{ textAlign: 'center', padding: '0.75rem', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+            <div
+              style={{
+                textAlign: 'center',
+                padding: '0.75rem',
+                color: 'var(--color-text-muted)',
+                fontSize: 'var(--text-sm)',
+              }}
+            >
               Nenhum item corresponde aos filtros.{' '}
               <button
                 onClick={clearFilters}
@@ -1173,12 +1421,37 @@ function DLQFilterBar({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600 }}>Fila:</span>
-        <SegmentedButton active={queueFilter === 'all'} onClick={() => onQueueFilterChange('all')} label="Todas" />
-        <SegmentedButton active={queueFilter === 'A'} onClick={() => onQueueFilterChange('A')} label="Queue A" />
-        <SegmentedButton active={queueFilter === 'B'} onClick={() => onQueueFilterChange('B')} label="Queue B" />
+        <span
+          style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600 }}
+        >
+          Fila:
+        </span>
+        <SegmentedButton
+          active={queueFilter === 'all'}
+          onClick={() => onQueueFilterChange('all')}
+          label="Todas"
+        />
+        <SegmentedButton
+          active={queueFilter === 'A'}
+          onClick={() => onQueueFilterChange('A')}
+          label="Queue A"
+        />
+        <SegmentedButton
+          active={queueFilter === 'B'}
+          onClick={() => onQueueFilterChange('B')}
+          label="Queue B"
+        />
 
-        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600, marginLeft: '0.4rem' }}>Período:</span>
+        <span
+          style={{
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-text-muted)',
+            fontWeight: 600,
+            marginLeft: '0.4rem',
+          }}
+        >
+          Período:
+        </span>
         <select
           value={sincePreset}
           onChange={(e) => onSincePresetChange(e.target.value as SincePreset)}
@@ -1194,7 +1467,9 @@ function DLQFilterBar({
           }}
         >
           {SINCE_PRESETS.map((p) => (
-            <option key={p.value} value={p.value}>{p.label}</option>
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
           ))}
         </select>
 
@@ -1212,7 +1487,11 @@ function DLQFilterBar({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600 }}>Motivo:</span>
+        <span
+          style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 600 }}
+        >
+          Motivo:
+        </span>
         {reasonCounts.length === 0 ? (
           <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
             {loading ? '—' : 'nenhum motivo no resultado atual'}
@@ -1250,7 +1529,9 @@ function DLQFilterBar({
                     padding: '0 0.3rem',
                     borderRadius: 'var(--radius-full)',
                     background: active ? 'var(--color-primary)' : 'var(--color-border-light)',
-                    color: active ? 'var(--color-primary-contrast, white)' : 'var(--color-text-muted)',
+                    color: active
+                      ? 'var(--color-primary-contrast, white)'
+                      : 'var(--color-text-muted)',
                   }}
                 >
                   {count}
@@ -1395,10 +1676,17 @@ export function WorkerStatusPage() {
               </span>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Auto</span>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                Auto
+              </span>
               <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
             </div>
-            <Button onClick={handleRefresh} loading={loading} icon={<RefreshCw size={14} />} size="sm">
+            <Button
+              onClick={handleRefresh}
+              loading={loading}
+              icon={<RefreshCw size={14} />}
+              size="sm"
+            >
               Atualizar
             </Button>
           </div>
@@ -1436,8 +1724,19 @@ export function WorkerStatusPage() {
       {error && !data && (
         <Card>
           <div style={{ textAlign: 'center', padding: '1rem' }}>
-            <AlertTriangle size={32} style={{ color: 'var(--color-warning)', marginBottom: '0.75rem' }} />
-            <p style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)', marginBottom: '0.5rem' }}>{error}</p>
+            <AlertTriangle
+              size={32}
+              style={{ color: 'var(--color-warning)', marginBottom: '0.75rem' }}
+            />
+            <p
+              style={{
+                color: 'var(--color-error)',
+                fontSize: 'var(--text-sm)',
+                marginBottom: '0.5rem',
+              }}
+            >
+              {error}
+            </p>
             <Button onClick={handleRefresh} variant="outline" size="sm">
               Tentar novamente
             </Button>
@@ -1453,14 +1752,32 @@ export function WorkerStatusPage() {
 
           {!anyReachable && (
             <Card>
-              <div style={{ textAlign: 'center', padding: '0.75rem', color: 'var(--color-warning)', fontSize: 'var(--text-sm)' }}>
-                <AlertTriangle size={18} style={{ verticalAlign: 'middle', marginRight: '0.4rem' }} />
-                Nenhum serviço de métricas está acessível. Os processadores podem estar offline ou reiniciando.
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '0.75rem',
+                  color: 'var(--color-warning)',
+                  fontSize: 'var(--text-sm)',
+                }}
+              >
+                <AlertTriangle
+                  size={18}
+                  style={{ verticalAlign: 'middle', marginRight: '0.4rem' }}
+                />
+                Nenhum serviço de métricas está acessível. Os processadores podem estar offline ou
+                reiniciando.
               </div>
             </Card>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', alignItems: 'start' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+              gap: '1rem',
+              alignItems: 'start',
+            }}
+          >
             {data.services.map((svc) => (
               <ServiceCard key={svc.name} svc={svc} />
             ))}

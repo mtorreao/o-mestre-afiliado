@@ -2,9 +2,9 @@
  * ShopeeConfigSection — Configuração de credenciais Shopee
  */
 import { useState } from 'react';
-import { Card, Input, Button } from '../../components/ui/index.ts';
+import { Card, Input, Button } from '@omestre/ui';
 import { Store, Save } from 'lucide-react';
-import { showErrorToast, showSuccessToast } from '../../lib/toast-emitter.ts';
+import { showErrorToast, showSuccessToast } from '@omestre/ui';
 
 interface ShopeeConfigSectionProps {
   token: string;
@@ -28,7 +28,7 @@ export function ShopeeConfigSection({ token, initialAppId, onUpdate }: ShopeeCon
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ shopeeAppId: appId, shopeeAppSecret: appSecret }),
       });
-      const data = await res.json() as { success: boolean; error?: string };
+      const data = (await res.json()) as { success: boolean; error?: string };
       if (data.success) {
         setSaved(true);
         showSuccessToast('Shopee', 'Credenciais salvas com sucesso');
@@ -48,7 +48,13 @@ export function ShopeeConfigSection({ token, initialAppId, onUpdate }: ShopeeCon
       title="🛒 Shopee"
       subtitle="Credenciais da API Shopee"
       action={
-        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: configured ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
+        <span
+          style={{
+            fontSize: 'var(--text-xs)',
+            fontWeight: 500,
+            color: configured ? 'var(--color-success)' : 'var(--color-text-muted)',
+          }}
+        >
           {configured ? '✅ Configurado' : '⚪ Não configurado'}
         </span>
       }
@@ -67,11 +73,19 @@ export function ShopeeConfigSection({ token, initialAppId, onUpdate }: ShopeeCon
           onChange={(e) => setAppSecret((e.target as HTMLInputElement).value)}
           placeholder="Seu App Secret da Shopee"
         />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem' }}>
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem' }}
+        >
           <Button onClick={handleSave} loading={saving} icon={<Save size={16} />} size="sm">
             Salvar
           </Button>
-          {saved && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success)', fontWeight: 500 }}>✅ Salvo!</span>}
+          {saved && (
+            <span
+              style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success)', fontWeight: 500 }}
+            >
+              ✅ Salvo!
+            </span>
+          )}
         </div>
       </div>
     </Card>

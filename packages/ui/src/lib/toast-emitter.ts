@@ -17,7 +17,11 @@ export interface ToastEventDetail {
 
 const TOAST_EVENT = 'toast:show';
 
-export function showToast(title: string, description?: string, variant: ToastVariant = 'info'): void {
+export function showToast(
+  title: string,
+  description?: string,
+  variant: ToastVariant = 'info',
+): void {
   window.dispatchEvent(
     new CustomEvent<ToastEventDetail>(TOAST_EVENT, {
       detail: { title, description, variant },

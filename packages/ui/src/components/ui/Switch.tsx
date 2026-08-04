@@ -32,7 +32,13 @@ export function Switch({ id, label, checked, onCheckedChange, disabled, classNam
 
   return (
     <label htmlFor={id} style={containerStyle} className={clsx('SwitchWrapper', className)}>
-      <RadixSwitch.Root id={id} className="SwitchRoot" checked={checked} onCheckedChange={onCheckedChange} disabled={disabled}>
+      <RadixSwitch.Root
+        id={id}
+        className="SwitchRoot"
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+      >
         <RadixSwitch.Thumb className="SwitchThumb" />
       </RadixSwitch.Root>
       {label && <span style={labelStyle}>{label}</span>}

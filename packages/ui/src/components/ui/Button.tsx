@@ -21,7 +21,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
   primary: {
     background: 'var(--color-primary)',
-    color: '#fff',
+    color: 'var(--color-on-primary)',
     border: 'none',
   },
   secondary: {
@@ -106,7 +106,10 @@ export function Button({
       {...props}
     >
       {loading ? (
-        <Loader2 size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16} style={{ animation: 'spin 0.8s linear infinite' }} />
+        <Loader2
+          size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16}
+          style={{ animation: 'spin 0.8s linear infinite' }}
+        />
       ) : icon ? (
         icon
       ) : null}

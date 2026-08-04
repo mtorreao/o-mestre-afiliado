@@ -11,7 +11,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import * as RadixToast from '@radix-ui/react-toast';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react';
-import clsx from 'clsx';
 import type { ToastEventDetail } from '../../lib/toast-emitter.ts';
 
 type ToastVariant = 'success' | 'error' | 'warning' | 'info';
@@ -48,10 +47,13 @@ const colorMap = {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastData[]>([]);
 
-  const addToast = useCallback((title: string, description?: string, variant: ToastVariant = 'info') => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setToasts((prev) => [...prev, { id, title, description, variant }]);
-  }, []);
+  const addToast = useCallback(
+    (title: string, description?: string, variant: ToastVariant = 'info') => {
+      const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setToasts((prev) => [...prev, { id, title, description, variant }]);
+    },
+    [],
+  );
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -84,7 +86,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               duration={5000}
               style={{ borderLeft: `4px solid ${accentColor}` }}
             >
-              <RadixToast.Title className="ToastTitle" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <RadixToast.Title
+                className="ToastTitle"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
                 <Icon size={16} style={{ color: accentColor, flexShrink: 0 }} />
                 {toast.title}
               </RadixToast.Title>

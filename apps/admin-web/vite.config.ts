@@ -7,6 +7,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@omestre/ui/globals.css': path.resolve(
+        __dirname,
+        '../../packages/ui/src/styles/globals.css',
+      ),
+      '@omestre/ui/tokens.css': path.resolve(__dirname, '../../packages/ui/src/styles/tokens.css'),
+      '@omestre/ui$': path.resolve(__dirname, '../../packages/ui/src/index.ts'),
     },
   },
   server: {

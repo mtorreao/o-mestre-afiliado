@@ -5,7 +5,7 @@
  *
  * Agora integrado com React Router: navegação via <NavLink /> e useNavigate.
  */
-import { ThemeToggle } from './../ui/ThemeToggle.tsx';
+import { ThemeToggle } from '@omestre/ui';
 import React, { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {

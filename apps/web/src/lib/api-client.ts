@@ -13,7 +13,7 @@
  *   // data.data.profile disponível com tipo seguro
  */
 
-import { showErrorToast } from './toast-emitter.ts';
+import { showErrorToast } from '@omestre/ui';
 
 interface ApiResult<T> {
   success: boolean;
@@ -28,7 +28,7 @@ export async function fetchApi<T = unknown>(
 ): Promise<ApiResult<T>> {
   try {
     const res = await fetch(url, options);
-    const json = await res.json() as T & { success?: boolean; error?: string };
+    const json = (await res.json()) as T & { success?: boolean; error?: string };
     const result: ApiResult<T> = {
       success: json.success !== false,
       data: json,

@@ -4,7 +4,7 @@
  * Permite selecionar a plataforma e testar a conversão de links.
  */
 import { useState } from 'react';
-import { Card, Button, Input } from '../../components/ui/index.ts';
+import { Card, Button, Input } from '@omestre/ui';
 import { FlaskConical, Copy, Check } from 'lucide-react';
 
 interface TestConversionSectionProps {

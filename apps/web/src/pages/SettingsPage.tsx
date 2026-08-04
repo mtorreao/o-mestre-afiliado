@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Smartphone, Store, Package, ShoppingBag } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout.tsx';
 import { PageHeader } from '../components/layout/PageHeader.tsx';
-import { Card, Loading, Tabs } from '../components/ui/index.ts';
+import { Card, Loading, Tabs } from '@omestre/ui';
 import { fetchApi } from '../lib/api-client.ts';
 import { WppConnection } from '../components/WppConnection.tsx';
 import { ShopeeConfigSection } from './sections/ShopeeConfigSection.tsx';
