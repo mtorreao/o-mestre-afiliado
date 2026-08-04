@@ -349,6 +349,53 @@ services:
     networks:
       - omestre-dev-net
 
+  admin-api:
+    build:
+      context: .
+      dockerfile: apps/admin-api/Dockerfile
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_admin-api
+    restart: unless-stopped
+    ports:
+      - '${DEV_ADMIN_API_HOST_PORT:-127.0.0.1:9090:9090}'
+    env_file:
+      - ${DEV_APP_ENV_FILE:-.env}
+    environment:
+      ADMIN_API_PORT: '9090'
+      # Substitui os paths do host por paths do container (deploy script fica
+      # montado em /scripts; estado em /var/lib/oma — bind mount abaixo).
+      OMA_DEPLOY_SCRIPT: ${OMA_DEPLOY_SCRIPT:-/scripts/deploy-prod.sh}
+      OMA_DEPLOY_STATE_DIR: /var/lib/oma
+    volumes:
+      - oma_admin_state:/var/lib/oma
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r=await fetch('http://localhost:9090/health');process.exit(r.ok?0:1)",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - omestre-dev-net
+
+  admin-web:
+    build:
+      context: .
+      dockerfile: apps/admin-web/Dockerfile
+    container_name: ${DEV_CONTAINER_PREFIX:-omestre_dev}_admin-web
+    restart: unless-stopped
+    depends_on:
+      admin-api:
+        condition: service_healthy
+    ports:
+      - '${DEV_ADMIN_WEB_HOST_PORT:-127.0.0.1:9091:9091}'
+    networks:
+      - omestre-dev-net
+
   # ═══════════════════════════════════════════════════════════════════════════
   # OPTIONAL: Cloudflare Tunnel
   # ═══════════════════════════════════════════════════════════════════════════
@@ -388,3 +435,5 @@ volumes:
     name: ${DEV_REDIS_VOLUME_NAME:-omestre-dev-redis-data}
   omestre_dev_evolution_instances:
     name: ${DEV_EVOLUTION_VOLUME_NAME:-omestre-dev-evolution-instances}
+  oma_admin_state:
+    name: ${DEV_ADMIN_STATE_VOLUME_NAME:-oma-admin-state}
