@@ -94,7 +94,12 @@ export async function createInstance(instanceName: string): Promise<{
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(
-        buildCreateInstanceBody(instanceName, config.EVOLUTION_API_KEY, config.WEBHOOK_URL),
+        buildCreateInstanceBody(
+          instanceName,
+          config.EVOLUTION_API_KEY,
+          config.WEBHOOK_URL,
+          config.OMA_WEBHOOK_SECRET,
+        ),
       ),
     });
 

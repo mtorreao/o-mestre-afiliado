@@ -9,8 +9,15 @@
  *   - groups.upsert     (entrou em grupo)
  *   - group-participants.update (participante entrou/saiu)
  *
- * A rota não requer autenticação JWT — a Evolution API
- * envia o apikey no header para validação.
+ * Autenticação:
+ *   - Se OMA_WEBHOOK_SECRET estiver configurado (produção), valida o header
+ *     `Authorization: Bearer <jwt>` — JWT HS256 assinado pela Evolution API
+ *     usando `jwt_key` (ver webhook-jwt-pure.ts).
+ *   - Fallback LEGACY (apenas durante migração, se OMA_WEBHOOK_SECRET vazio):
+ *     valida o header `apikey` contra EVOLUTION_API_KEY. A Evolution v2.3.7
+ *     inclui `apikey` no BODY (não no header) por default; o header `apikey`
+ *     só é enviado em integrações custom. Este fallback será removido quando
+ *     a migração estiver completa.
  */
 
 import { Elysia } from 'elysia';
@@ -23,9 +30,10 @@ import {
 import type { RawMessageEvent } from '@omestre/shared';
 import { streamAdd, cacheGet, cacheSet, cacheDel } from '../../services/redis.ts';
 import { getSourceGroupInfo, cacheSourceGroup } from '../../services/group-cache.ts';
-import { fetchGroupInfo } from '../../services/evolution.ts';
+import { verifyEvolutionWebhookJwt } from './webhook-jwt-pure.ts';
 
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
+const OMA_WEBHOOK_SECRET = process.env.OMA_WEBHOOK_SECRET || '';
 
 const instanceRepo = new WhatsAppInstanceRepository();
 
@@ -181,7 +189,11 @@ async function handleMessagesUpsert(
       continue;
     }
 
-    // Busca no cache Redis se este grupo é um sourceGroup configurado
+    // Busca no cache Redis se este grupo é um sourceGroup configurado.
+    // Decisão de publicar/ignorar fica no cache (com fallback PG em miss).
+    // O nome do grupo vem SÓ do cache — a resolução via Evolution API
+    // foi desacoplada para o ingestor (opção B) para não bloquear o
+    // caminho quente do webhook em I/O externo.
     const info = await getSourceGroupInfo(remoteJid);
     if (!info) {
       ignored++;
@@ -189,19 +201,8 @@ async function handleMessagesUpsert(
     }
     const { affiliateId, mirrorId, groupName } = info;
 
-    // Se o nome do grupo não está no cache, tenta buscar via Evolution API
-    let resolvedGroupName = groupName;
-    if (!resolvedGroupName) {
-      try {
-        const groupInfo = await fetchGroupInfo(instanceName, remoteJid);
-        if (groupInfo?.name) {
-          resolvedGroupName = groupInfo.name;
-          await cacheSourceGroup(remoteJid, affiliateId, resolvedGroupName, mirrorId);
-        }
-      } catch {
-        // Falha silenciosa — usa nome vazio
-      }
-    }
+    // Nome do grupo: do cache (sem chamar Evolution no hot path).
+    const resolvedGroupName = groupName ?? '';
 
     // ── Dedup de webhook (global, 30s) ──
     // Evita RawMessageEvent duplicado quando múltiplas instâncias
@@ -292,18 +293,38 @@ export const webhookRoutes = new Elysia()
   .post(
     '/webhook/message',
     async ({ body, request, set }) => {
-      // Validação de autenticação via apikey
-      if (!EVOLUTION_API_KEY) {
-        console.warn('🚨 EVOLUTION_API_KEY não configurada — rejeitando webhook');
+      // Validação de autenticação via JWT (produção) ou apikey legacy (migração)
+      if (!OMA_WEBHOOK_SECRET && !EVOLUTION_API_KEY) {
+        console.warn(
+          '🚨 Nenhum secret de webhook configurado (OMA_WEBHOOK_SECRET ou EVOLUTION_API_KEY) — rejeitando webhook',
+        );
         set.status = 503;
-        return { success: false, error: 'Webhook desabilitado. Configure EVOLUTION_API_KEY.' };
+        return { success: false, error: 'Webhook desabilitado. Configure OMA_WEBHOOK_SECRET.' };
       }
 
-      const providedKey = request.headers.get('apikey');
-      if (!providedKey || !safeEqual(providedKey, EVOLUTION_API_KEY)) {
-        console.warn(`🔒 Webhook rejeitado: apikey inválida (tem=${Boolean(providedKey)})`);
-        set.status = 401;
-        return { success: false, error: 'Unauthorized' };
+      if (OMA_WEBHOOK_SECRET) {
+        // Modo produção: JWT HS256 via Authorization: Bearer
+        const authHeader = request.headers.get('authorization') ?? '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        if (!token) {
+          console.warn('🔒 Webhook rejeitado: Authorization Bearer ausente');
+          set.status = 401;
+          return { success: false, error: 'Unauthorized' };
+        }
+        const result = await verifyEvolutionWebhookJwt(token, OMA_WEBHOOK_SECRET);
+        if (!result.ok) {
+          console.warn(`🔒 Webhook rejeitado: ${result.reason}`);
+          set.status = 401;
+          return { success: false, error: 'Unauthorized' };
+        }
+      } else {
+        // Fallback legacy (migração): valida apikey contra EVOLUTION_API_KEY
+        const providedKey = request.headers.get('apikey');
+        if (!providedKey || !safeEqual(providedKey, EVOLUTION_API_KEY)) {
+          console.warn(`🔒 Webhook rejeitado: apikey inválida (tem=${Boolean(providedKey)})`);
+          set.status = 401;
+          return { success: false, error: 'Unauthorized' };
+        }
       }
 
       const payload = body as WebhookEvent;

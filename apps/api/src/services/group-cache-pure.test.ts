@@ -18,6 +18,8 @@ import {
   firstTargetGroup,
   groupConfigsByJid,
   instanceNameFromMirror,
+  negativeCacheKey,
+  NEGATIVE_CACHE_TTL,
   mirrorHasSourceGroup,
   parseCachedSourceGroupConfigs,
   sourceGroupCacheKey,
@@ -116,6 +118,7 @@ describe('buildSourceGroupConfig', () => {
       affiliateId: 42,
       mirrorId: 7,
       instanceName: 'user-3',
+      groupName: 'Origem',
       targetGroupJid: 'tgt@g.us',
       targetGroupName: 'Destino',
       messageTemplate: '{{link}}',
@@ -252,5 +255,17 @@ describe('buildLegacySourceGroupValue', () => {
     expect(buildLegacySourceGroupValue(5, 'jid@g.us')).toBe(
       JSON.stringify({ affiliateId: 5, mirrorId: undefined, groupName: '' }),
     );
+  });
+});
+
+describe('cache negativo de sourceGroup (opção C)', () => {
+  it('negativeCacheKey usa prefixo dedicado', () => {
+    expect(negativeCacheKey('120363000000000001@g.us')).toBe(
+      'mirror:source-group:neg:120363000000000001@g.us',
+    );
+  });
+
+  it('TTL negativo é 300s (5 min)', () => {
+    expect(NEGATIVE_CACHE_TTL).toBe(300);
   });
 });

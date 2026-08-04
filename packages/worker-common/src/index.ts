@@ -9,6 +9,7 @@
  */
 
 export { StepTracker, measureStep, measureStepSync } from './step-tracker.ts';
+export { resolveGroupName } from './group-resolution.ts';
 
 export {
   pushToDLQ,

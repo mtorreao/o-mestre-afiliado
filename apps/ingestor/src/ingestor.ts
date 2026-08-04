@@ -64,7 +64,7 @@ import { getRedis } from './redis.ts';
 import { steps } from './metrics.ts';
 import { logReflectedOffer } from './offer-logger.ts';
 import { resolveCatalogTarget } from '@omestre/shared';
-import { publishCatalogJob } from '@omestre/worker-common';
+import { publishCatalogJob, resolveGroupName } from '@omestre/worker-common';
 
 // Re-exporta funções puras de url-extraction.ts para compatibilidade
 // com testes existentes e callers externos.
@@ -91,7 +91,19 @@ const log = makeLogger('ingestor');
  * Retorna true se deve dar ACK (processada), false se deve retentar.
  */
 export async function processRawMessage(event: RawMessageEvent): Promise<boolean> {
-  const { messageId, instanceName, sourceGroupJid, sourceGroupName, text } = event;
+  const {
+    messageId,
+    instanceName,
+    sourceGroupJid,
+    sourceGroupName: rawSourceGroupName,
+    text,
+  } = event;
+
+  // Opção B: nome do grupo resolvido no ingestor (desacoplado do webhook).
+  // O webhook publica com o nome do cache; se vazio, resolvemos via Evolution
+  // aqui, em loop assíncrono, sem bloquear o caminho quente do webhook.
+  const sourceGroupName =
+    rawSourceGroupName || (await resolveGroupName(instanceName, sourceGroupJid));
   const totalStart = performance.now();
 
   log('info', 'Processando mensagem crua', {
