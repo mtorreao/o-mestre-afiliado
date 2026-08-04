@@ -1,23 +1,16 @@
 #!/usr/bin/env bash
-# Detecta se o diff (BASE...HEAD) contém apenas documentação/arquivos não-código.
+# Detecta se uma lista de arquivos (stdin, um por linha) contém apenas
+# documentação/arquivos não-código.
 #
-# Uso: bash scripts/ci/check-docs-only.sh [BASE_SHA]
-#   BASE_SHA vazio, ausente ou "0000...0" (primeiro push) → usa HEAD~1.
-#   Requer checkout com fetch-depth: 0 (git diff precisa do histórico).
+# Uso: git diff --name-only A...B | bash scripts/ci/check-docs-only.sh
+#   (o step do CI calcula o diff do PR/push e faz pipe aqui)
 #
 # Saída: imprime "docs_only=true" (pode pular CI) ou "docs_only=false" (rodar CI).
-# Whitelist de código/infra: se QUALQUER arquivo do diff casa, o CI roda.
-#
-# Fail-closed: se o git diff falhar (base ausente, clone raso), o script sai
-# com erro — o job falha em vez de pular o CI silenciosamente.
+# Whitelist de código/infra: se QUALQUER arquivo da lista casar, o CI roda.
+# Entrada vazia (sem mudanças) → docs_only=true.
 set -euo pipefail
 
-BASE="${1:-}"
-if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-  BASE="HEAD~1"
-fi
-
-FILES=$(git diff --name-only "$BASE"...HEAD)
+FILES=$(cat)
 
 if [ -z "$FILES" ]; then
   echo "docs_only=true"
