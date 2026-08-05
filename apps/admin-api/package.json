@@ -16,8 +16,14 @@
     "hash-password": "bun run src/scripts/hash-password.ts"
   },
   "dependencies": {
+    "@omestre/db": "workspace:*",
+    "@omestre/feature-flags": "workspace:*",
+    "@omestre/feature-flags-sdk": "workspace:*",
+    "@omestre/shared": "workspace:*",
     "@omestre/worker-common": "workspace:*",
-    "hono": "catalog:"
+    "drizzle-orm": "catalog:",
+    "hono": "catalog:",
+    "ioredis": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest"

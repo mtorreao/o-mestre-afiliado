@@ -17,6 +17,8 @@ import { loadConfig, makeLogger } from './config.ts';
 import { authRoutes } from './routes/auth.ts';
 import { webhookRoutes } from './routes/webhook.ts';
 import { adminRoutes } from './routes/admin.ts';
+import { createFeatureFlagsRoutes } from './routes/feature-flags.ts';
+import { createWorkerRoutes } from './routes/worker.ts';
 import { makeTelegramSender } from './notify/telegram.ts';
 import { makeDeployRegistry } from './deploy/registry.ts';
 
@@ -56,6 +58,11 @@ export function createApp(env: Record<string, string | undefined> = process.env)
       registry,
     }),
   );
+  // Feature flags + worker status (mounted em /api/admin, mas cada sub-route
+  // tem prefixo próprio — /feature-flags e /worker/* — para combinar com o
+  // mountpoint existente).
+  app.route('/api/admin', createFeatureFlagsRoutes({ log }));
+  app.route('/api/admin', createWorkerRoutes({ log, metrics: { config } }));
 
   // 404 JSON consistente.
   app.notFound((c) => c.json({ success: false, error: 'not found' }, 404));

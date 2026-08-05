@@ -29,6 +29,12 @@ export interface AdminConfig {
   readonly telegramBotToken: string;
   readonly telegramChatId: string;
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error';
+  // ─── Novos (feature flags + worker status) ────────────────────────
+  readonly redisUrl: string;
+  readonly postgresUrl: string;
+  readonly metricsApiKey: string;
+  readonly workerMetricsUrl: string;
+  readonly dispatcherMetricsUrl: string;
 }
 
 /** Throws se faltar env obrigatório. Retorna config congelada. */
@@ -61,6 +67,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     telegramBotToken: env['TELEGRAM_BOT_TOKEN']!,
     telegramChatId: env['TELEGRAM_CHAT_ID']!,
     logLevel: (env['OMA_LOG_LEVEL'] ?? 'info') as AdminConfig['logLevel'],
+    // ─── Novos (feature flags + worker status). Defaults seguros para dev local. ───
+    redisUrl: env['REDIS_URL'] ?? 'redis://localhost:5455',
+    postgresUrl:
+      env['POSTGRES_URL'] ??
+      'postgresql://evolution:evolution_pass@localhost:5453/omestre_db?schema=omestre',
+    metricsApiKey: env['METRICS_API_KEY'] ?? '',
+    workerMetricsUrl: env['WORKER_METRICS_URL'] ?? 'http://localhost:9092',
+    dispatcherMetricsUrl: env['DISPATCHER_METRICS_URL'] ?? 'http://localhost:9093',
   });
 }
 
