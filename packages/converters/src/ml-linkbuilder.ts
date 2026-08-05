@@ -25,12 +25,14 @@
 
 import {
   type CreateLinkResponse,
+  type MlShortLinkErrorKind,
   type ShortLinkResult,
   buildCreateLinkApiHeaders,
   buildCreateLinkBody,
   buildCsrfCacheKey,
   buildLinkBuilderPageHeaders,
   CSRF_NOT_FOUND_MESSAGE,
+  classifyMlShortLinkError,
   extractCsrfToken,
   formatCsrfRetrievalError,
   formatLinkBuilderHttpError,
@@ -141,7 +143,8 @@ export async function renewSessionCookies(
 // ─── Obtenção de CSRF (cache-first, com renovação) ──────────────────────
 
 type CsrfStepResult =
-  { ok: true; csrf: string; cookies: string } | { ok: false; error: string; cookies: string };
+  | { ok: true; csrf: string; cookies: string }
+  | { ok: false; error: string; cookies: string; kind: MlShortLinkErrorKind };
 
 /**
  * Obtém o token CSRF para `tag` + `cookies`, consultando o cache antes do GET.
@@ -162,7 +165,12 @@ async function obtainCsrfToken(tag: string, cookies: string): Promise<CsrfStepRe
     if (isSessionExpiredStatus(pageRes.status)) {
       const renewal = await renewSessionCookies(cookies);
       if (!renewal.renewed) {
-        return { ok: false, error: formatLinkBuilderHttpError('page', pageRes.status), cookies };
+        return {
+          ok: false,
+          error: formatLinkBuilderHttpError('page', pageRes.status),
+          cookies,
+          kind: 'cookie_expired',
+        };
       }
       evictCachedCsrfToken(tag, cookies);
       cookies = renewal.cookies;
@@ -172,7 +180,8 @@ async function obtainCsrfToken(tag: string, cookies: string): Promise<CsrfStepRe
     }
 
     if (!pageRes.ok) {
-      return { ok: false, error: formatLinkBuilderHttpError('page', pageRes.status), cookies };
+      const error = formatLinkBuilderHttpError('page', pageRes.status);
+      return { ok: false, error, cookies, kind: classifyMlShortLinkError(error, pageRes.status) };
     }
 
     const html = await pageRes.text();
@@ -196,13 +205,13 @@ async function obtainCsrfToken(tag: string, cookies: string): Promise<CsrfStepRe
           }
         }
       }
-      return { ok: false, error: CSRF_NOT_FOUND_MESSAGE, cookies };
+      return { ok: false, error: CSRF_NOT_FOUND_MESSAGE, cookies, kind: 'cookie_expired' };
     }
 
     setCachedCsrfToken(tag, cookies, token);
     return { ok: true, csrf: token, cookies };
   } catch (err) {
-    return { ok: false, error: formatCsrfRetrievalError(err), cookies };
+    return { ok: false, error: formatCsrfRetrievalError(err), cookies, kind: 'network' };
   }
 }
 
@@ -235,7 +244,7 @@ export async function generateShortAffiliateLink(
     // ── 1. CSRF token (cache ou GET na página) ──
     const csrfStep = await obtainCsrfToken(tag, cookies);
     if (!csrfStep.ok) {
-      return { success: false, error: csrfStep.error };
+      return { success: false, error: csrfStep.error, errorKind: csrfStep.kind };
     }
     cookies = csrfStep.cookies;
 
@@ -257,6 +266,7 @@ export async function generateShortAffiliateLink(
         return {
           success: false,
           error: formatRenewalFailedError(apiRes.status),
+          errorKind: 'cookie_expired',
         };
       }
       cookies = renewal.cookies;
@@ -264,7 +274,7 @@ export async function generateShortAffiliateLink(
 
       const csrfRetry = await obtainCsrfToken(tag, cookies);
       if (!csrfRetry.ok) {
-        return { success: false, error: csrfRetry.error };
+        return { success: false, error: csrfRetry.error, errorKind: csrfRetry.kind };
       }
       cookies = csrfRetry.cookies;
 
@@ -278,14 +288,17 @@ export async function generateShortAffiliateLink(
         return {
           success: false,
           error: formatRenewalFailedError(apiRes.status),
+          errorKind: 'cookie_expired',
         };
       }
     }
 
     if (!apiRes.ok) {
+      const error = formatLinkBuilderHttpError('api', apiRes.status);
       return {
         success: false,
-        error: formatLinkBuilderHttpError('api', apiRes.status),
+        error,
+        errorKind: classifyMlShortLinkError(error, apiRes.status),
       };
     }
 
@@ -298,9 +311,11 @@ export async function generateShortAffiliateLink(
     }
     return result;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
+      errorKind: classifyMlShortLinkError(message),
     };
   }
 }

@@ -23,7 +23,9 @@
     "@omestre/worker-common": "workspace:*",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
-    "ioredis": "catalog:"
+    "ioredis": "catalog:",
+    "@omestre/r2-sdk": "workspace:*",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest"

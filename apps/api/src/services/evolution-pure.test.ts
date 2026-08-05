@@ -194,12 +194,12 @@ describe('isDeleteStatusAcceptable', () => {
     expect(isDeleteStatusAcceptable(false, 404)).toBe(true);
   });
 
-  it('false para 500', () => {
-    expect(isDeleteStatusAcceptable(false, 500)).toBe(false);
+  it('true para 403 (instância em connecting/open durante delete)', () => {
+    expect(isDeleteStatusAcceptable(false, 403)).toBe(true);
   });
 
-  it('false para 403', () => {
-    expect(isDeleteStatusAcceptable(false, 403)).toBe(false);
+  it('false para 500', () => {
+    expect(isDeleteStatusAcceptable(false, 500)).toBe(false);
   });
 });
 

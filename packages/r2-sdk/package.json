@@ -1,0 +1,23 @@
+{
+  "name": "@omestre/r2-sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "aws4fetch": "catalog:",
+    "age-encryption": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  },
+  "main": "src/index.ts",
+  "module": "src/index.ts"
+}

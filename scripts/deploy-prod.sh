@@ -172,14 +172,18 @@ register_deployment() {
   # Remove entrada existente com mesma tag (idempotência)
   local tmp
   tmp=$(mktemp)
-  if [ -f "$DEPLOYMENTS_FILE" ]; then
-    jq -c "map(select(.tag != \"$tag\")) | . + [{tag: \"$tag\", sha: \"$sha\", deployed_at: \"$ts\", status: \"$status\"}] | .[-20:]" \
+  if [ -s "$DEPLOYMENTS_FILE" ]; then
+    # Arquivo existe e não é vazio — atualiza via jq (aspas simples, --arg)
+    jq -c --arg t "$tag" --arg s "$sha" --arg ts "$ts" --arg st "$status" \
+      'map(select(.tag != $t)) + [{tag: $t, sha: $s, deployed_at: $ts, status: $st}] | .[-20:]' \
       "$DEPLOYMENTS_FILE" > "$tmp" 2>/dev/null \
-      || jq -c "map(select(.tag != \"$tag\")) | . + [{tag: \"$tag\", sha: \"$sha\", deployed_at: \"$ts\", status: \"$status\"}] | .[-20:]" \
+      || jq -c --arg t "$tag" --arg s "$sha" --arg ts "$ts" --arg st "$status" \
+      'map(select(.tag != $t)) + [{tag: $t, sha: $s, deployed_at: $ts, status: $st}] | .[-20:]' \
       <<< "[]" > "$tmp"
   else
-    jq -c --arg t "$tag" --arg s "$sha" --arg ts "$ts" --arg st "$status" \
-      "[{tag: \$t, sha: \$s, deployed_at: \$ts, status: \$st}]" > "$tmp"
+    # Arquivo vazio/inexistente — cria do zero com -n (null input, não lê stdin)
+    jq -n -c --arg t "$tag" --arg s "$sha" --arg ts "$ts" --arg st "$status" \
+      '[{tag: $t, sha: $s, deployed_at: $ts, status: $st}]' > "$tmp"
   fi
   mv "$tmp" "$DEPLOYMENTS_FILE"
   chmod 600 "$DEPLOYMENTS_FILE"
