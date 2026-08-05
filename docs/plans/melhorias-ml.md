@@ -57,7 +57,7 @@
 
 **Solução:** Usar `chrome.alarms` pra rodar a importação a cada N horas automaticamente, se o usuário estiver logado no ML.
 
-### 8. Mensagens de erro descritivas
+### 8. Mensagens de erro descritivas ✅ entregue (2026-07-31)
 
 **Problema:** Erros genéricos como "Produto não elegível" sem explicação.
 
@@ -69,7 +69,7 @@
 | —      | URL não permitida             | Produto não elegível no programa    |
 | 401    | Não autorizado                | Cookies expirados                   |
 
-### 9. Fallback inteligente
+### 9. Fallback inteligente ✅ entregue (2026-07-31)
 
 **Problema:** Quando o link curto falha por produto inelegível, o sistema cai em URL params. Mas URL params podem não trackear corretamente no novo programa.
 

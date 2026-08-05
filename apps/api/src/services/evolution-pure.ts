@@ -139,7 +139,11 @@ export function isInstanceAlreadyInUseError(error: string | undefined): boolean 
  * a instância já não existe, que é o estado desejado.
  */
 export function isDeleteStatusAcceptable(ok: boolean, status: number): boolean {
-  return ok || status === 404;
+  // 404: já tratado (instance inexistente).
+  // 403: Evolution API v2 retorna 403 em DELETE /instance/delete/{instanceName}
+  // quando a instância está em 'connecting' ou 'open', causando falha em
+  // connect retry com "This name user-1 is already in use".
+  return ok || status === 404 || status === 403;
 }
 
 // ─── Parsing de respostas ────────────────────────────────────────────

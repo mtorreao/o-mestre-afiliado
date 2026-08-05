@@ -50,6 +50,11 @@ import {
   type MlStrategy,
   type MercadoLivreCredentials,
 } from './mercadolivre-pure.ts';
+import {
+  classifyMlShortLinkError,
+  ML_PRODUCT_NOT_ELIGIBLE_MESSAGE,
+  ML_TAG_MISMATCH_MESSAGE,
+} from './ml-linkbuilder-pure.ts';
 import { renewSessionCookies } from './ml-linkbuilder.ts';
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
@@ -114,6 +119,18 @@ export async function getAccessToken(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
+ * Lança erro acionável quando a resposta da API do Link Builder indica
+ * produto inelegível ("URL not allowed"/"URL no permitida") ou tag não
+ * associada — o chamador NÃO deve cair em fallback silencioso (spec
+ * melhorias-ml.md itens 8 e 9).
+ */
+function throwIfMlEligibilityError(message: string): void {
+  const kind = classifyMlShortLinkError(message);
+  if (kind === 'product_not_eligible') throw new Error(ML_PRODUCT_NOT_ELIGIBLE_MESSAGE);
+  if (kind === 'tag_mismatch') throw new Error(ML_TAG_MISMATCH_MESSAGE);
+}
+
+/**
  * Gera link de afiliado via API oficial do Link Builder
  */
 export async function generateViaApi(productUrl: string, accessToken: string): Promise<string> {
@@ -125,6 +142,7 @@ export async function generateViaApi(productUrl: string, accessToken: string): P
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    throwIfMlEligibilityError(text);
     throw new Error(formatApiError(res.status, text, res.statusText));
   }
 
@@ -132,6 +150,7 @@ export async function generateViaApi(productUrl: string, accessToken: string): P
 
   const shortenUrl = extractShortenUrl(data);
   if (!shortenUrl) {
+    throwIfMlEligibilityError(JSON.stringify(data));
     throw new Error(formatMissingShortenUrlError(data));
   }
 
@@ -289,8 +308,16 @@ export async function convertMercadoLivreUrl(
           affiliateLink = await generateViaApi(targetUrl, auth.access_token);
           method = 'api';
           break;
-        } catch {
-          // Próxima estratégia
+        } catch (error) {
+          // Produto inelegível / tag não associada → erro acionável, SEM
+          // fallback silencioso para URL params (spec melhorias-ml item 9).
+          const kind = classifyMlShortLinkError(
+            error instanceof Error ? error.message : String(error),
+          );
+          if (kind === 'product_not_eligible' || kind === 'tag_mismatch') {
+            return buildErrorResult(url, error);
+          }
+          // Cookies expirados / rede / desconhecido → próxima estratégia.
         }
       }
 

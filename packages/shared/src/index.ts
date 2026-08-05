@@ -11,6 +11,8 @@ export interface ConversionResult {
   marketplace: Marketplace;
   method: ConversionMethod;
   error?: string;
+  /** Classificação estruturada do erro (ex: 'cookie_expired', 'product_ineligible'). */
+  errorKind?: string;
 }
 
 export type Marketplace = 'shopee' | 'mercadolivre' | 'amazon' | 'magalu' | 'unknown';

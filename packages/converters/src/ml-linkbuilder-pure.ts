@@ -78,6 +78,144 @@ export const EMPTY_URLS_MESSAGE = 'API retornou sem URLs';
 export const MISSING_SHORT_URL_MESSAGE =
   'API não retornou short_url. Produto pode não ser elegível.';
 
+// ─── Classificação de erros (mapa error_code da API) ────────────────────
+
+/**
+ * Classificação de erro do Link Builder — usada por chamadores para decidir
+ * fallback (cookie_expired/network → URL params) vs. erro acionável
+ * (tag_mismatch/product_not_eligible → retornar ao usuário).
+ *
+ * Mapa oficial (docs/plans/melhorias-ml.md itens 8 e 9):
+ *  - 109: tag não associada ao afiliado → reimportar cookies da conta correta
+ *  - 111: "URL not allowed in affiliates program" → produto não elegível
+ *  - 401: não autorizado → cookies expirados
+ */
+export type MlShortLinkErrorKind =
+  'cookie_expired' | 'tag_mismatch' | 'product_not_eligible' | 'network' | 'unknown';
+
+/** error_code 109 — tag não associada ao afiliado. */
+export const ML_ERROR_TAG_NOT_ASSOCIATED = 109;
+/** error_code 111 — "URL not allowed in affiliates program" (produto não elegível). */
+export const ML_ERROR_URL_NOT_ALLOWED = 111;
+/** error_code 401 — não autorizado (cookies expirados). */
+export const ML_ERROR_UNAUTHORIZED = 401;
+
+/** Mensagem acionável para tag não associada ao afiliado. */
+export const ML_TAG_MISMATCH_MESSAGE =
+  'Tag não associada ao afiliado. Reimporte os cookies da conta correta no painel do Mercado Livre.';
+
+/** Mensagem acionável para produto não elegível no programa de afiliados. */
+export const ML_PRODUCT_NOT_ELIGIBLE_MESSAGE =
+  'Produto não elegível no programa de afiliados do Mercado Livre. Não é possível gerar link de afiliado para esta URL.';
+
+/** Mensagem acionável para cookies de sessão expirados. */
+export const ML_COOKIE_EXPIRED_MESSAGE =
+  'Cookies de sessão expirados. Reimporte os cookies do Mercado Livre no painel.';
+
+/** Marcadores de mensagem (PT/ES/EN, lowercase) por classificação. */
+const COOKIE_ERROR_MARKERS = [
+  'http 40',
+  'cookies podem estar expirados',
+  'unauthorized',
+  'não autorizado',
+  'nao autorizado',
+];
+const NETWORK_ERROR_MARKERS = [
+  'erro ao obter csrf',
+  'fetch failed',
+  'failed to fetch',
+  'networkerror',
+  'econnrefused',
+];
+
+function messageHasAnyMarker(message: string, markers: string[]): boolean {
+  const m = message.toLowerCase();
+  return markers.some((marker) => m.includes(marker));
+}
+
+/** Detecta erro de tag: presença de "tag" + termo de associação/invalidação. */
+function isTagError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('tag') &&
+    messageHasAnyMarker(m, [
+      'associad',
+      'asociad',
+      'inválid',
+      'invalid',
+      'no es válid',
+      'no es valid',
+      'não existe',
+      'nao existe',
+      'no existe',
+    ])
+  );
+}
+
+/** Detecta URL não permitida / produto não elegível (PT/ES/EN). */
+function isProductEligibilityError(message: string): boolean {
+  const m = message.toLowerCase();
+  const urlNotAllowed =
+    m.includes('url') &&
+    messageHasAnyMarker(m, ['no permitid', 'não permitid', 'nao permitid', 'not allowed']);
+  // Co-ocorrência de termo de elegibilidade + negação (PT/ES/EN), tolerante
+  // a variações tipo "no es elegible"/"não é elegível".
+  const hasEligibilityTerm = messageHasAnyMarker(m, [
+    'elegível',
+    'elegivel',
+    'elegible',
+    'eligible',
+  ]);
+  const notEligible = hasEligibilityTerm && messageHasAnyMarker(m, ['não', 'nao', ' no ', 'not']);
+  return urlNotAllowed || notEligible;
+}
+
+/**
+ * Classifica uma mensagem de erro do Link Builder em `MlShortLinkErrorKind`.
+ * `status` (HTTP) tem precedência: 401/403 são sempre cookies expirados.
+ * Função pura — usada na camada de I/O e no parse da resposta.
+ */
+export function classifyMlShortLinkError(message: string, status?: number): MlShortLinkErrorKind {
+  if (status !== undefined && (status === 401 || status === 403)) {
+    return 'cookie_expired';
+  }
+  if (messageHasAnyMarker(message, COOKIE_ERROR_MARKERS)) return 'cookie_expired';
+  if (isTagError(message)) return 'tag_mismatch';
+  if (isProductEligibilityError(message)) return 'product_not_eligible';
+  if (messageHasAnyMarker(message, NETWORK_ERROR_MARKERS)) return 'network';
+  return 'unknown';
+}
+
+/**
+ * Mapeia `error_code` + mensagem da API createLink em erro acionável.
+ * Prioridade: código conhecido (109/111/401) → marcadores na mensagem →
+ * mantém a mensagem original como `unknown`.
+ */
+export function formatCreateLinkError(
+  errorCode: number | undefined,
+  message: string | undefined,
+): { message: string; kind: MlShortLinkErrorKind } {
+  const kind = classifyMlShortLinkError(message ?? '');
+  const suffix = errorCode !== undefined ? ` (código ${errorCode})` : '';
+
+  if (errorCode === ML_ERROR_TAG_NOT_ASSOCIATED || kind === 'tag_mismatch') {
+    return { message: `${ML_TAG_MISMATCH_MESSAGE}${suffix}`, kind: 'tag_mismatch' };
+  }
+  if (errorCode === ML_ERROR_URL_NOT_ALLOWED || kind === 'product_not_eligible') {
+    return {
+      message: `${ML_PRODUCT_NOT_ELIGIBLE_MESSAGE}${suffix}`,
+      kind: 'product_not_eligible',
+    };
+  }
+  if (errorCode === ML_ERROR_UNAUTHORIZED || kind === 'cookie_expired') {
+    return { message: `${ML_COOKIE_EXPIRED_MESSAGE}${suffix}`, kind: 'cookie_expired' };
+  }
+  return {
+    message: message ?? `Erro do Link Builder: código ${errorCode ?? 'desconhecido'}`,
+    kind: 'unknown',
+  };
+}
+
 // ─── Interfaces compartilhadas ─────────────────────────────────────────
 
 export interface CreateLinkRequest {
@@ -107,6 +245,12 @@ export interface ShortLinkResult {
   shortUrl?: string;
   longUrl?: string;
   error?: string;
+  /**
+   * Classificação do erro (mapa error_code da API) — permite que chamadores
+   * decidam fallback (cookie_expired/network) vs. erro acionável
+   * (tag_mismatch/product_not_eligible) sem depender do texto da mensagem.
+   */
+  errorKind?: MlShortLinkErrorKind;
   /**
    * Cookies renovados durante a chamada (401/403 → renovação via set-cookie).
    * Preenchido quando a sessão foi renovada com sucesso — o chamador pode
@@ -195,27 +339,26 @@ export function formatRenewalFailedError(status: number): string {
  *
  * Cobre todos os branchs de validação:
  *  - sem URLs → erro EMPTY_URLS_MESSAGE
- *  - erro interno (error_code) → erro com message ou código
+ *  - erro interno (error_code) → mapeado em mensagem acionável + errorKind
+ *    (109 tag, 111 URL não permitida, 401 cookies; fallback por marcadores)
  *  - ausência de short_url → erro MISSING_SHORT_URL_MESSAGE
  *  - sucesso → shortUrl + longUrl
  */
 export function parseCreateLinkResponse(data: CreateLinkResponse): ShortLinkResult {
   if (!data.urls || data.urls.length === 0) {
-    return { success: false, error: EMPTY_URLS_MESSAGE };
+    return { success: false, error: EMPTY_URLS_MESSAGE, errorKind: 'unknown' };
   }
 
   const result = data.urls[0]!;
 
-  // Erro interno (ex: tag inválida)
+  // Erro interno — mapeia error_code em mensagem acionável (spec itens 8/9)
   if (result.error_code) {
-    return {
-      success: false,
-      error: result.message ?? `Erro do Link Builder: código ${result.error_code}`,
-    };
+    const mapped = formatCreateLinkError(result.error_code, result.message);
+    return { success: false, error: mapped.message, errorKind: mapped.kind };
   }
 
   if (!result.short_url) {
-    return { success: false, error: MISSING_SHORT_URL_MESSAGE };
+    return { success: false, error: MISSING_SHORT_URL_MESSAGE, errorKind: 'unknown' };
   }
 
   return {

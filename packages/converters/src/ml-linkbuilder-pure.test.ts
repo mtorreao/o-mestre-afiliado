@@ -102,6 +102,7 @@ describe('parseCreateLinkResponse', () => {
     expect(parseCreateLinkResponse(data)).toEqual({
       success: false,
       error: EMPTY_URLS_MESSAGE,
+      errorKind: 'unknown',
     });
   });
 
@@ -110,15 +111,15 @@ describe('parseCreateLinkResponse', () => {
     expect(parseCreateLinkResponse(data).error).toBe(EMPTY_URLS_MESSAGE);
   });
 
-  it('erro interno: usa message quando presente', () => {
+  it('erro interno: mensagem de tag → erro acionável + errorKind', () => {
     const data: CreateLinkResponse = {
       status: 200,
       urls: [{ error_code: 400, message: 'tag inválida' }],
     };
-    expect(parseCreateLinkResponse(data)).toEqual({
-      success: false,
-      error: 'tag inválida',
-    });
+    const r = parseCreateLinkResponse(data);
+    expect(r.success).toBe(false);
+    expect(r.errorKind).toBe('tag_mismatch');
+    expect(r.error).toContain('Tag não associada ao afiliado');
   });
 
   it('erro interno: fallback para código quando message ausente', () => {
@@ -129,6 +130,7 @@ describe('parseCreateLinkResponse', () => {
     expect(parseCreateLinkResponse(data)).toEqual({
       success: false,
       error: 'Erro do Link Builder: código 99',
+      errorKind: 'unknown',
     });
   });
 
@@ -140,6 +142,7 @@ describe('parseCreateLinkResponse', () => {
     expect(parseCreateLinkResponse(data)).toEqual({
       success: false,
       error: MISSING_SHORT_URL_MESSAGE,
+      errorKind: 'unknown',
     });
   });
 });

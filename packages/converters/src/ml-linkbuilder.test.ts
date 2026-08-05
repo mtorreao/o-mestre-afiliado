@@ -119,7 +119,83 @@ describe('generateShortAffiliateLink', () => {
 
     const r = await generateShortAffiliateLink('https://prod', 'mytag', 'cookie=1');
     expect(r.success).toBe(false);
-    expect(r.error).toContain('tag inválida');
+    expect(r.errorKind).toBe('tag_mismatch');
+    expect(r.error).toContain('Tag não associada ao afiliado');
+  });
+
+  it('error_code 109 → errorKind tag_mismatch com mensagem acionável', async () => {
+    const html = '<html><meta name="csrf-token" content="TOKEN123"></html>';
+    const fetchMock = mock(async (url: string) => {
+      if (url === PAGE_URL) return jsonResponse(html, true, 200);
+      if (url === API_URL) return jsonResponse({ urls: [{ error_code: 109 }] });
+      return jsonResponse({});
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const r = await generateShortAffiliateLink('https://prod', 'mytag', 'cookie=1');
+    expect(r.success).toBe(false);
+    expect(r.errorKind).toBe('tag_mismatch');
+    expect(r.error).toContain('Tag não associada ao afiliado');
+    expect(r.error).toContain('código 109');
+  });
+
+  it('error_code 111 (URL not allowed) → errorKind product_not_eligible', async () => {
+    const html = '<html><meta name="csrf-token" content="TOKEN123"></html>';
+    const fetchMock = mock(async (url: string) => {
+      if (url === PAGE_URL) return jsonResponse(html, true, 200);
+      if (url === API_URL)
+        return jsonResponse({
+          urls: [{ error_code: 111, message: 'URL not allowed in affiliates program' }],
+        });
+      return jsonResponse({});
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const r = await generateShortAffiliateLink('https://prod', 'mytag', 'cookie=1');
+    expect(r.success).toBe(false);
+    expect(r.errorKind).toBe('product_not_eligible');
+    expect(r.error).toContain('Produto não elegível');
+  });
+
+  it('HTTP 500 no POST → errorKind unknown', async () => {
+    const html = '<html><meta name="csrf-token" content="TOKEN123"></html>';
+    const fetchMock = mock(async (url: string) => {
+      if (url === PAGE_URL) return jsonResponse(html, true, 200);
+      if (url === API_URL) return jsonResponse({}, false, 500);
+      return jsonResponse({}, false, 404);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const r = await generateShortAffiliateLink('https://prod', 'mytag', 'cookie=1');
+    expect(r.success).toBe(false);
+    expect(r.errorKind).toBe('unknown');
+    expect(r.error).toContain('HTTP 500');
+  });
+
+  it('fetch lança exceção (rede) → errorKind network', async () => {
+    const html = '<html><meta name="csrf-token" content="TOKEN123"></html>';
+    const fetchMock = mock(async (url: string) => {
+      if (url === PAGE_URL) return jsonResponse(html, true, 200);
+      throw new Error('fetch failed');
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const r = await generateShortAffiliateLink('https://prod', 'mytag', 'cookie=1');
+    expect(r.success).toBe(false);
+    expect(r.errorKind).toBe('network');
+  });
+
+  it('página 403 → errorKind cookie_expired', async () => {
+    const fetchMock = mock(async (url: string) => {
+      if (url === PAGE_URL) return jsonResponse('', false, 403);
+      return jsonResponse({}, false, 404);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const r = await generateShortAffiliateLink('https://prod', 'mytag', 'cookie=1');
+    expect(r.success).toBe(false);
+    expect(r.errorKind).toBe('cookie_expired');
+    expect(r.error).toContain('HTTP 403');
   });
 
   it('erro quando API não retorna short_url', async () => {
