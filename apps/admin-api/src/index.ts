@@ -19,6 +19,12 @@ import { webhookRoutes } from './routes/webhook.ts';
 import { adminRoutes } from './routes/admin.ts';
 import { makeTelegramSender } from './notify/telegram.ts';
 import { makeDeployRegistry } from './deploy/registry.ts';
+import { R2Client } from '@omestre/r2-sdk';
+import { createAdminDb, readAdminDbConfig } from './db/db.ts';
+import { migrateAdminDb } from './db/runner.ts';
+import { BackupsRepository } from './backup/backup-repository.ts';
+import { BackupOrchestrator } from './backup/backup-orchestrator.ts';
+import { backupRoutes } from './routes/backup.ts';
 
 export function createApp(env: Record<string, string | undefined> = process.env) {
   const config = loadConfig(env);
@@ -26,6 +32,48 @@ export function createApp(env: Record<string, string | undefined> = process.env)
 
   const telegram = makeTelegramSender(config.telegramBotToken, config.telegramChatId, log);
   const registry = makeDeployRegistry(config.deployStateDir, log);
+
+  // Backup (R2 + Postgres) — habilitado apenas se R2_ACCOUNT_ID presente.
+  let backups: { repo: BackupsRepository; orchestrator: BackupOrchestrator; r2: R2Client } | null =
+    null;
+  if (config.backup) {
+    const r2 = new R2Client({
+      accountId: config.backup.r2AccountId,
+      accessKeyId: config.backup.r2AccessKeyId,
+      secretAccessKey: config.backup.r2SecretAccessKey,
+      bucket: config.backup.r2Bucket,
+    });
+    const dbConfig = readAdminDbConfig(env);
+    const db = createAdminDb(dbConfig);
+    migrateAdminDb(db).catch((err) => {
+      log.error('admin-db.migrate_failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+    const repo = new BackupsRepository(db);
+    const orchestrator = new BackupOrchestrator(
+      {
+        r2,
+        agePublicKey: config.backup.agePublicKey,
+        postgres: {
+          container: config.backup.postgresContainer,
+          dbUser: config.backup.postgresUser,
+          dbName: config.backup.postgresDatabase,
+          schemas: config.backup.postgresSchemas,
+        },
+        telegram,
+        log,
+      },
+      repo,
+    );
+    backups = { repo, orchestrator, r2 };
+    log.info('backup.enabled', {
+      bucket: config.backup.r2Bucket,
+      schemas: config.backup.postgresSchemas.join(','),
+    });
+  } else {
+    log.info('backup.disabled', { reason: 'R2_ACCOUNT_ID not set' });
+  }
 
   const app = new Hono();
 
@@ -56,6 +104,20 @@ export function createApp(env: Record<string, string | undefined> = process.env)
       registry,
     }),
   );
+
+  // Rotas de backup (apenas se habilitado no .env)
+  if (backups) {
+    app.route(
+      '/api/admin/backups',
+      backupRoutes({
+        log,
+        repo: backups.repo,
+        orchestrator: backups.orchestrator,
+        r2: backups.r2,
+      }),
+    );
+    log.info('backup.routes_mounted', { path: '/api/admin/backups' });
+  }
 
   // 404 JSON consistente.
   app.notFound((c) => c.json({ success: false, error: 'not found' }, 404));

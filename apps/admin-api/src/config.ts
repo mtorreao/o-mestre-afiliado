@@ -29,6 +29,18 @@ export interface AdminConfig {
   readonly telegramBotToken: string;
   readonly telegramChatId: string;
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error';
+  /** Configuração opcional do backup (R2 + age). Se ausente, backup desabilitado. */
+  readonly backup?: {
+    r2AccountId: string;
+    r2AccessKeyId: string;
+    r2SecretAccessKey: string;
+    r2Bucket: string;
+    agePublicKey: string;
+    postgresContainer: string;
+    postgresUser: string;
+    postgresDatabase: string;
+    postgresSchemas: string[];
+  };
 }
 
 /** Throws se faltar env obrigatório. Retorna config congelada. */
@@ -61,6 +73,53 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     telegramBotToken: env['TELEGRAM_BOT_TOKEN']!,
     telegramChatId: env['TELEGRAM_CHAT_ID']!,
     logLevel: (env['OMA_LOG_LEVEL'] ?? 'info') as AdminConfig['logLevel'],
+    backup: readBackupConfig(env),
+  });
+}
+
+/**
+ * Lê config do backup (R2 + age). Retorna undefined se o backup
+ * não estiver habilitado (ex: dev local sem R2 configurado).
+ *
+ * Para habilitar, basta setar R2_ACCOUNT_ID. As demais são validadas
+ * apenas quando o backup está ativo.
+ */
+function readBackupConfig(env: Record<string, string | undefined>): AdminConfig['backup'] {
+  const accountId = env['R2_ACCOUNT_ID'];
+  if (!accountId || accountId.trim() === '') return undefined;
+
+  const required: Array<[string, string]> = [
+    ['R2_ACCESS_KEY_ID', 'R2_ACCESS_KEY_ID'],
+    ['R2_SECRET_ACCESS_KEY', 'R2_SECRET_ACCESS_KEY'],
+    ['R2_BUCKET', 'R2_BUCKET'],
+    ['AGE_PUBLIC_KEY', 'AGE_PUBLIC_KEY'],
+    ['POSTGRES_CONTAINER', 'POSTGRES_CONTAINER'],
+    ['POSTGRES_USERNAME', 'POSTGRES_USERNAME'],
+    ['POSTGRES_DATABASE', 'POSTGRES_DATABASE'],
+  ];
+  const missing = required
+    .filter(([key]) => !env[key] || env[key]!.trim() === '')
+    .map(([, label]) => label);
+
+  if (missing.length > 0) {
+    throw new Error(
+      `admin-api: backup enabled (R2_ACCOUNT_ID set) but missing: ${missing.join(', ')}`,
+    );
+  }
+
+  return Object.freeze({
+    r2AccountId: accountId,
+    r2AccessKeyId: env['R2_ACCESS_KEY_ID']!,
+    r2SecretAccessKey: env['R2_SECRET_ACCESS_KEY']!,
+    r2Bucket: env['R2_BUCKET']!,
+    agePublicKey: env['AGE_PUBLIC_KEY']!,
+    postgresContainer: env['POSTGRES_CONTAINER']!,
+    postgresUser: env['POSTGRES_USERNAME']!,
+    postgresDatabase: env['POSTGRES_DATABASE']!,
+    postgresSchemas: (env['BACKUP_SCHEMAS'] ?? 'omestre,evolution_api')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
   });
 }
 
