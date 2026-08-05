@@ -19,6 +19,11 @@ single-user já tem sessão (Basic → Bearer, 12h), e o painel admin fica
 auto-contido. Sem proxy entre `apps/api` e `apps/admin-api` — compartilham
 o mesmo PostgreSQL e Redis.
 
+**Estratégia de entrega (decisão 2026-08-04):** **1 PR único e testado**, delegando
+ao coder (subagente). Após merge, validar com a spec. O PR é grande mas evita
+divisão artificial entre "infra Redis compartilhada" e "uso da infra" — toda a
+cadeia fica verde de uma vez.
+
 ## Estado atual observado
 
 ### Feature flags (apps/api + apps/web)
@@ -65,20 +70,20 @@ o mesmo PostgreSQL e Redis.
 
 ### Estado atual do admin-api
 
-| Aspecto      | Hoje                                                                           | Gap                                                                      |
-| ------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| Pacotes      | `hono`, `@omestre/worker-common`                                               | Falta: `@omestre/db`, `@omestre/feature-flags`, `ioredis`, `drizzle-orm` |
-| Auth         | `sessionAuth()` (Basic → Bearer 12h)                                           | OK — single-user, sem `isAdmin`                                          |
-| Redis        | **não tem** `getRedis()` singleton                                             | Falta criar (reusar padrão de `apps/api/src/services/redis.ts`)          |
-| PG           | **não tem** `getDb()`                                                          | Reusar `@omestre/db`                                                     |
-| Compose prod | `admin-api` **NÃO está no `docker-compose.yml`** (só `docker-compose.dev.yml`) | Fase 1 inclui adicionar ao prod compose                                  |
-| Compose dev  | `admin-api` em `docker-compose.dev.yml` (linha 352) já com `env_file: .env`    | OK — Redis/PG vão via `.env` do monorepo                                 |
+| Aspecto      | Hoje                                                                           | Gap                                                                          |
+| ------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Pacotes      | `hono`, `@omestre/worker-common`                                               | Falta: `@omestre/db`, `@omestre/feature-flags-sdk`, `ioredis`, `drizzle-orm` |
+| Auth         | `sessionAuth()` (Basic → Bearer 12h)                                           | OK — single-user, sem `isAdmin`                                              |
+| Redis        | **não tem** `getRedis()` singleton                                             | Reusar `@omestre/feature-flags-sdk`                                          |
+| PG           | **não tem** `getDb()`                                                          | Reusar `@omestre/db`                                                         |
+| Compose prod | `admin-api` **NÃO está no `docker-compose.yml`** (só `docker-compose.dev.yml`) | Compose prod ganha ambos                                                     |
+| Compose dev  | `admin-api` em `docker-compose.dev.yml` (linha 352) já com `env_file: .env`    | OK — Redis/PG vão via `.env` do monorepo                                     |
 
-**Env vars que precisam estar no `.env` e no compose do `admin-api`:**
+**Env vars que precisam estar no `.env` do monorepo:**
 
 - `POSTGRES_URL` (ou `POSTGRES_HOST`/`PORT`/`DATABASE`/`USERNAME`/`PASSWORD` — Drizzle aceita ambos)
-- `REDIS_URL` (ex.: `redis://redis:6379` em prod, `redis://redis:6379` em dev)
-- `METRICS_API_KEY` (header `x-api-key` dos workers — se `apps/api/src/config.ts` usa)
+- `REDIS_URL` (ex.: `redis://redis:6379` — formato igual em prod/compose-dev)
+- `METRICS_API_KEY` (header `x-api-key` dos workers — deve ser **igual** ao `apps/api`)
 - `WORKER_METRICS_URL` + `DISPATCHER_METRICS_URL` (URLs HTTP dos `/status` dos workers)
 
 **Não precisam:**
@@ -92,7 +97,7 @@ o mesmo PostgreSQL e Redis.
 2. **Sem proxy entre `apps/api` e `apps/admin-api`.** Cada um bate no mesmo PG/Redis. As rotas do admin-api **não fazem fetch** no `apps/api` — operam diretamente no banco e Redis. Isso simplifica o código e evita o fan-out `admin-api → api :5442 → workers :9092/:9093` virar `admin-api → workers :9092/:9093` direto.
 3. **Portar (quase) 1:1 o `WorkerStatusPage.tsx` (1.791 LOC).** Decisão do owner. Vai ser o maior arquivo do `admin-web`. Sem cortes — a UI rica (polling, expansão, copiar JSON) é exatamente o que o owner usa em emergências.
 4. **Factory `createWorkerAdminRoutes` / `createFeatureFlagsRoutes` mantém dep injection.** Permite testar Hono com `app.request()` (Bun test) sem subir servidor.
-5. **Reusar lógica pura onde der.** `worker-metrics-pure.ts` já é **agnóstico de framework** (Elysia/Hono). Copio o arquivo para `apps/admin-api/src/services/worker-metrics-pure.ts` (assim evita import cross-app, que é OK no monorepo mas traz ruído). Quem mover lógica de I/O (worker-metrics.ts) cria o orquestrador Hono em `apps/admin-api/src/services/worker-metrics.ts`.
+5. **Reusar lógica pura onde der.** `worker-metrics-pure.ts` é **agnóstico de framework** (Elysia/Hono). Copio o arquivo para `apps/admin-api/src/services/worker-metrics-pure.ts` (assim evita import cross-app, que é OK no monorepo mas traz ruído). Quem mover lógica de I/O (worker-metrics.ts) cria o orquestrador Hono em `apps/admin-api/src/services/worker-metrics.ts`.
 6. **TypeScript: `verbatimModuleSyntax: true`** — `import type` para tipos. Verificar.
 7. **Composição de rotas em `apps/admin-api/src/index.ts`**: criar `featureFlagsRoutes(log)` e `workerRoutes(log)` factories no estilo `adminRoutes()`. Montar:
    ```ts
@@ -100,6 +105,38 @@ o mesmo PostgreSQL e Redis.
    app.route('/api/admin', workerRoutes({ ... }));
    ```
 8. **Sem `docs/specs/` move imediato.** A spec fica em `docs/plans/` até code + test verde em prod. Promoção a spec só depois do PR mergeado.
+
+### Decisão central: `@omestre/feature-flags-sdk` (infra Redis compartilhada)
+
+**Problema:** `apps/api` já tem helpers Redis (`getRedis`, `publishFlagInvalidation`, `invalidateFlagCache`, `countFlagChecks`) inline em `apps/api/src/modules/admin/feature-flags.routes.ts` e `packages/feature-flags/src/redis.ts`. Quando `apps/admin-api` ganhar feature-flags, vai precisar dos mesmos helpers. Copiar = duplicação. Criar HTTP entre os 2 apps = novo acoplamento.
+
+**Solução:** extrair a **infra Redis compartilhada** para `packages/feature-flags-sdk/`. O SDK é **infra puro** (sem HTTP, sem resolver, sem rotas) — só wrappers `ioredis` + constantes de chave + PubSub. Os 2 apps continuam com seus próprios resolvers e regras de negócio, mas compartilham o canal PubSub e formato de chave.
+
+**Conteúdo do pacote:**
+
+```
+packages/feature-flags-sdk/
+├── src/
+│   ├── keys.ts          const FLAG_STATS_KEY_PREFIX, FLAG_INVALIDATE_CHANNEL
+│   ├── redis.ts         getFlagRedis(): Redis lazy singleton (1 conexão por processo)
+│   ├── pubsub.ts        publishFlagInvalidation(key), subscribeFlagInvalidation(cb)
+│   ├── metrics.ts       countFlagChecks(key), buildFlagStatsKey(YYYYMMDDHHMM)
+│   └── index.ts         re-export
+├── package.json         deps: ioredis (catalog)
+├── tsconfig.json
+└── tests/               testes com ioredis-mock
+```
+
+**Quem consome o quê:**
+
+| Componente                                           | Helper local                                                | Usa SDK?                                          |
+| ---------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------- |
+| `apps/api/src/modules/admin/feature-flags.routes.ts` | `getRedis()` standalone, `publishFlagInvalidation()` inline | **Não** (migração = PR 2 opcional, fora deste PR) |
+| `packages/feature-flags/src/redis.ts`                | `getFlagRedis()` próprio                                    | **Não** (resolução local permanece)               |
+| `apps/admin-api/src/routes/feature-flags.ts` (novo)  | chama `getFlagRedis` do SDK                                 | **Sim**                                           |
+| `apps/admin-api/src/routes/worker.ts` (novo)         | chama `getFlagRedis` do SDK para PubSub DLQ                 | **Sim**                                           |
+
+**Justificativa de YAGNI:** isola o SDK com testes. O `apps/api` **continua funcionando** sem migração porque o PubSub Redis usa as mesmas chaves (`omestre:flag:invalidate`) independente de quem publica. Migração do `apps/api` para SDK fica para um PR 2 opcional.
 
 ## Modelo de dados
 
@@ -174,11 +211,7 @@ admin-api
   ├── invalidateFlagCache(key)         → TTL 10s limpo
   └── publishFlagInvalidation(key)     → PubSub Redis omestre:flag:invalidate
                                                   (Dispatcher e outros workers re-leem)
-```
 
-Worker status:
-
-```
 Operador → GET /api/admin/worker/status
 admin-api
   ├── sessionAuth()
@@ -189,11 +222,7 @@ admin-api
   │   redis.xlen(MIRROR_SEND_STREAM),
   │ ])
   └── { success, services: [ingestor, dispatcher], pipeline: { queueA, queueB } }
-```
 
-DLQ (requeue):
-
-```
 Operador → POST /api/admin/worker/dlq/requeue?id=X
 admin-api
   ├── sessionAuth()
@@ -219,11 +248,30 @@ admin-api
 
 ## Pontos de integração
 
+### `packages/feature-flags-sdk` (NOVO)
+
+**Novos arquivos:**
+
+- `packages/feature-flags-sdk/package.json` — name `@omestre/feature-flags-sdk`, deps `ioredis` (catalog), `drizzle-orm` (peer opcional, não usado).
+- `packages/feature-flags-sdk/tsconfig.json` — estende `../../tsconfig.json`.
+- `packages/feature-flags-sdk/src/keys.ts` — constantes `FLAG_STATS_KEY_PREFIX = 'omestre:flag:stats:'`, `FLAG_INVALIDATE_CHANNEL = 'omestre:flag:invalidate'`, helper `buildFlagStatsKey(key, bucket)`.
+- `packages/feature-flags-sdk/src/redis.ts` — `getFlagRedis(redisUrl?): Redis | null` (lazy singleton, fallback silencioso).
+- `packages/feature-flags-sdk/src/pubsub.ts` — `publishFlagInvalidation(key)`, `subscribeFlagInvalidation(cb)`.
+- `packages/feature-flags-sdk/src/metrics.ts` — `countFlagChecks(key)`, `buildFlagStatsKey`.
+- `packages/feature-flags-sdk/src/index.ts` — re-export.
+- `packages/feature-flags-sdk/src/keys.test.ts` + `redis.test.ts` + `pubsub.test.ts` + `metrics.test.ts` — testes com `ioredis-mock`.
+
+**Arquivos editados:**
+
+- `package.json` (raiz) — adicionar `"packages/feature-flags-sdk"` aos `workspaces`.
+
+**Não fazer:** NÃO mover `packages/feature-flags/src/redis.ts` para o SDK. O resolver local permanece intocado. A migração é PR 2 (opcional, fora deste PR).
+
 ### `apps/admin-api`
 
 **Novos arquivos:**
 
-- `src/services/redis.ts` — cópia adaptada de `apps/api/src/services/redis.ts` (singleton ioredis, fallback silencioso).
+- `src/services/redis.ts` — wrapper local fino sobre `getFlagRedis` do SDK (re-export com fallback).
 - `src/services/worker-metrics.ts` — orquestrador Hono (substituir Elysia por Hono).
 - `src/services/worker-metrics-pure.ts` — cópia de `apps/api/src/services/worker-metrics-pure.ts`.
 - `src/services/worker-metrics.test.ts` — testes da lógica pura + I/O com mock.
@@ -236,7 +284,7 @@ admin-api
 
 - `src/index.ts` — montar `app.route('/api/admin', featureFlagsRoutes(log))` + `app.route('/api/admin', workerRoutes(log))`.
 - `src/config.ts` — adicionar `redisUrl`, `postgresUrl`, `metricsApiKey`, `workerMetricsUrl`, `dispatcherMetricsUrl` ao `loadConfig()` (com defaults seguros).
-- `package.json` — adicionar deps `@omestre/db`, `@omestre/feature-flags`, `ioredis`, `drizzle-orm`.
+- `package.json` — adicionar deps `@omestre/db`, `@omestre/feature-flags-sdk`, `ioredis`, `drizzle-orm`.
 
 ### `apps/admin-web`
 
@@ -246,7 +294,6 @@ admin-api
 - `src/pages/WorkerStatusPage.tsx` — cópia de `apps/web/src/pages/WorkerStatusPage.tsx`; ajusta imports.
 - `src/lib/worker-status.ts` — cópia literal.
 - `src/lib/worker-counters.ts` — cópia literal.
-- (eventuais testes manuais via Playwright não estão no escopo da Fase 1; ver "Testes" abaixo.)
 
 **Arquivos editados:**
 
@@ -258,7 +305,7 @@ admin-api
 
 **Edição crítica:** adicionar serviço `admin-api` (idiêntico ao do `docker-compose.dev.yml` linhas 352-381) e `admin-web` (já existe no compose dev linhas 381-397). Sem isso, o feature flag operacional não fica disponível no VPS.
 
-**Auges de env para prod (no `docker-compose.yml`):**
+**Env vars para prod (no `docker-compose.yml`):**
 
 - `REDIS_URL=redis://redis:6379`
 - `POSTGRES_URL=postgresql://...` (igual aos outros apps)
@@ -282,42 +329,44 @@ Adicionar entrada na seção "Admin API" / "Admin Web" referenciando as duas pá
 
 ## Testes
 
-### Unit (obrigatórios na Fase 1 + Fase 2)
+### Unit (obrigatórios)
 
-**Fase 1 — feature-flags (sem `getSuperAdmin`):**
+**`packages/feature-flags-sdk`:**
 
-| Arquivo                                                   | Caso de teste                                                                                     |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `apps/admin-api/src/routes/feature-flags.test.ts`         | GET sem Bearer → 401                                                                              |
-|                                                           | GET com Bearer + flagRepo.list vazia → retorna 2 flags com defaults                               |
-|                                                           | GET com Bearer + flags existentes → retorna enabled correto                                       |
-|                                                           | GET com Bearer + erro de DB → 200 `{ success: false, error: 'Erro interno' }`                     |
-|                                                           | PATCH com Bearer + key inválida → 200 `{ success: false, error }`                                 |
-|                                                           | PATCH com Bearer + key válida → upsert + invalidateCache + publishInvalidation chamados           |
-| `apps/admin-api/src/services/worker-metrics-pure.test.ts` | Mirror exato dos testes existentes em `apps/api/src/services/worker-metrics-pure.test.ts` (cópia) |
+- `keys.test.ts` — `buildFlagStatsKey` (formato `omestre:flag:stats:{key}:{YYYYMMDDHHMM}`)
+- `redis.test.ts` — `getFlagRedis` lazy + fallback silencioso
+- `pubsub.test.ts` — `publishFlagInvalidation` publica no canal certo
+- `metrics.test.ts` — `countFlagChecks` soma INCR nos buckets da última hora
 
-Meta: ≥ 80% cobertura linhas no `apps/admin-api/src/routes/feature-flags.ts` (será puxado pelo `bun run test:coverage`).
+**`apps/admin-api`:**
 
-**Fase 2 — worker-status:**
+| Arquivo                                | Caso de teste                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `routes/feature-flags.test.ts`         | GET sem Bearer → 401                                                                                    |
+|                                        | GET com Bearer + flagRepo.list vazia → retorna 2 flags com defaults                                     |
+|                                        | GET com Bearer + flags existentes → retorna enabled correto                                             |
+|                                        | GET com Bearer + erro de DB → 200 `{ success: false, error: 'Erro interno' }`                           |
+|                                        | PATCH com Bearer + key inválida → 200 `{ success: false, error }`                                       |
+|                                        | PATCH com Bearer + key válida → upsert + invalidateCache + publishInvalidation chamados                 |
+| `routes/worker.test.ts`                | GET /status sem Bearer → 401                                                                            |
+|                                        | GET /status com Bearer + Redis/Alvos offline → 200 services reachable=false                             |
+|                                        | GET /status com Bearer + Redis offline → queueA/queueB = null                                           |
+|                                        | GET /dlq?offset=0 → lista itens                                                                         |
+|                                        | POST /dlq/requeue?id=X sem token → 401                                                                  |
+|                                        | POST /dlq/requeue?id=X → 200 success                                                                    |
+|                                        | POST /dlq/remove?id=X → 200 success                                                                     |
+|                                        | POST /dlq/purge → 200 removed                                                                           |
+| `services/worker-metrics-pure.test.ts` | Mirror exato dos testes em `apps/api/src/services/worker-metrics-pure.test.ts` (pode usar `cp` + patch) |
 
-| Arquivo                                    | Caso de teste                                                               |
-| ------------------------------------------ | --------------------------------------------------------------------------- |
-| `apps/admin-api/src/routes/worker.test.ts` | GET /status sem Bearer → 401                                                |
-|                                            | GET /status com Bearer + Redis/Alvos offline → 200 services reachable=false |
-|                                            | GET /status com Bearer + Redis offline → queueA/queueB = null               |
-|                                            | GET /dlq?offset=0 → lista itens                                             |
-|                                            | POST /dlq/requeue?id=X sem token → 401                                      |
-|                                            | POST /dlq/requeue?id=X → 200 success                                        |
-|                                            | POST /dlq/remove?id=X → 200 success                                         |
-|                                            | POST /dlq/purge → 200 removed                                               |
+Meta: ≥ 80% cobertura linhas no `apps/admin-api/src/routes/feature-flags.ts` + `worker.ts` + `worker-metrics.ts` (será puxado pelo `bun run test:coverage`).
 
-Cobertura-alvo: ≥ 80% linhas em `worker.ts` + `worker-metrics.ts` no `admin-api`.
+**Web (admin-web):** testes unitários não obrigatórios (UI portada). Validação visual via DevServer ou browser + Playwright (ver E2E manual).
 
-### E2E (manual; ver `references/spec-driven test plan`)
+### E2E (manual)
 
-Note: a stack E2E (`bun run test:e2e`) monta **só** `apps/api` + `apps/web`, não o `admin-web`. E2E do fluxo admin seria viável mas exige estender o `playwright.config.ts` (projeto `admin-ui`) — fora do escopo desta entrega. Owner valida manualmente no VPS após deploy.
+A stack E2E (`bun run test:e2e`) monta **só** `apps/api` + `apps/web`, não o `admin-web`. E2E do fluxo admin seria viável mas exige estender o `playwright.config.ts` (projeto `admin-ui`) — fora do escopo desta entrega. Owner valida manualmente no VPS após deploy.
 
-**Checklist de validação manual em prod (na Fase 2):**
+**Checklist de validação manual em prod:**
 
 - [ ] `admin.omestreafiliado.com.br` carrega login.
 - [ ] Após login, `/feature-flags` lista 2 flags.
@@ -327,88 +376,61 @@ Note: a stack E2E (`bun run test:e2e`) monta **só** `apps/api` + `apps/web`, n�
 - [ ] Em dev local com ingestor/dispatcher rodando, `/status` de cada um retorna 200.
 - [ ] DLQ mostra items; requeue move para o stream correto.
 
-## Critérios de aceite
-
-**Por fase:**
-
-### Fase 1 — Feature Flags
+## Critérios de aceite (1 PR único)
 
 - [ ] `docs/plans/admin-feature-flags-worker-status.md` aprovada (status 📋 → 🚧).
-- [ ] `apps/admin-api` ganha deps `@omestre/db`, `@omestre/feature-flags`, `ioredis`, `drizzle-orm`.
-- [ ] `apps/admin-api/src/services/redis.ts` criado (copy de `apps/api/src/services/redis.ts`).
-- [ ] `apps/admin-api/src/routes/feature-flags.ts` (Hono) implementado.
-- [ ] `apps/admin-api/src/config.ts` lê `REDIS_URL` e `POSTGRES_URL`.
-- [ ] `apps/admin-api/src/index.ts` monta rota `/api/admin/feature-flags*`.
+- [ ] `packages/feature-flags-sdk` criado com `keys.ts`, `redis.ts`, `pubsub.ts`, `metrics.ts`, `index.ts` + testes.
+- [ ] `package.json` raiz tem `packages/feature-flags-sdk` em `workspaces`.
+- [ ] `apps/admin-api` ganha deps `@omestre/db`, `@omestre/feature-flags-sdk`, `ioredis`, `drizzle-orm`.
+- [ ] `apps/admin-api/src/services/redis.ts` adaptado (re-export do SDK).
+- [ ] `apps/admin-api/src/services/worker-metrics-pure.ts` copiado + `worker-metrics.test.ts` mirror.
+- [ ] `apps/admin-api/src/services/worker-metrics.ts` (orquestrador Hono) implementado.
+- [ ] `apps/admin-api/src/routes/feature-flags.ts` (Hono) com sessionAuth + GET/PATCH implementado.
+- [ ] `apps/admin-api/src/routes/worker.ts` (Hono) com 5 endpoints implementados.
+- [ ] `apps/admin-api/src/config.ts` lê `REDIS_URL`, `POSTGRES_URL`, `METRICS_API_KEY`, `WORKER_METRICS_URL`, `DISPATCHER_METRICS_URL`.
+- [ ] `apps/admin-api/src/index.ts` monta `/api/admin/feature-flags*` + `/api/admin/worker/*`.
 - [ ] `apps/admin-api/src/routes/feature-flags.test.ts` cobre os 6 casos.
-- [ ] `bun run typecheck` verde.
-- [ ] `bun run test:unit` verde (apps/admin-api + rest).
+- [ ] `apps/admin-api/src/routes/worker.test.ts` cobre os 7 casos.
+- [ ] `bun run typecheck` verde (todos os workspaces).
+- [ ] `bun run test:unit` verde.
 - [ ] `bun run test:coverage` mantém ≥ 80% ajustado.
 - [ ] `apps/admin-web/src/pages/FeatureFlagsPage.tsx` portada.
-- [ ] `apps/admin-web/src/lib/api.ts` com `listFlags()` + `toggleFlag()`.
-- [ ] `apps/admin-web/src/App.tsx` rota `/feature-flags` + `DashboardPage` com atalho.
-- [ ] `docker-compose.yml` (prod) ganha `admin-api` + `admin-web` com vars certas.
-- [ ] `docker-compose.dev.yml` (dev) já tem ambos — só verificar vars.
-- [ ] Commit + push + PR description linkando este plano.
-
-### Fase 2 — Worker Status
-
-- [ ] `apps/admin-api/src/services/worker-metrics-pure.ts` copiado + testes (mirror).
-- [ ] `apps/admin-api/src/services/worker-metrics.ts` (orquestrador Hono) implementado.
-- [ ] `apps/admin-api/src/routes/worker.ts` (Hono) com 5 endpoints.
-- [ ] `apps/admin-api/src/index.ts` monta `/api/admin/worker/*`.
-- [ ] `apps/admin-api/src/routes/worker.test.ts` cobre 7 casos.
-- [ ] `apps/admin-api/src/config.ts` lê `WORKER_METRICS_URL`, `DISPATCHER_METRICS_URL`, `METRICS_API_KEY`.
-- [ ] `bun run typecheck` + `test:unit` + `test:coverage` verdes.
 - [ ] `apps/admin-web/src/pages/WorkerStatusPage.tsx` portada (1.791 LOC).
 - [ ] `apps/admin-web/src/lib/worker-status.ts` + `worker-counters.ts` copiados.
-- [ ] `apps/admin-web/src/lib/api.ts` com 5 helpers (status/dlq/requeue/remove/purge).
-- [ ] `apps/admin-web/src/App.tsx` rota `/worker-status` + Dashboard atalho.
-- [ ] Commit + push + PR.
+- [ ] `apps/admin-web/src/lib/api.ts` com `listFlags`/`toggleFlag`/`getWorkerStatus`/`listDlq`/`requeueDlq`/`removeDlq`/`purgeDlq`.
+- [ ] `apps/admin-web/src/App.tsx` rotas `/feature-flags` + `/worker-status` + `DashboardPage` com atalhos.
+- [ ] `docker-compose.yml` (prod) ganha `admin-api` + `admin-web` com vars certas.
+- [ ] `docker-compose.dev.yml` (dev) já tem ambos — só verificar vars.
+- [ ] `.env.example` (raiz) documenta `REDIS_URL`, `METRICS_API_KEY`, `WORKER_METRICS_URL`, `DISPATCHER_METRICS_URL` para o admin-api.
+- [ ] Commit + push + PR description linkando este plano.
 
-### Após Fase 2 (limpeza)
+### Após merge (limpeza)
 
-- [ ] `docs/roadmap.md` atualizado com item entregue (ou etapa).
+- [ ] `docs/roadmap.md` atualizado com item entregue.
 - [ ] `docs/plans/admin-feature-flags-worker-status.md` atualizado com revision history + Estado real.
 - [ ] `AGENTS.md` com referência às 2 capacidades (entrada `Admin-center feature flags + worker status`).
 
-## Commits sugeridos
-
-**Fase 1 (feature-flags) — 1 PR:**
+## Commits sugeridos (1 PR com 4 commits)
 
 ```
-feat(admin-api): adicionar feature-flags (Hono + sessionAuth)
-  - adiciona deps @omestre/db, @omestre/feature-flags, ioredis
-  - services/redis.ts singleton
-  - routes/feature-flags.ts (GET/PATCH) com sessionAuth
-  - config.ts: REDIS_URL, POSTGRES_URL
-  - routes/feature-flags.test.ts (6 casos)
-feat(admin-web): portar FeatureFlagsPage + atalho no dashboard
-  - pages/FeatureFlagsPage.tsx
-  - lib/api.ts: listFlags + toggleFlag
-  - App.tsx: rota /feature-flags
-  - DashboardPage: card de atalho
-chore(compose): adicionar admin-api/admin-web ao prod compose
-  - docker-compose.yml (prod) com servicos admin-api/admin-web
-  - .env.example documentando REDIS_URL/POSTGRES_URL no admin-api
-docs(roadmap): admin-center feature-flags em Phase 8
-```
-
-**Fase 2 (worker-status) — 1 PR:**
-
-```
-feat(admin-api): adicionar worker-status + DLQ (Hono)
-  - services/worker-metrics.ts (orquestrador)
-  - services/worker-metrics-pure.ts (cópia + testes)
-  - routes/worker.ts (5 endpoints)
-  - config.ts: WORKER_METRICS_URL, DISPATCHER_METRICS_URL, METRICS_API_KEY
-  - routes/worker.test.ts (7 casos)
-feat(admin-web): portar WorkerStatusPage (1.791 LOC)
-  - pages/WorkerStatusPage.tsx
+feat(feat-flags-sdk): novo pacote @omestre/feature-flags-sdk
+  - keys.ts + redis.ts + pubsub.ts + metrics.ts com testes
+  - usado por apps/admin-api (futuro)
+feat(admin-api): feature-flags + worker-status + DLQ
+  - routes/feature-flags.ts + routes/worker.ts com sessionAuth
+  - services/worker-metrics.ts (orquestrador Hono)
+  - services/worker-metrics-pure.ts (espelho de apps/api)
+  - config.ts: new env vars
+  - routes/feature-flags.test.ts + routes/worker.test.ts
+feat(admin-web): portar FeatureFlagsPage + WorkerStatusPage
+  - pages/FeatureFlagsPage.tsx + WorkerStatusPage.tsx
   - lib/worker-status.ts + lib/worker-counters.ts
-  - lib/api.ts: 5 helpers
-  - App.tsx: rota /worker-status
-  - DashboardPage: card de atalho
-docs(roadmap): admin-center worker-status entregue
+  - lib/api.ts: listFlags + toggleFlag + getWorkerStatus + listDlq + requeueDlq + removeDlq + purgeDlq
+  - App.tsx: rotas /feature-flags + /worker-status
+  - DashboardPage: cards de atalho
+chore(compose): adicionar admin-api/admin-web ao prod compose
+  - docker-compose.yml com servicos admin-api/admin-web
+  - .env.example documentando admin-api vars
 ```
 
 ## Riscos e mitigações
@@ -421,25 +443,37 @@ docs(roadmap): admin-center worker-status entregue
 
 4. **WorkerStatusPage.tsx tem 1.791 LOC.** Adaptar sem cortar é um pacote grande. **Mitigação:** commits pequenos por capacidade (ícones PT-BR em um commit, polling em outro, expansão em outro) se necessário. Manter pré-renderização dos helpers em `lib/worker-status.ts` para não quebrar o `Map`/switch de dicionários.
 
-5. **Compose prod sem `admin-api`/`admin-web` causa 502 em `admin.omestreafiliado.com.br` mesmo após deploy.** **Mitigação:** PR da Fase 1 inclui o compose prod completo com healthcheck igual ao dev (`bun -e 'const r=await fetch(...)'`).
+5. **Compose prod sem `admin-api`/`admin-web` causa 502 em `admin.omestreafiliado.com.br` mesmo após deploy.** **Mitigação:** PR inclui o compose prod completo com healthcheck igual ao dev (`bun -e 'const r=await fetch(...)'`).
 
-6. **`@omestre/feature-flags` no admin-api** puxa `@omestre/db` + `ioredis` como deps. Como admin-api só usa `FeatureFlagRepository` (via `@omestre/db`), não o cliente. Mas o pacote exporta `isFeatureEnabled` que importa Redis. **Mitigação:** usar **apenas** `FeatureFlagRepository` direto (não o package `@omestre/feature-flags`) — assim `apps/admin-api` não precisa de `ioredis` para feature-flags. Aí `ioredis` entra **só** se/quando worker-status precisar de Redis para DLQ — e aí já tem mesmo.
+6. **`@omestre/feature-flags-sdk` exige `ioredis` em `apps/admin-api`.** Hoje o admin-api não tem `ioredis`. **Mitigação:** adicionar `ioredis` como dep do `apps/admin-api`. O SDK expõe `getFlagRedis(null)` que retorna `null` se Redis offline — fallback silencioso.
 
-7. **DLQ no admin-api com `ioredis` exige `getRedis()` que é lazy.** Se Redis offline, `listDLQ` retorna erro. **Mitigação:** mesma estratégia do `apps/api`: nunca lançar em `getAggregatedWorkerStatus()`; `listDlqItems` chama DLQ direto (deixa o erro propagar para 500 — é uma UI operacional, 500 é honesto).
+7. **DLQ no admin-api com `ioredis` exige `getFlagRedis()` que é lazy.** Se Redis offline, `listDLQ` retorna erro. **Mitigação:** mesma estratégia do `apps/api`: nunca lançar em `getAggregatedWorkerStatus()`; `listDlqItems` chama DLQ direto (deixa o erro propagar para 500 — é uma UI operacional, 500 é honesto).
 
 ## Critérios de promoção (plan → spec)
 
-Quando PRs mergeados + admin-web em prod + validação manual do owner:
+Quando PR mergeado + admin-web em prod + validação manual do owner:
 
 1. `git mv docs/plans/admin-feature-flags-worker-status.md docs/specs/admin-feature-flags-worker-status.md`.
 2. Atualizar o conteúdo: trocar "Estado atual observado" pelo estado real pós-deploy + revision history.
 3. Atualizar `docs/roadmap.md`: mover de 📋 → ✅.
 4. Adicionar entrada na `docs/README.md` (índice).
 
+## Workflow de delegação
+
+Owner vai delegar para subagente **coder**:
+
+1. Subagente recebe este arquivo + contexto mínimo.
+2. Subagente implementa e commita na branch `wt/admin-center` (já existe).
+3. Subagente roda `bun run typecheck && bun run test:unit && bun run test:coverage` antes do push.
+4. Subagente abre PR com esta spec linkada na descrição.
+5. Owner valida com a spec (checklist de critérios de aceite) + E2E manual em prod.
+
 ---
 
 ## Revision history
 
-| Date       | Version | Change        | Reason      |
-| ---------- | ------- | ------------- | ----------- |
-| 2026-08-04 | 0.1.0   | Initial draft | First write |
+| Date       | Version | Change                                                                        | Reason                                           |
+| ---------- | ------- | ----------------------------------------------------------------------------- | ------------------------------------------------ |
+| 2026-08-04 | 0.1.0   | Initial draft                                                                 | First write                                      |
+| 2026-08-04 | 0.2.0   | Reorganizado: 1 PR único + SDK `@omestre/feature-flags-sdk` (decisão central) | Owner pediu PR único funcional; decisão de YAGNI |
+| 2026-08-04 | 0.2.1   | Owner pediu delegação para subagente coder                                    | Workflow aditivo (seção Workflow de delegação)   |
