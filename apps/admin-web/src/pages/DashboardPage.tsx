@@ -112,6 +112,32 @@ export default function DashboardPage({ onLogout }: Props) {
       {tgStatus && <div className="status-line">{tgStatus}</div>}
       {error && <div className="status-line status-error">⚠️ {error}</div>}
 
+      {/* Atalhos rápidos — operabilidade direta */}
+      <div className="row mb-12" style={{ gap: '0.75rem' }}>
+        <Link
+          to="/feature-flags"
+          className="card"
+          style={{ flex: 1, textDecoration: 'none', color: 'inherit', padding: '16px' }}
+        >
+          <div style={{ fontSize: 22, marginBottom: 4 }}>🚩</div>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>Feature Flags</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+            Kill switches operacionais (manutenção, envio).
+          </div>
+        </Link>
+        <Link
+          to="/worker-status"
+          className="card"
+          style={{ flex: 1, textDecoration: 'none', color: 'inherit', padding: '16px' }}
+        >
+          <div style={{ fontSize: 22, marginBottom: 4 }}>📊</div>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>Status do Worker</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+            Saúde de Ingestor/Dispatcher, filas e DLQ.
+          </div>
+        </Link>
+      </div>
+
       {/* Deploy manual */}
       <Card title="Deploy manual" className="mb-12">
         <form className="row" onSubmit={handleManualDeploy}>

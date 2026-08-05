@@ -4,6 +4,8 @@ import { checkSession } from './lib/api.ts';
 import LoginPage from './pages/LoginPage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
 import DeployDetailPage from './pages/DeployDetailPage.tsx';
+import { FeatureFlagsPage } from './pages/FeatureFlagsPage.tsx';
+import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 
 export default function App() {
   const [authState, setAuthState] = useState<'loading' | 'authed' | 'guest'>('loading');
@@ -40,6 +42,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<DashboardPage onLogout={() => handleAuthChange('guest')} />} />
+      <Route path="/feature-flags" element={<FeatureFlagsPage />} />
+      <Route path="/worker-status" element={<WorkerStatusPage />} />
       <Route path="/deploys/:id" element={<DeployDetailPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
