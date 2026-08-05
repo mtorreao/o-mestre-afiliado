@@ -18,7 +18,9 @@
   "dependencies": {
     "@omestre/worker-common": "workspace:*",
     "hono": "catalog:",
-    "@omestre/r2-sdk": "workspace:*"
+    "@omestre/r2-sdk": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest"
