@@ -339,6 +339,69 @@ services:
     profiles:
       - tunnel
 
+  # ─── Admin API (Hono + Bun.serve) ─────────────────────────────────────
+  # Painel single-user para operação de emergência: feature flags,
+  # status de Ingestor/Dispatcher e DLQ. Porta 9090 (mesma do dev).
+  # Depende do admin-web abaixo — admin-web só sobe quando admin-api
+  # estiver healthy.
+  admin-api:
+    build:
+      context: .
+      dockerfile: apps/admin-api/Dockerfile
+    container_name: omestre_admin_api
+    restart: always
+    # Sem porta exposta no host — acessada via rede Docker (admin-web + tunnel).
+    env_file:
+      - .env
+    environment:
+      ADMIN_API_PORT: '9090'
+      # Substitui os paths do host por paths do container (deploy script
+      # fica montado em /scripts; estado em /var/lib/oma — bind mount abaixo).
+      OMA_DEPLOY_SCRIPT: ${OMA_DEPLOY_SCRIPT:-/scripts/deploy-prod.sh}
+      OMA_DEPLOY_STATE_DIR: /var/lib/oma
+      # Conexão com a infra compartilhada (Postgres + Redis)
+      REDIS_URL: 'redis://redis:6379'
+      POSTGRES_URL: 'postgresql://evolution:${POSTGRES_PASSWORD:-evolution_pass}@postgres:5432/omestre_db?schema=omestre'
+      # Métricas dos workers (igual ao `apps/api` — chave tem que bater)
+      METRICS_API_KEY: '${METRICS_API_KEY}'
+      WORKER_METRICS_URL: 'http://ingestor:9092'
+      DISPATCHER_METRICS_URL: 'http://dispatcher:9093'
+    volumes:
+      - oma_admin_state:/var/lib/oma
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r=await fetch('http://localhost:9090/health');process.exit(r.ok?0:1)",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - omestre-prod-net
+      - omestre-infra-net
+
+  # ─── Admin Web (Vite SPA) ─────────────────────────────────────────────
+  # UI do admin-api. Build estático servido pelo Vite preview. Em produção,
+  # o ideal é rodar atrás do Cloudflare Tunnel em admin.omestreafiliado.com.br.
+  # Aqui fica exposta só em loopback (mesmo padrão de `api` e `web`).
+  admin-web:
+    build:
+      context: .
+      dockerfile: apps/admin-web/Dockerfile
+    container_name: omestre_admin_web
+    restart: always
+    depends_on:
+      admin-api:
+        condition: service_healthy
+    ports:
+      - '${ADMIN_WEB_PORT:-127.0.0.1:9091:9091}'
+    networks:
+      - omestre-prod-net
+
 networks:
   omestre-prod-net:
     name: omestre-prod-net
@@ -354,3 +417,5 @@ volumes:
     name: omestre-prod-redis-data
   omestre_prod_evolution_instances:
     name: omestre-prod-evolution-instances
+  oma_admin_state:
+    name: omestre-prod-admin-state

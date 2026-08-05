@@ -254,6 +254,40 @@ os dropdowns mas mantido nas tags de origem (decisão de UX preservada).
 
 ---
 
+## Phase 8.5: Admin-center (feature flags + worker status) 🚧
+
+**Objective:** mover as telas de feature flags e status do worker (hoje em
+`apps/web` + `apps/api`) para o painel single-user `apps/admin-api` +
+`apps/admin-web` no VPS. Auto-contido: mesmo PostgreSQL e Redis do
+`apps/api`, sem proxy entre os 2 apps.
+
+**Why this position:** desacopla operação crítica de deploy do fluxo
+multi-user. Em emergência (deploy quebrado, dispatcher travado, fila
+lotada) o owner não precisa do `apps/web`/`apps/api` no ar — só do admin.
+
+**Dependencies:** Phase 1 (admin bootstrap entregue — `sessionAuth()` do
+admin-api já cobre o single-user).
+
+**Expected output:** `/feature-flags` e `/worker-status` (incluindo DLQ)
+acessíveis via `admin.omestreafiliado.com.br` com sessão; `docker-compose.yml`
+inclui `admin-api` + `admin-web`; `apps/api` continua com os mesmos endpoints
+(`/api/admin/feature-flags`, `/api/worker/*`) para o `apps/web` legado.
+
+- 🚧 `docs/plans/admin-feature-flags-worker-status.md` (em andamento — branch `wt/admin-center`)
+
+**Acceptance criteria:**
+
+- [ ] `packages/feature-flags-sdk` publicado com testes verdes.
+- [ ] `apps/admin-api` com `/api/admin/feature-flags` (GET/PATCH) +
+      `/api/admin/worker/{status,dlq,dlq/requeue,dlq/remove,dlq/purge}`.
+- [ ] `apps/admin-web` com `/feature-flags` + `/worker-status` (porta 1:1 do
+      `apps/web`, trocando `useAuth` por `getToken()`).
+- [ ] `docker-compose.yml` (prod) com serviços `admin-api` + `admin-web`,
+      healthcheck e env vars certas (`REDIS_URL`, `METRICS_API_KEY`, etc.).
+- [ ] PR mergeado com 4 commits (SDK → admin-api → admin-web → compose+docs).
+
+---
+
 ## Phase 9: Extensão Chrome — Fases 2–5
 
 **Objective:** context-menu "Gerar link de afiliado" → offer capture → multi-marketplace → distribution.
