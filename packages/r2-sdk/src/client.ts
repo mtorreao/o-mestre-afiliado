@@ -110,9 +110,7 @@ export class R2Client {
   }
 
   /** Download de blob. Retorna Buffer + metadata. */
-  async get(
-    key: string,
-  ): Promise<{
+  async get(key: string): Promise<{
     body: Buffer;
     size: number;
     contentType?: string;
