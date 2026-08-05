@@ -1,0 +1,20 @@
+{
+  "name": "@omestre/feature-flags-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "ioredis": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "ioredis-mock": "^8.9.0",
+    "typescript": "^5"
+  }
+}

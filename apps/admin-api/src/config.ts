@@ -16,6 +16,12 @@
  *   - OMA_DEPLOY_STATE_DIR    onde salvar histórico de deploys (default: /var/lib/oma)
  *   - OMA_DEPLOY_TIMEOUT_MS   timeout do script de deploy (default: 600000 = 10min)
  *   - OMA_LOG_LEVEL           "debug" | "info" | "warn" | "error" (default: info)
+ *   - REDIS_URL               conexão Redis para feature flags (default dev: localhost:5455)
+ *   - POSTGRES_URL            conexão Postgres para queries (default dev)
+ *   - METRICS_API_KEY         chave que bate com apps/worker (vazio = desabilitado)
+ *   - WORKER_METRICS_URL      URL do endpoint de métricas do ingestor
+ *   - DISPATCHER_METRICS_URL  URL do endpoint de métricas do dispatcher
+ *   - R2_ACCOUNT_ID + outras  habilitam backup cifrado (R2 + age)
  */
 
 export interface AdminConfig {
@@ -29,6 +35,12 @@ export interface AdminConfig {
   readonly telegramBotToken: string;
   readonly telegramChatId: string;
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error';
+  // ─── Novos (feature flags + worker status) ────────────────────────
+  readonly redisUrl: string;
+  readonly postgresUrl: string;
+  readonly metricsApiKey: string;
+  readonly workerMetricsUrl: string;
+  readonly dispatcherMetricsUrl: string;
   /** Configuração opcional do backup (R2 + age). Se ausente, backup desabilitado. */
   readonly backup?: {
     r2AccountId: string;
@@ -73,6 +85,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     telegramBotToken: env['TELEGRAM_BOT_TOKEN']!,
     telegramChatId: env['TELEGRAM_CHAT_ID']!,
     logLevel: (env['OMA_LOG_LEVEL'] ?? 'info') as AdminConfig['logLevel'],
+    // ─── Novos (feature flags + worker status). Defaults seguros para dev local. ───
+    redisUrl: env['REDIS_URL'] ?? 'redis://localhost:5455',
+    postgresUrl:
+      env['POSTGRES_URL'] ??
+      'postgresql://evolution:omestre_dev@localhost:5453/omestre_db?schema=omestre',
+    metricsApiKey: env['METRICS_API_KEY'] ?? '',
+    workerMetricsUrl: env['WORKER_METRICS_URL'] ?? 'http://localhost:9092',
+    dispatcherMetricsUrl: env['DISPATCHER_METRICS_URL'] ?? 'http://localhost:9093',
     backup: readBackupConfig(env),
   });
 }
@@ -123,8 +143,16 @@ function readBackupConfig(env: Record<string, string | undefined>): AdminConfig[
   });
 }
 
+/** Tipo do logger estruturado retornado por makeLogger. */
+export type Logger = {
+  debug: (msg: string, meta?: Record<string, unknown>) => void;
+  info: (msg: string, meta?: Record<string, unknown>) => void;
+  warn: (msg: string, meta?: Record<string, unknown>) => void;
+  error: (msg: string, meta?: Record<string, unknown>) => void;
+};
+
 /** Logger estruturado minimalista (sem dep externa). */
-export function makeLogger(level: AdminConfig['logLevel']) {
+export function makeLogger(level: AdminConfig['logLevel']): Logger {
   const order: Record<AdminConfig['logLevel'], number> = {
     debug: 10,
     info: 20,
@@ -145,15 +173,18 @@ export function makeLogger(level: AdminConfig['logLevel']) {
 }
 
 function logWith(
-  priority: number,
+  thisLevel: number,
   threshold: number,
-  label: string,
+  level: string,
   msg: string,
   meta?: Record<string, unknown>,
-): void {
-  if (priority < threshold) return;
-  const record = { level: label, msg, ts: new Date().toISOString(), ...meta };
-  process.stdout.write(JSON.stringify(record) + '\n');
+) {
+  if (thisLevel < threshold) return;
+  const line = {
+    t: new Date().toISOString(),
+    level,
+    msg,
+    ...(meta ?? {}),
+  };
+  process.stdout.write(JSON.stringify(line) + '\n');
 }
-
-export type Logger = ReturnType<typeof makeLogger>;

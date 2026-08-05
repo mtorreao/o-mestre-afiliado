@@ -4,6 +4,8 @@
  * Chave: oma_admin_token (espelha omestre_auth_token do apps/web).
  */
 
+import type { AggregatedWorkerStatus, DLQListResponse } from './worker-status.ts';
+
 const TOKEN_KEY = 'oma_admin_token';
 
 export function getToken(): string | null {
@@ -120,4 +122,86 @@ export async function testTelegram(): Promise<boolean> {
     method: 'POST',
   });
   return data.success;
+}
+
+// ─── Feature Flags ────────────────────────────────────────────────────────
+
+export interface FlagData {
+  key: string;
+  label: string;
+  description: string;
+  category: string;
+  enabled: boolean;
+  danger: boolean;
+  checksLastHour: number;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export async function listFlags(): Promise<FlagData[]> {
+  const data = await request<{ success: true; flags: FlagData[] }>('/api/admin/feature-flags');
+  return data.flags;
+}
+
+export async function toggleFlag(key: string, enabled: boolean): Promise<void> {
+  await request<{ success: true; flag: unknown }>(`/api/admin/feature-flags/${key}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+// ─── Worker Status ────────────────────────────────────────────────────────
+//
+// Re-export dos tipos do helper para evitar re-tipagem local. Os endpoints
+// ficam em /api/admin/worker/* (rotas protegidas por sessão).
+
+export type {
+  AggregatedWorkerStatus,
+  ServiceStatus,
+  DLQEntry,
+  DLQEvent,
+  DLQListResponse,
+} from './worker-status.ts';
+
+export interface DlqFilters {
+  offset?: number;
+  limit?: number;
+  queue?: 'A' | 'B';
+  reason?: string;
+  since?: number;
+}
+
+export async function getWorkerStatus(): Promise<AggregatedWorkerStatus> {
+  return request<AggregatedWorkerStatus>('/api/admin/worker/status');
+}
+
+export async function listDlq(filters: DlqFilters = {}): Promise<DLQListResponse> {
+  const params = new URLSearchParams();
+  if (filters.offset != null) params.set('offset', String(filters.offset));
+  if (filters.limit != null) params.set('limit', String(filters.limit));
+  if (filters.queue) params.set('queue', filters.queue);
+  if (filters.reason) params.set('reason', filters.reason);
+  if (filters.since != null) params.set('since', String(filters.since));
+  const qs = params.toString();
+  return request<DLQListResponse>(`/api/admin/worker/dlq${qs ? `?${qs}` : ''}`);
+}
+
+export async function requeueDlq(id: string): Promise<{ success: true; targetStream: string }> {
+  return request<{ success: true; targetStream: string }>(
+    `/api/admin/worker/dlq/requeue?id=${encodeURIComponent(id)}`,
+    { method: 'POST' },
+  );
+}
+
+export async function removeDlq(id: string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(
+    `/api/admin/worker/dlq/remove?id=${encodeURIComponent(id)}`,
+    { method: 'POST' },
+  );
+}
+
+export async function purgeDlq(): Promise<{ success: true; removed: number }> {
+  return request<{ success: true; removed: number }>('/api/admin/worker/dlq/purge', {
+    method: 'POST',
+  });
 }
