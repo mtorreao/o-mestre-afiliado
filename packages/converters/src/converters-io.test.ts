@@ -99,6 +99,31 @@ describe('mercadolivre — generateViaApi', () => {
     ) as unknown as typeof fetch;
     await expect(generateViaApi('https://p', 'tok')).rejects.toThrow(/não retornou shorten_url/);
   });
+
+  it('URL not allowed (produto inelegível) → mensagem acionável', async () => {
+    globalThis.fetch = mock(async () =>
+      jsonResponse({ message: 'URL not allowed in affiliates program' }, false, 400),
+    ) as unknown as typeof fetch;
+    await expect(generateViaApi('https://p', 'tok')).rejects.toThrow(
+      'Produto não elegível no programa de afiliados do Mercado Livre',
+    );
+  });
+
+  it('tag não associada (ES) → mensagem acionável', async () => {
+    globalThis.fetch = mock(async () =>
+      jsonResponse({ message: 'El tag no está asociado al afiliado' }, false, 400),
+    ) as unknown as typeof fetch;
+    await expect(generateViaApi('https://p', 'tok')).rejects.toThrow(
+      'Tag não associada ao afiliado',
+    );
+  });
+
+  it('erro HTTP sem marcador → mensagem original (fallback de estratégia)', async () => {
+    globalThis.fetch = mock(async () =>
+      jsonResponse('rate limit', false, 429),
+    ) as unknown as typeof fetch;
+    await expect(generateViaApi('https://p', 'tok')).rejects.toThrow(/ML API erro 429/);
+  });
 });
 
 describe('mercadolivre — generateViaCookies', () => {
@@ -333,6 +358,58 @@ describe('mercadolivre — convertMercadoLivreUrl (orquestração)', () => {
     const r = await convertMercadoLivreUrl('https://amazon.com.br/dp/X');
     expect(r.success).toBe(false);
     expect(r.error).toContain('URL não é do Mercado Livre');
+  });
+
+  it('api rejeita URL (produto inelegível) → erro acionável SEM fallback params', async () => {
+    process.env.ML_CLIENT_ID = 'cid';
+    process.env.ML_CLIENT_SECRET = 'csec';
+    process.env.ML_REFRESH_TOKEN = 'rtok';
+    process.env.ML_MELIID = 'mid';
+    process.env.ML_MELITAT = 'mat';
+    let calls = 0;
+    globalThis.fetch = mock(async (url: string) => {
+      calls++;
+      if (String(url).includes('/oauth/token'))
+        return jsonResponse({
+          access_token: 'AT',
+          refresh_token: 'RT',
+          expires_in: 1,
+          token_type: 'bearer',
+        });
+      return jsonResponse({ message: 'URL not allowed in affiliates program' }, false, 400);
+    }) as unknown as typeof fetch;
+
+    const r = await convertMercadoLivreUrl('https://www.mercadolivre.com.br/prod/MLB-1');
+    expect(r.success).toBe(false);
+    expect(r.error).toContain('Produto não elegível');
+    expect(r.method).toBe('unknown');
+    // Sem fallback silencioso: só OAuth + Link Builder foram chamados.
+    expect(calls).toBe(2);
+  });
+
+  it('api com 401 (não autorizado) → cai no fallback de URL params', async () => {
+    process.env.ML_CLIENT_ID = 'cid';
+    process.env.ML_CLIENT_SECRET = 'csec';
+    process.env.ML_REFRESH_TOKEN = 'rtok';
+    process.env.ML_MELIID = 'mid';
+    process.env.ML_MELITAT = 'mat';
+    globalThis.fetch = mock(async (url: string) => {
+      if (String(url).includes('/oauth/token'))
+        return jsonResponse({
+          access_token: 'AT',
+          refresh_token: 'RT',
+          expires_in: 1,
+          token_type: 'bearer',
+        });
+      return jsonResponse('Unauthorized', false, 401);
+    }) as unknown as typeof fetch;
+
+    const r = await convertMercadoLivreUrl('https://www.mercadolivre.com.br/prod/MLB-1', {
+      prefer: ['api', 'cookies', 'fallback'],
+    });
+    expect(r.success).toBe(true);
+    expect(r.method).toBe('fallback');
+    expect(r.affiliateUrl).toContain('meliid=mid');
   });
 
   it('resolve link curto meli.la e converte via api', async () => {
