@@ -11,7 +11,9 @@
     "ioredis": "^5.4.1",
     "drizzle-orm": "^0.38.0",
     "drizzle-kit": "^0.30.0",
-    "hono": "^4.6.0"
+    "hono": "^4.6.0",
+    "aws4fetch": "^1.0.20",
+    "age-encryption": "^0.3.0"
   },
   "scripts": {
     "dev": "bun run scripts/dev.ts",
