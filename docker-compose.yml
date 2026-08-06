@@ -1,7 +1,7 @@
 name: o-mestre-afiliado
 
 # Producao - O Mestre Afiliado
-# Hardening 2026-08-06 (branch wt/security-hardening-compose):
+# Hardening 2026-08-06 (branch wt/security-hardening-compose + P2):
 #  P0: senha do Postgres sem fallback - falha alto se .env ausente
 #  P0: credenciais do banco movidas para .env (nao inline em environment)
 #  P1: apps Bun stateless rodam como UID 1000 (nao root)
@@ -10,10 +10,14 @@ name: o-mestre-afiliado
 #  P1: Evolution LOG_LEVEL reduzido (sem DEBUG/VERBOSE em prod)
 #  P1: Evolution DATABASE_SAVE_HISTORIC off (LGPD - minimizacao)
 #  P1: Evolution CORS_ORIGIN restrito a ${FRONTEND_URL}
+#  P2: resource limits (cpus/memory/pids) em apps + evolution
+#  P2: imagens externas pinadas por SHA256 digest (immutable)
+#  P2: cloudflared removido do compose (roda como systemd no host)
+#  P2: ingestor com bind mount para blacklist/whitelist (./data/ingestor)
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     container_name: omestre_postgres
     restart: always
     command:
@@ -40,7 +44,7 @@ services:
       - omestre-infra-net
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     container_name: omestre_redis
     restart: always
     command: redis-server --port 6379 --appendonly yes --timeout 0
@@ -56,7 +60,13 @@ services:
       - omestre-infra-net
 
   evolution-api:
-    image: evoapicloud/evolution-api:v2.3.7
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+          pids: 300
+    image: evoapicloud/evolution-api:v2.3.7@sha256:1bd8afc4a6cf48822e6cf02469aeae7bd35a12a6b616eacd1291926307f4d339
     container_name: omestre_evolution
     restart: always
     depends_on:
@@ -125,6 +135,12 @@ services:
 
   # API - Elysia REST API
   api:
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+          pids: 200
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -162,6 +178,12 @@ services:
       - omestre-infra-net
 
   web:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+          pids: 100
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -184,6 +206,12 @@ services:
 
   # Ingestor (v2) - instala Chromium; roda como root mas com no-new-privileges
   ingestor:
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+          pids: 300
     build:
       context: .
       dockerfile: apps/ingestor/Dockerfile
@@ -192,6 +220,11 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    # Bind mount: operador edita ./data/ingestor/*.json sem rebuild.
+    # Arquivos sao opcionais (existem vazios como default). Quando vazios,
+    # o pipeline nao filtra nada (ver apps/ingestor/src/terms-lists.ts).
+    volumes:
+      - ./data/ingestor:/app/data:ro
     env_file:
       - .env
     environment:
@@ -199,8 +232,8 @@ services:
       REDIS_URL: "redis://redis:6379"
       METRICS_API_KEY: "${METRICS_API_KEY}"
       ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
-      BLACKLIST_PATH: /app/blacklist.json
-      WHITELIST_PATH: /app/whitelist.json
+      BLACKLIST_PATH: /app/data/blacklist.json
+      WHITELIST_PATH: /app/data/whitelist.json
       METRICS_PORT: "9092"
     healthcheck:
       test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9092/health');process.exit(r.ok?0:1)"]
@@ -220,6 +253,12 @@ services:
 
   # Dispatcher (v2)
   dispatcher:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+          pids: 200
     build:
       context: .
       dockerfile: apps/dispatcher/Dockerfile
@@ -254,6 +293,12 @@ services:
 
   # CatalogWorker (Queue C - catalogo de precos)
   catalog-worker:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+          pids: 200
     build:
       context: .
       dockerfile: apps/catalog-worker/Dockerfile
@@ -285,24 +330,14 @@ services:
       - omestre-prod-net
       - omestre-infra-net
 
-  # Cloudflare Tunnel - NAO usado em prod; roda como systemd no host
-  cloudflared:
-    image: cloudflare/cloudflared:2024.10.0
-    container_name: omestre_cloudflared
-    restart: always
-    command: tunnel --config /etc/cloudflared/config.yml run
-    volumes:
-      - "${HOME}/.cloudflared:/etc/cloudflared:ro"
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - omestre-prod-net
-      - omestre-infra-net
-    profiles:
-      - tunnel
-
   # Admin API (Hono + Bun.serve)
   admin-api:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+          pids: 100
     build:
       context: .
       dockerfile: apps/admin-api/Dockerfile
@@ -339,6 +374,12 @@ services:
 
   # Admin Web (Vite SPA)
   admin-web:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+          pids: 100
     build:
       context: .
       dockerfile: apps/admin-web/Dockerfile
