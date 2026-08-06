@@ -6,7 +6,7 @@
  * smoke test da suíte:
  *   POST /webhook/message  (auth via header `apikey` = EVOLUTION_API_KEY)
  *   POST /api/auth/login  (email/senha, sem apikey)
- *   GET  /api/auth/me, /api/mirrors, /api/worker/status (200)
+ *   GET  /api/auth/me, /api/mirrors (200)
  *   GET  /health
  * Registra contagens para inspeção.
  */
@@ -83,11 +83,6 @@ export function createMockTarget(opts: MockTargetOptions = {}) {
       stats.dashboardReads += 1;
       await withLatency();
       return { success: true, mirrors: [] };
-    })
-    .get('/api/worker/status', async () => {
-      stats.dashboardReads += 1;
-      await withLatency();
-      return { success: true, ingestor: {}, dispatcher: {} };
     })
     .get('/__stats', () => stats);
 
