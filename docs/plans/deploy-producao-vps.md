@@ -205,7 +205,6 @@ Valores que precisam ser diferentes de dev. Gerar no VPS (não commitados) e ref
    METRICS_API_KEY=$(openssl rand -hex 16)
    FRONTEND_URL=https://app.omestreafiliado.com.br
    CORS_ORIGIN=https://app.omestreafiliado.com.br
-   ADMIN_EMAILS=mtorreao1@gmail.com
    WEBHOOK_URL=http://api:5442/webhook/message
    REDIS_URL=redis://redis:6379
    EVOLUTION_API_URL=http://evolution-api:8080

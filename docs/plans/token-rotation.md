@@ -34,7 +34,7 @@ no boot via `/api/auth/me` e, ao expirar, desloga o usuário.
 | `apps/api/src/middleware/auth.ts`            | `createJwtPlugin()` + `getAuthUser()`/`getSuperAdminUser()` |
 | `apps/api/src/middleware/jwt-expiry-pure.ts` | `JWT_EXPIRATION_SECONDS=604800` (7d), `buildJwtExpiry()`    |
 | `apps/api/src/modules/auth/auth.routes.ts`   | login/register (assinam c/ `exp`), `GET /me`                |
-| `apps/api/src/config.ts`                     | env vars (`JWT_SECRET`, `ADMIN_EMAILS`)                     |
+| `apps/api/src/config.ts`                     | env vars (`JWT_SECRET`)                                     |
 | `apps/web/src/hooks/useAuth.ts`              | token em localStorage (`omestre_auth_token`)                |
 | `apps/web/src/lib/api-client.ts`             | `fetchApi<T>()` wrapper typed                               |
 | `apps/web/src/App.tsx`                       | `ProtectedRoute`/`GuestRoute`                               |
