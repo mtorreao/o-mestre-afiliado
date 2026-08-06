@@ -65,25 +65,25 @@ export async function getAuthUser(
 
 /**
  * Obtém o usuário autenticado e verifica se é super admin.
- * Exige is_admin=true no banco/JWT e email presente em ADMIN_EMAILS.
- * Retorna null se não autenticado ou se qualquer uma das condições falhar.
+ * Exige `is_admin=true` no banco (consultado por userId). Promoção é feita
+ * via UPDATE manual no DB — não há mais bootstrap por env.
+ * Retorna null se não autenticado ou se a condição falhar.
  */
 export async function getSuperAdminUser(
   jwtInstance: { verify: (token: string) => Promise<Record<string, unknown> | null | false> },
   headers: Headers,
-  adminEmailsCsv = config.ADMIN_EMAILS,
-  findUserById: (id: number) => Promise<{ email: string; isAdmin: boolean } | null> = (id) =>
+  findUserById: (id: number) => Promise<{ isAdmin: boolean } | null> = (id) =>
     new UserRepository().findById(id),
 ): Promise<AuthUser | null> {
   const tokenUser = await getAuthUser(jwtInstance, headers);
   if (!tokenUser) return null;
 
   const dbUser = await findUserById(tokenUser.userId);
-  if (!dbUser || !isSuperAdmin(dbUser.isAdmin, dbUser.email, adminEmailsCsv)) return null;
+  if (!dbUser || !isSuperAdmin(dbUser.isAdmin)) return null;
 
   return {
     userId: tokenUser.userId,
-    userEmail: dbUser.email,
+    userEmail: tokenUser.userEmail,
     isAdmin: dbUser.isAdmin,
   };
 }
