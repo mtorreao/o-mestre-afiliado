@@ -1,18 +1,114 @@
 /**
  * Testes de autenticação — parseBasicAuth, safeEqual, sessões.
+ *
+ * As funções de sessão (`createSession`/`isValidSession`/`destroySession`)
+ * são injetáveis: os testes injetam um `SessionRepository` e um cache
+ * in-memory via `setAuthDepsForTesting`, evitando DB/Redis reais.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   createSession,
   destroySession,
   hashPassword,
   isValidSession,
   parseBasicAuth,
+  resetAuthDepsForTesting,
   safeEqual,
+  setAuthDepsForTesting,
   sha256Hex,
   verifyPassword,
 } from './auth.ts';
+import type { SessionRepository } from './db/sessionRepository.ts';
+
+/** Cache fake — Map em memória. Simula Redis. */
+function makeInMemoryCache() {
+  const store = new Map<string, string>();
+  return {
+    cache: {
+      async get(id: string) {
+        const raw = store.get(id);
+        if (!raw) return null;
+        try {
+          const parsed = JSON.parse(raw) as { id: string; email: string; expiresAt: string };
+          if (new Date(parsed.expiresAt).getTime() <= Date.now()) return null;
+          return parsed;
+        } catch {
+          return null;
+        }
+      },
+      async set(s: { id: string; email: string; expiresAt: string }) {
+        store.set(s.id, JSON.stringify(s));
+      },
+      async invalidate(id: string) {
+        store.delete(id);
+      },
+    },
+    store,
+  };
+}
+
+/**
+ * Repo fake — aceita um Map externo como store. Permite simular restart:
+ * o store (Postgres) persiste, mas o repo+cache (in-memory) são recriados.
+ */
+function makeInMemoryRepo(externalStore?: Map<string, unknown>) {
+  const store = externalStore ?? new Map();
+  const repo: Pick<SessionRepository, 'create' | 'findValidById' | 'deleteById' | 'deleteExpired'> =
+    {
+      async create(input) {
+        const now = new Date();
+        const row = {
+          id: input.id,
+          email: input.email,
+          csrfToken: input.csrfToken,
+          encryptedPayload: input.encryptedPayload,
+          ipAddress: input.ipAddress ?? null,
+          userAgent: input.userAgent ?? null,
+          expiresAt: input.expiresAt,
+          createdAt: now,
+          lastSeenAt: now,
+        };
+        store.set(input.id, row);
+        return row as ReturnType<SessionRepository['create']> extends Promise<infer R> ? R : never;
+      },
+      async findValidById(id, now = new Date()) {
+        const row = store.get(id) as
+          | {
+              id: string;
+              email: string;
+              csrfToken: string;
+              encryptedPayload: string;
+              ipAddress: string | null;
+              userAgent: string | null;
+              expiresAt: Date;
+              createdAt: Date;
+              lastSeenAt: Date;
+            }
+          | undefined;
+        if (!row) return null;
+        if (row.expiresAt.getTime() <= now.getTime()) return null;
+        return row as ReturnType<SessionRepository['findValidById']> extends Promise<infer R>
+          ? R
+          : never;
+      },
+      async deleteById(id) {
+        store.delete(id);
+      },
+      async deleteExpired(now = new Date()) {
+        let n = 0;
+        for (const [id, row] of store) {
+          const r = row as { expiresAt: Date };
+          if (r.expiresAt.getTime() <= now.getTime()) {
+            store.delete(id);
+            n++;
+          }
+        }
+        return n;
+      },
+    };
+  return { repo: repo as SessionRepository, store };
+}
 
 describe('parseBasicAuth', () => {
   test('parse válido (user:pass)', () => {
@@ -85,20 +181,99 @@ describe('hashPassword / verifyPassword (argon2id)', () => {
   });
 });
 
-describe('sessões', () => {
-  test('createSession gera token e valida', () => {
-    const token = createSession();
+describe('sessões (Postgres + Redis cache)', () => {
+  let store: ReturnType<typeof makeInMemoryRepo>['store'];
+  let cacheStore: ReturnType<typeof makeInMemoryCache>['store'];
+
+  beforeEach(() => {
+    const r = makeInMemoryRepo();
+    const c = makeInMemoryCache();
+    store = r.store;
+    cacheStore = c.store;
+    setAuthDepsForTesting({ sessionRepo: r.repo, cache: c.cache });
+  });
+
+  afterEach(() => {
+    resetAuthDepsForTesting();
+  });
+
+  test('createSession gera token de 64 chars hex', async () => {
+    const token = await createSession();
     expect(token).toHaveLength(64);
-    expect(isValidSession(token)).toBe(true);
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  test('destroySession invalida', () => {
-    const token = createSession();
-    destroySession(token);
-    expect(isValidSession(token)).toBe(false);
+  test('createSession persiste no Postgres fake', async () => {
+    const token = await createSession({ email: 'admin' });
+    expect(store.has(token)).toBe(true);
+    expect(store.get(token)!.email).toBe('admin');
   });
 
-  test('token inexistente → false', () => {
-    expect(isValidSession('token-que-nao-existe')).toBe(false);
+  test('createSession popula cache Redis fake', async () => {
+    const token = await createSession();
+    expect(cacheStore.has(token)).toBe(true);
+  });
+
+  test('isValidSession aceita token recém-criado', async () => {
+    const token = await createSession();
+    expect(await isValidSession(token)).toBe(true);
+  });
+
+  test('isValidSession re-popula cache após eviction', async () => {
+    const token = await createSession();
+    // Simula cache eviction
+    cacheStore.delete(token);
+    // Primeira leitura: cache miss → vai no Postgres → re-popula cache
+    expect(await isValidSession(token)).toBe(true);
+    // Segunda leitura: cache hit
+    expect(await isValidSession(token)).toBe(true);
+    expect(cacheStore.has(token)).toBe(true);
+  });
+
+  test('isValidSession retorna false para token inexistente', async () => {
+    expect(await isValidSession('token-que-nao-existe')).toBe(false);
+  });
+
+  test('isValidSession retorna false para token expirado (cache miss)', async () => {
+    const token = await createSession();
+    // Força expiração no Postgres
+    const row = store.get(token)!;
+    row.expiresAt = new Date(Date.now() - 1000);
+    // Limpa cache para forçar fallback no Postgres
+    cacheStore.delete(token);
+    expect(await isValidSession(token)).toBe(false);
+  });
+
+  test('destroySession invalida Postgres + cache', async () => {
+    const token = await createSession();
+    expect(store.has(token)).toBe(true);
+    expect(cacheStore.has(token)).toBe(true);
+
+    await destroySession(token);
+
+    expect(store.has(token)).toBe(false);
+    expect(cacheStore.has(token)).toBe(false);
+    expect(await isValidSession(token)).toBe(false);
+  });
+
+  test('SESSÃO SOBREVIVE A RESTART DO PROCESSO (cenário real)', async () => {
+    // 1. Cria sessão no "processo A"
+    const token = await createSession({ email: 'admin' });
+    expect(await isValidSession(token)).toBe(true);
+
+    // 2. Simula restart: Postgres (store) persiste, mas criamos um repo
+    //    NOVO que aponta pro MESMO store, e um cache NOVO vazio.
+    resetAuthDepsForTesting();
+    const newRepo = makeInMemoryRepo(store); // reaproveita o store do "Postgres"
+    const newCache = makeInMemoryCache(); // cache vazio (simula Redis vazio)
+    setAuthDepsForTesting({
+      sessionRepo: newRepo.repo,
+      cache: newCache.cache,
+    });
+
+    // 3. Token continua válido mesmo sem cache
+    expect(await isValidSession(token)).toBe(true);
+    // 4. Cache foi re-populado pela leitura
+    expect(newCache.store.has(token)).toBe(true);
   });
 });

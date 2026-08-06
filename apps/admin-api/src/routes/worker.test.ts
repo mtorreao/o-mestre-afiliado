@@ -12,16 +12,79 @@
  *   - POST /dlq/purge → 200 removed
  */
 
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { createWorkerRoutes } from './worker.ts';
-import { createSession } from '../auth.ts';
+import { createSession, resetAuthDepsForTesting, setAuthDepsForTesting } from '../auth.ts';
+import type { SessionRepository } from '../db/sessionRepository.ts';
+
+// Injeta SessionRepository + cache fake no auth.ts para que
+// `createSession()` em `authedHeaders()` funcione sem DB/Redis reais.
+const sessionStore = new Map<string, unknown>();
+const cacheStore = new Map<string, string>();
+const fakeSessionRepo: Pick<
+  SessionRepository,
+  'create' | 'findValidById' | 'deleteById' | 'deleteExpired'
+> = {
+  async create(input) {
+    sessionStore.set(input.id, { ...input, createdAt: new Date(), lastSeenAt: new Date() });
+    return {} as never;
+  },
+  async findValidById(id, now = new Date()) {
+    const row = sessionStore.get(id) as { expiresAt: Date } | undefined;
+    if (!row) return null;
+    if (row.expiresAt.getTime() <= now.getTime()) return null;
+    return row as never;
+  },
+  async deleteById(id) {
+    sessionStore.delete(id);
+  },
+  async deleteExpired(now = new Date()) {
+    let n = 0;
+    for (const [id, row] of sessionStore) {
+      if ((row as { expiresAt: Date }).expiresAt.getTime() <= now.getTime()) {
+        sessionStore.delete(id);
+        n++;
+      }
+    }
+    return n;
+  },
+};
+const fakeCache = {
+  async get(id: string) {
+    const raw = cacheStore.get(id);
+    if (!raw) return null;
+    try {
+      const p = JSON.parse(raw) as { id: string; email: string; expiresAt: string };
+      if (new Date(p.expiresAt).getTime() <= Date.now()) return null;
+      return p;
+    } catch {
+      return null;
+    }
+  },
+  async set(s: { id: string; email: string; expiresAt: string }) {
+    cacheStore.set(s.id, JSON.stringify(s));
+  },
+  async invalidate(id: string) {
+    cacheStore.delete(id);
+  },
+};
+
+beforeEach(() => {
+  sessionStore.clear();
+  cacheStore.clear();
+  setAuthDepsForTesting({ sessionRepo: fakeSessionRepo as SessionRepository, cache: fakeCache });
+});
+
+afterAll(() => {
+  resetAuthDepsForTesting();
+});
 
 function makeApp(deps: Parameters<typeof createWorkerRoutes>[0] = {}) {
   return createWorkerRoutes(deps);
 }
 
 async function authedHeaders() {
-  const token = createSession();
+  const token = await createSession();
   return { Authorization: `Bearer ${token}` };
 }
 
