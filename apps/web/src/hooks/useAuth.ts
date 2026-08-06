@@ -14,8 +14,13 @@ interface User {
   id: number;
   email: string;
   name: string;
+  /**
+   * Flag de admin do usuário. Usada apenas pelo gate client-side do
+   * `ProductHistoryPage` (defense in depth — backend é a fonte de verdade
+   * via `getSuperAdminUser` em `/api/catalog/*`). Telas admin completas
+   * migraram para `apps/admin-web`.
+   */
   isAdmin?: boolean;
-  isSuperAdmin?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -139,7 +144,6 @@ export function useAuth() {
     loading: state.loading,
     isAuthenticated: !!state.user,
     isAdmin: state.user?.isAdmin === true,
-    isSuperAdmin: state.user?.isSuperAdmin === true,
     login,
     register,
     logout,

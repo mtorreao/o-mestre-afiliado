@@ -11,54 +11,28 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Repeat2,
-  Activity,
   Settings,
   LogOut,
   Menu,
   X,
   ChevronRight,
   GitFork,
-  Flag,
   TrendingUp,
 } from 'lucide-react';
-import { filterNavByRole, type NavItemId } from './AppShell.pure.ts';
+import { isNavItemId, type NavItemId } from './AppShell.pure.ts';
 
-export type NavItem =
-  | 'dashboard'
-  | 'settings'
-  | 'mirrors'
-  | 'mirror-logs'
-  | 'mirror-form'
-  | 'worker-status'
-  | 'feature-flags'
-  | 'historico-precos';
+export type NavItem = NavItemId;
 
 interface AppShellLayoutProps {
   userName: string;
   onLogout: () => void;
-  isAdmin?: boolean;
-  isSuperAdmin?: boolean;
 }
 
-/** Mapeia o pathname atual para um NavItem */
+/** Mapeia o pathname atual para um NavItem (qualquer outro cai em 'dashboard') */
 function pathToNav(pathname: string): NavItem {
   const path = pathname.replace(/^\//, '') || 'dashboard';
-  if (
-    [
-      'dashboard',
-      'settings',
-      'mirrors',
-      'mirror-form',
-      'mirror-logs',
-      'worker-status',
-      'feature-flags',
-      'historico-precos',
-    ].includes(path)
-  ) {
-    return path as NavItem;
-  }
-  if (path.startsWith('mirror-form/')) return 'mirror-form';
-  return 'dashboard';
+  if (path.startsWith('mirror-form')) return 'mirror-form';
+  return isNavItemId(path) ? path : 'dashboard';
 }
 
 const pageTitles: Record<NavItem, string> = {
@@ -67,36 +41,22 @@ const pageTitles: Record<NavItem, string> = {
   mirrors: 'Espelhamentos',
   'mirror-logs': 'Logs de Espelhamento',
   'mirror-form': 'Novo Espelhamento',
-  'worker-status': 'Status do Worker',
-  'feature-flags': 'Feature Flags',
   'historico-precos': 'Histórico de Preços',
 };
 
-export function AppShellLayout({ userName, onLogout, isAdmin, isSuperAdmin }: AppShellLayoutProps) {
+const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+  { id: 'mirrors', label: 'Espelhamentos', icon: <GitFork size={18} /> },
+  { id: 'historico-precos', label: 'Histórico de Preços', icon: <TrendingUp size={18} /> },
+  { id: 'settings', label: 'Configurações', icon: <Settings size={18} /> },
+  { id: 'mirror-logs', label: 'Logs de espelhamento', icon: <Repeat2 size={18} /> },
+];
+
+export function AppShellLayout({ userName, onLogout }: AppShellLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const currentNav = pathToNav(location.pathname);
-
-  const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    { id: 'mirrors', label: 'Espelhamentos', icon: <GitFork size={18} /> },
-    { id: 'feature-flags', label: 'Feature Flags', icon: <Flag size={18} /> },
-    { id: 'historico-precos', label: 'Histórico de Preços', icon: <TrendingUp size={18} /> },
-    { id: 'settings', label: 'Configurações', icon: <Settings size={18} /> },
-    { id: 'mirror-logs', label: 'Logs de espelhamento', icon: <Repeat2 size={18} /> },
-    { id: 'worker-status', label: 'Worker', icon: <Activity size={18} /> },
-  ];
-
-  // Filtra itens admin se não for admin / super admin
-  const visibleNavItems = navItems.filter((item) => {
-    return (
-      filterNavByRole([item.id] as NavItemId[], {
-        isAdmin: !!isAdmin,
-        isSuperAdmin: !!isSuperAdmin,
-      }).length > 0
-    );
-  });
 
   function handleNavigate(id: NavItem) {
     const path = id === 'dashboard' ? '/' : `/${id}`;
@@ -136,7 +96,7 @@ export function AppShellLayout({ userName, onLogout, isAdmin, isSuperAdmin }: Ap
 
         {/* Navegação — padding 0.75rem vertical (≥ 44px total) */}
         <nav className="sidebar-nav">
-          {visibleNavItems.map((item) => {
+          {navItems.map((item) => {
             const isActive = currentNav === item.id;
             return (
               <button
