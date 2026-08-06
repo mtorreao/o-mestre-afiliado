@@ -10,7 +10,7 @@ name: o-mestre-afiliado
 #  P1: Evolution LOG_LEVEL reduzido (sem DEBUG/VERBOSE em prod)
 #  P1: Evolution DATABASE_SAVE_HISTORIC off (LGPD - minimizacao)
 #  P1: Evolution CORS_ORIGIN restrito a ${FRONTEND_URL}
-#  P2: resource limits (cpus/memory/pids) em api + ingestor + dispatcher + catalog-worker + evolution-api (5 servicos). web/admin-web/admin-api/postgres/redis ficam SEM LIMITE: web/admin-web sao servidores estaticos sem risco de DoS, admin-api e single-user, postgres/redis ja tem tuning interno (max_connections, etc.).
+#  P2: resource limits (cpus/memory/pids) em 3 servicos com logica de fila: api, dispatcher, catalog-worker. SEM LIMITE em web/admin-web/admin-api (servidores estaticos / single-user), postgres/redis (tuning interno proprio), ingestor/evolution-api (internos; tuning via observacao + restart).
 #  P2: imagens externas pinadas por SHA256 digest (immutable)
 #  P2: cloudflared removido do compose (roda como systemd no host)
 #  P2: ingestor com bind mount para blacklist/whitelist (./data/ingestor)
@@ -60,12 +60,6 @@ services:
       - omestre-infra-net
 
   evolution-api:
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 768M
-          pids: 300
     image: evoapicloud/evolution-api:v2.3.7@sha256:1bd8afc4a6cf48822e6cf02469aeae7bd35a12a6b616eacd1291926307f4d339
     container_name: omestre_evolution
     restart: always
@@ -200,59 +194,6 @@ services:
 
   # Ingestor (v2) - instala Chromium; roda como root mas com no-new-privileges
   ingestor:
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-          pids: 300
-    build:
-      context: .
-      dockerfile: apps/ingestor/Dockerfile
-    container_name: omestre_ingestor
-    restart: always
-    depends_on:
-      api:
-        condition: service_healthy
-    # Bind mount: operador edita ./data/ingestor/*.json sem rebuild.
-    # Arquivos sao opcionais (existem vazios como default). Quando vazios,
-    # o pipeline nao filtra nada (ver apps/ingestor/src/terms-lists.ts).
-    volumes:
-      - ./data/ingestor:/app/data:ro
-    env_file:
-      - .env
-    environment:
-      EVOLUTION_API_URL: "http://evolution-api:8080"
-      REDIS_URL: "redis://redis:6379"
-      METRICS_API_KEY: "${METRICS_API_KEY}"
-      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
-      BLACKLIST_PATH: /app/data/blacklist.json
-      WHITELIST_PATH: /app/data/whitelist.json
-      METRICS_PORT: "9092"
-    healthcheck:
-      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9092/health');process.exit(r.ok?0:1)"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    read_only: true
-    tmpfs:
-      - /tmp:size=256M
-      - /root/.cache:size=128M
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - omestre-prod-net
-      - omestre-infra-net
-
-  # Dispatcher (v2)
-  dispatcher:
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 384M
-          pids: 200
     build:
       context: .
       dockerfile: apps/dispatcher/Dockerfile
