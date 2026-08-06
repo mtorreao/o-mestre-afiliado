@@ -279,7 +279,12 @@ function composeEnvironment(ports: PortMap): void {
     DEV_POSTGRES_VOLUME_NAME: `${containerPrefix}-postgres-data`,
     DEV_REDIS_VOLUME_NAME: `${containerPrefix}-redis-data`,
     DEV_EVOLUTION_VOLUME_NAME: `${containerPrefix}-evolution-instances`,
-    DEV_APP_ENV_FILE: appEnvFile,
+    // Aponta `env_file:` dos services para o `.env` JÁ ESCAPADO que vive
+    // dentro do project dir (tmp/compose-<slug>/.env). O `docker-compose.dev.yml`
+    // usa `${DEV_APP_ENV_FILE:-.env}` em 5 services (api, ingestor, dispatcher,
+    // catalog-worker, admin-api) e o `envsubst` interno do compose quebraria
+    // secrets com `$` (ex: hash argon2id) se lesse o `.env` original.
+    DEV_APP_ENV_FILE: composeProjectDir ? path.join(composeProjectDir, '.env') : appEnvFile,
     DEV_CACHE_PREFIX: `evolution_${slug}`,
     DEV_DATABASE_CLIENT_NAME: `omestre_afiliado_${slug}`,
     FRONTEND_URL:
@@ -352,9 +357,39 @@ function compose(
   capture = false,
   includeTunnel = tunnelProfileEnabled,
 ): { exitCode: number; stdout: string; stderr: string } {
+  // O Bun auto-carrega `.env` no `process.env` ANTES do script rodar,
+  // expandindo `$VAR` no shell do host. Para secrets com `$` (ex: hash
+  // argon2id `$argon2id$v=19$m=...`), o valor em `process.env` chega
+  // JÁ QUEBRADO (=19=65536,t=2,p=1/...). Sem correção, o `docker compose`
+  // emite "variable is not set" porque o compose trata o valor quebrado
+  // como string de template (`${argon2id}` não tem var definida).
+  //
+  // Solução: reler o `.env` no project dir (que tem `$$` escapado) e
+  // sobrescrever as vars em `process.env` com os valores CORRETOS (com
+  // `$$`) ANTES de chamar o compose. O `envsubst` interno do compose
+  // converte `$$` → `$` no momento de popular os containers.
+  const filteredEnv: Record<string, string> = { ...(process.env as Record<string, string>) };
+  if (composeProjectDirPath) {
+    try {
+      const escapedEnvFile = path.join(composeProjectDirPath, '.env');
+      const escapedContent = readFileSync(escapedEnvFile, 'utf8');
+      for (const line of escapedContent.split(/\r?\n/)) {
+        const trimmed = line.trimStart();
+        if (trimmed.startsWith('#') || trimmed === '') continue;
+        const eq = line.indexOf('=');
+        if (eq < 0) continue;
+        const key = line.slice(0, eq).trim();
+        const value = line.slice(eq + 1);
+        if (value === '') continue;
+        filteredEnv[key] = value;
+      }
+    } catch {
+      // Se falhar, segue com o process.env (que pode estar quebrado).
+    }
+  }
   const result = Bun.spawnSync(composeArgs(args, includeTunnel), {
     cwd: REPO_ROOT,
-    env: process.env,
+    env: filteredEnv,
     stdin: 'ignore',
     stdout: capture ? 'pipe' : 'inherit',
     stderr: capture ? 'pipe' : 'inherit',
@@ -813,6 +848,15 @@ async function main(): Promise<void> {
   });
 
   await cleanStaleLocks();
+  // Prepara o project dir ANTES de `choosePorts` (que pode chamar
+  // `composeEnvironment` para reaproveitar um stack existente). O
+  // `composeEnvironment` seta `DEV_APP_ENV_FILE` apontando para o
+  // `.env` dentro do project dir (escapado), e isso precisa estar
+  // materializado em disco antes do docker compose ler.
+  if (composeEnvFileRaw && !requestedDryRun) {
+    await prepareComposeProjectDir(composeEnvFileRaw, composeProjectDir);
+    composeProjectDirPath = composeProjectDir;
+  }
   const ports = await choosePorts();
   composeEnvironment(ports);
   printConfiguration(ports);
@@ -832,14 +876,6 @@ async function main(): Promise<void> {
   try {
     await prepareTunnel();
     await persistState(ports);
-    // `docker compose` lê `.env` do workdir do compose file e passa por
-    // `envsubst` interno, que quebra secrets com `$` (ex: hash argon2id).
-    // Solução: cria diretório temporário com `.env` JÁ ESCAPADO (`$` → `$$`)
-    // e usa como `--project-directory`. O original `.env` fica intacto.
-    if (composeEnvFileRaw) {
-      await prepareComposeProjectDir(composeEnvFileRaw, composeProjectDir);
-      composeProjectDirPath = composeProjectDir;
-    }
     startStack();
   } catch (error) {
     if (stackStarted) stopStack();
