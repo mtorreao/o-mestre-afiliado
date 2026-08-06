@@ -1,12 +1,17 @@
 name: o-mestre-afiliado
 
-services:
-  # ═══════════════════════════════════════════════════════════════════════════
-  # INFRAESTRUTURA  (PostgreSQL, Redis, Evolution API)
-  # Self-contained: mesma stack que o docker-compose.dev.yml, mas produção.
-  # Decisão do owner (2026-08-04): manter tudo num único compose.
-  # ═══════════════════════════════════════════════════════════════════════════
+# Producao - O Mestre Afiliado
+# Hardening 2026-08-06 (branch wt/security-hardening-compose):
+#  P0: senha do Postgres sem fallback - falha alto se .env ausente
+#  P0: credenciais do banco movidas para .env (nao inline em environment)
+#  P1: apps Bun stateless rodam como UID 1000 (nao root)
+#  P1: read_only + tmpfs nos stateless; filesystem imutavel
+#  P1: no-new-privileges em todos os apps Bun
+#  P1: Evolution LOG_LEVEL reduzido (sem DEBUG/VERBOSE em prod)
+#  P1: Evolution DATABASE_SAVE_HISTORIC off (LGPD - minimizacao)
+#  P1: Evolution CORS_ORIGIN restrito a ${FRONTEND_URL}
 
+services:
   postgres:
     image: postgres:17-alpine
     container_name: omestre_postgres
@@ -18,17 +23,15 @@ services:
       - -c
       - listen_addresses=*
     environment:
-      POSTGRES_DB: omestre_db
-      POSTGRES_USER: evolution
-      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
+      POSTGRES_DB: ${POSTGRES_DATABASE:-omestre_db}
+      POSTGRES_USER: ${POSTGRES_USERNAME:-evolution}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - omestre_prod_postgres_data:/var/lib/postgresql/data
-    # Apenas loopback — para pg_dump do host e ferramentas de admin.
-    # NÃO expor em 0.0.0.0.
     ports:
-      - '127.0.0.1:${POSTGRES_HOST_PORT:-5446:5432}'
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5446}:5432"
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U evolution -d omestre_db']
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-evolution} -d ${POSTGRES_DATABASE:-omestre_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -43,9 +46,8 @@ services:
     command: redis-server --port 6379 --appendonly yes --timeout 0
     volumes:
       - omestre_prod_redis_data:/data
-    # Sem porta exposta no host — acesso só via rede Docker.
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -62,88 +64,66 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Sem porta exposta no host — acessada via rede Docker (api, ingestor, dispatcher).
     volumes:
       - omestre_prod_evolution_instances:/evolution/instances
     environment:
-      # ── Database ──────────────────────────────────────────────────────
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: >-
-        postgresql://evolution:${POSTGRES_PASSWORD:-evolution_pass}@postgres:5432/omestre_db?schema=evolution_api
+      DATABASE_CONNECTION_URI: "postgresql://${POSTGRES_USERNAME:-evolution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DATABASE:-omestre_db}?schema=evolution_api"
       DATABASE_CONNECTION_CLIENT_NAME: omestre_afiliado_prod
-      DATABASE_SAVE_DATA_INSTANCE: 'true'
-      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
-      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
-      DATABASE_SAVE_DATA_CONTACTS: 'true'
-      DATABASE_SAVE_DATA_CHATS: 'true'
-      DATABASE_SAVE_DATA_LABELS: 'true'
-      DATABASE_SAVE_DATA_HISTORIC: 'true'
-
-      # ── Server ────────────────────────────────────────────────────────
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
       SERVER_NAME: evolution
       SERVER_TYPE: http
       SERVER_PORT: 8080
       SERVER_URL: http://localhost:8080
-
-      # ── Cache (Redis) ─────────────────────────────────────────────────
-      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: redis://redis:6379/6
       CACHE_REDIS_TTL: 604800
       CACHE_REDIS_PREFIX_KEY: ${CACHE_PREFIX:-evolution_omestre_prod}
-
-      # ── Auth ──────────────────────────────────────────────────────────
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
-      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'true'
-
-      # ── Webhook Global ────────────────────────────────────────────────
-      # Aponta para o container api na rede Docker (porta 5442)
-      WEBHOOK_GLOBAL_ENABLED: 'true'
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      WEBHOOK_GLOBAL_ENABLED: "true"
       WEBHOOK_GLOBAL_URL: http://api:5442/webhook/message
-      WEBHOOK_EVENTS_MESSAGES_UPSERT: 'true'
-      WEBHOOK_EVENTS_CONNECTION_UPDATE: 'true'
-      WEBHOOK_EVENTS_QRCODE_UPDATED: 'true'
-      WEBHOOK_EVENTS_GROUPS_UPSERT: 'true'
-      WEBHOOK_EVENTS_GROUPS_UPDATE: 'true'
-      WEBHOOK_EVENTS_GROUP_PARTICIPANTS_UPDATE: 'true'
-
-      # ── Logs ──────────────────────────────────────────────────────────
-      LOG_LEVEL: ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS,WEBSOCKET
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+      WEBHOOK_EVENTS_CONNECTION_UPDATE: "true"
+      WEBHOOK_EVENTS_QRCODE_UPDATED: "true"
+      WEBHOOK_EVENTS_GROUPS_UPSERT: "true"
+      WEBHOOK_EVENTS_GROUPS_UPDATE: "true"
+      WEBHOOK_EVENTS_GROUP_PARTICIPANTS_UPDATE: "true"
+      LOG_LEVEL: ERROR,WARN,INFO
       LOG_BAILEYS: error
-
-      # ── QR Code ───────────────────────────────────────────────────────
       QRCODE_LIMIT: 30
-      QRCODE_COLOR: '#175197'
-
-      # ── Misc ──────────────────────────────────────────────────────────
-      DEL_INSTANCE: 'false'
+      QRCODE_COLOR: "#175197"
+      DEL_INSTANCE: "false"
       LANGUAGE: pt-BR
-      CONFIG_SESSION_PHONE_CLIENT: 'O Mestre Afiliado (Prod)'
+      CONFIG_SESSION_PHONE_CLIENT: "O Mestre Afiliado (Prod)"
       CONFIG_SESSION_PHONE_NAME: Chrome
-      CORS_ORIGIN: '*'
-      CORS_CREDENTIALS: 'true'
-
-      # ── Desabilitar integrações não utilizadas ────────────────────────
-      TYPEBOT_ENABLED: 'false'
-      CHATWOOT_ENABLED: 'false'
-      OPENAI_ENABLED: 'false'
-      DIFY_ENABLED: 'false'
-      N8N_ENABLED: 'false'
-      EVOAI_ENABLED: 'false'
-      S3_ENABLED: 'false'
-      RABBITMQ_ENABLED: 'false'
-      KAFKA_ENABLED: 'false'
-      SQS_ENABLED: 'false'
-      PUSHER_ENABLED: 'false'
-      WEBSOCKET_ENABLED: 'false'
+      CORS_ORIGIN: ${CORS_ORIGIN:-${FRONTEND_URL:-https://omestreafiliado.com.br}}
+      CORS_CREDENTIALS: "false"
+      TYPEBOT_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+      DIFY_ENABLED: "false"
+      N8N_ENABLED: "false"
+      EVOAI_ENABLED: "false"
+      S3_ENABLED: "false"
+      RABBITMQ_ENABLED: "false"
+      KAFKA_ENABLED: "false"
+      SQS_ENABLED: "false"
+      PUSHER_ENABLED: "false"
+      WEBSOCKET_ENABLED: "false"
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
       - omestre-infra-net
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # APLICAÇÕES  (build local)
-  # ═══════════════════════════════════════════════════════════════════════════
-
-  # ─── API ──────────────────────────────────────────────────────────────
+  # API - Elysia REST API
   api:
     build:
       context: .
@@ -154,39 +134,33 @@ services:
     container_name: omestre_api
     restart: always
     ports:
-      - '${API_PORT:-127.0.0.1:5442:5442}'
+      - "${API_PORT:-127.0.0.1:5442:5442}"
     env_file:
       - .env
+    # P0: credenciais do banco vem do .env (env_file), NAO inline.
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: '5432'
-      POSTGRES_USERNAME: evolution
-      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
-      POSTGRES_DATABASE: omestre_db
-      POSTGRES_SCHEMA: omestre
-      EVOLUTION_API_URL: 'http://evolution-api:8080'
-      WORKER_METRICS_URL: 'http://ingestor:9092'
-      DISPATCHER_METRICS_URL: 'http://dispatcher:9093'
-      FRONTEND_URL: '${FRONTEND_URL:-http://localhost:5441}'
-      ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
-      METRICS_API_KEY: '${METRICS_API_KEY}'
+      EVOLUTION_API_URL: "http://evolution-api:8080"
+      WORKER_METRICS_URL: "http://ingestor:9092"
+      DISPATCHER_METRICS_URL: "http://dispatcher:9093"
+      FRONTEND_URL: "${FRONTEND_URL:-http://localhost:5441}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      METRICS_API_KEY: "${METRICS_API_KEY}"
     healthcheck:
-      test:
-        [
-          'CMD',
-          'bun',
-          '-e',
-          "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)",
-        ]
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:5442/health');process.exit(r.ok?0:1)"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 15s
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
       - omestre-infra-net
 
-  # ─── Web ──────────────────────────────────────────────────────────────
   web:
     build:
       context: .
@@ -197,12 +171,18 @@ services:
       api:
         condition: service_healthy
     ports:
-      - '${WEB_PORT:-127.0.0.1:5441:5441}'
+      - "${WEB_PORT:-127.0.0.1:5441:5441}"
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
       - omestre-infra-net
 
-  # ─── Ingestor (v2) ───────────────────────────────────────────────────
+  # Ingestor (v2) - instala Chromium; roda como root mas com no-new-privileges
   ingestor:
     build:
       context: .
@@ -215,36 +195,30 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: '5432'
-      POSTGRES_USERNAME: evolution
-      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
-      POSTGRES_DATABASE: omestre_db
-      POSTGRES_SCHEMA: omestre
-      EVOLUTION_API_URL: 'http://evolution-api:8080'
-      REDIS_URL: 'redis://redis:6379'
-      METRICS_API_KEY: '${METRICS_API_KEY}'
-      ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
+      EVOLUTION_API_URL: "http://evolution-api:8080"
+      REDIS_URL: "redis://redis:6379"
+      METRICS_API_KEY: "${METRICS_API_KEY}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
       BLACKLIST_PATH: /app/blacklist.json
       WHITELIST_PATH: /app/whitelist.json
-      METRICS_PORT: '9092'
+      METRICS_PORT: "9092"
     healthcheck:
-      test:
-        [
-          'CMD',
-          'bun',
-          '-e',
-          "const r=await fetch('http://localhost:9092/health');process.exit(r.ok?0:1)",
-        ]
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9092/health');process.exit(r.ok?0:1)"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:size=256M
+      - /root/.cache:size=128M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
       - omestre-infra-net
 
-  # ─── Dispatcher (v2) ────────────────────────────────────────────────
+  # Dispatcher (v2)
   dispatcher:
     build:
       context: .
@@ -257,34 +231,28 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: '5432'
-      POSTGRES_USERNAME: evolution
-      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
-      POSTGRES_DATABASE: omestre_db
-      POSTGRES_SCHEMA: omestre
-      EVOLUTION_API_URL: 'http://evolution-api:8080'
-      REDIS_URL: 'redis://redis:6379'
-      METRICS_API_KEY: '${METRICS_API_KEY}'
-      ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
-      METRICS_PORT: '9093'
+      EVOLUTION_API_URL: "http://evolution-api:8080"
+      REDIS_URL: "redis://redis:6379"
+      METRICS_API_KEY: "${METRICS_API_KEY}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      METRICS_PORT: "9093"
     healthcheck:
-      test:
-        [
-          'CMD',
-          'bun',
-          '-e',
-          "const r=await fetch('http://localhost:9093/health');process.exit(r.ok?0:1)",
-        ]
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9093/health');process.exit(r.ok?0:1)"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 30s
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
       - omestre-infra-net
 
-  # ─── CatalogWorker (Queue C — catálogo de preços) ─────────────────────
+  # CatalogWorker (Queue C - catalogo de precos)
   catalog-worker:
     build:
       context: .
@@ -297,97 +265,79 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: '5432'
-      POSTGRES_USERNAME: evolution
-      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-evolution_pass}'
-      POSTGRES_DATABASE: omestre_db
-      POSTGRES_SCHEMA: omestre
-      REDIS_URL: 'redis://redis:6379'
-      METRICS_API_KEY: '${METRICS_API_KEY}'
-      ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
-      METRICS_PORT: '9094'
+      REDIS_URL: "redis://redis:6379"
+      METRICS_API_KEY: "${METRICS_API_KEY}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      METRICS_PORT: "9094"
     healthcheck:
-      test:
-        [
-          'CMD',
-          'bun',
-          '-e',
-          "const r=await fetch('http://localhost:9094/health');process.exit(r.ok?0:1)",
-        ]
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9094/health');process.exit(r.ok?0:1)"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 30s
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
       - omestre-infra-net
 
-  # ─── Cloudflare Tunnel ────────────────────────────────────────────────
-  # NÃO usado em produção: o tunnel roda como systemd service no HOST
-  # (ver deploy/cloudflared/). Mantido como fallback/documentação.
+  # Cloudflare Tunnel - NAO usado em prod; roda como systemd no host
   cloudflared:
     image: cloudflare/cloudflared:2024.10.0
     container_name: omestre_cloudflared
     restart: always
     command: tunnel --config /etc/cloudflared/config.yml run
     volumes:
-      - '${HOME}/.cloudflared:/etc/cloudflared:ro'
+      - "${HOME}/.cloudflared:/etc/cloudflared:ro"
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
       - omestre-infra-net
     profiles:
       - tunnel
 
-  # ─── Admin API (Hono + Bun.serve) ─────────────────────────────────────
-  # Painel single-user para operação de emergência: feature flags,
-  # status de Ingestor/Dispatcher e DLQ. Porta 9090 (mesma do dev).
-  # Depende do admin-web abaixo — admin-web só sobe quando admin-api
-  # estiver healthy.
+  # Admin API (Hono + Bun.serve)
   admin-api:
     build:
       context: .
       dockerfile: apps/admin-api/Dockerfile
     container_name: omestre_admin_api
     restart: always
-    # Sem porta exposta no host — acessada via rede Docker (admin-web + tunnel).
     env_file:
       - .env
     environment:
-      ADMIN_API_PORT: '9090'
-      # Substitui os paths do host por paths do container (deploy script
-      # fica montado em /scripts; estado em /var/lib/oma — bind mount abaixo).
-      OMA_DEPLOY_SCRIPT: ${OMA_DEPLOY_SCRIPT:-/scripts/deploy-prod.sh}
+      ADMIN_API_PORT: "9090"
+      OMA_DEPLOY_SCRIPT: "${OMA_DEPLOY_SCRIPT:-/scripts/deploy-prod.sh}"
       OMA_DEPLOY_STATE_DIR: /var/lib/oma
-      # Conexão com a infra compartilhada (Postgres + Redis)
-      REDIS_URL: 'redis://redis:6379'
-      POSTGRES_URL: 'postgresql://evolution:${POSTGRES_PASSWORD:-evolution_pass}@postgres:5432/omestre_db?schema=omestre'
-      # Métricas dos workers (igual ao `apps/api` — chave tem que bater)
-      METRICS_API_KEY: '${METRICS_API_KEY}'
-      WORKER_METRICS_URL: 'http://ingestor:9092'
-      DISPATCHER_METRICS_URL: 'http://dispatcher:9093'
+      REDIS_URL: "redis://redis:6379"
+      POSTGRES_URL: "postgresql://${POSTGRES_USERNAME:-evolution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DATABASE:-omestre_db}?schema=omestre"
+      METRICS_API_KEY: "${METRICS_API_KEY}"
+      WORKER_METRICS_URL: "http://ingestor:9092"
+      DISPATCHER_METRICS_URL: "http://dispatcher:9093"
     volumes:
       - oma_admin_state:/var/lib/oma
     healthcheck:
-      test:
-        [
-          'CMD',
-          'bun',
-          '-e',
-          "const r=await fetch('http://localhost:9090/health');process.exit(r.ok?0:1)",
-        ]
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://localhost:9090/health');process.exit(r.ok?0:1)"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 15s
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
       - omestre-infra-net
 
-  # ─── Admin Web (Vite SPA) ─────────────────────────────────────────────
-  # UI do admin-api. Build estático servido pelo Vite preview. Em produção,
-  # o ideal é rodar atrás do Cloudflare Tunnel em admin.omestreafiliado.com.br.
-  # Aqui fica exposta só em loopback (mesmo padrão de `api` e `web`).
+  # Admin Web (Vite SPA)
   admin-web:
     build:
       context: .
@@ -398,7 +348,13 @@ services:
       admin-api:
         condition: service_healthy
     ports:
-      - '${ADMIN_WEB_PORT:-127.0.0.1:9091:9091}'
+      - "${ADMIN_WEB_PORT:-127.0.0.1:9091:9091}"
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32M
+    security_opt:
+      - no-new-privileges:true
     networks:
       - omestre-prod-net
 
