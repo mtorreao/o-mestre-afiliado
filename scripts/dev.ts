@@ -182,10 +182,16 @@ const appEnvFile =
   (existsSync(path.join(worktreePath, '.env'))
     ? path.join(worktreePath, '.env')
     : path.join(findMainWorktree() ?? REPO_ROOT, '.env'));
-const composeEnvFile =
+const composeEnvFileRaw =
   process.env.DEV_COMPOSE_ENV_FILE ??
   (existsSync(path.join(worktreePath, '.env')) ? path.join(worktreePath, '.env') : undefined);
 const statePath = path.join(lockRoot, `dev-${slug}.json`);
+// Diretório temporário com `.env` escapado + `docker-compose.dev.yml` copiado,
+// usado como `--project-directory` para que `docker compose` NÃO leia o
+// `.env` cru da worktree. Cada `$` vira `$$` (escape do envsubst interno
+// do compose) para sobreviver a secrets como hash argon2 `$argon2id$v=19$m=...`.
+const composeProjectDir = path.join(lockRoot, `compose-${slug}`);
+let composeProjectDirPath: string | null = null;
 
 function portMap(base: number): PortMap {
   return {
@@ -294,9 +300,51 @@ function composeEnvironment(ports: PortMap): void {
 function composeArgs(args: string[], includeTunnel = tunnelProfileEnabled): string[] {
   const result = ['docker', 'compose', '--project-name', composeProject];
   if (includeTunnel) result.push('--profile', 'tunnel');
-  if (composeEnvFile && existsSync(composeEnvFile)) result.push('--env-file', composeEnvFile);
-  result.push('-f', composeFile, ...args);
+  // `docker compose` lê `.env` do diretório do `docker-compose.yml` ANTES
+  // de aplicar `--env-file`. Para secrets com `$` (ex: hash argon2
+  // `$argon2id$v=19$m=...`), o `.env` da worktree é expandido por
+  // `envsubst` e quebra o valor. Solução: usar `--project-directory`
+  // apontando para um diretório temporário que tem `.env` JÁ ESCAPADO
+  // (`$` → `$$`) e o compose file copiado. Sem `.env` no workdir padrão,
+  // o compose não tenta expandir nada.
+  const projectDir = composeProjectDirPath ?? REPO_ROOT;
+  result.push('--project-directory', projectDir);
+  result.push('-f', path.join(projectDir, 'docker-compose.dev.yml'), ...args);
   return result;
+}
+
+/**
+ * Prepara diretório temporário com `.env` (com `$` escapado para `$$`)
+ * e `docker-compose.dev.yml` copiado da worktree. Esse diretório é
+ * passado como `--project-directory` para `docker compose`, isolando o
+ * lookup de `.env` (que sempre procura no workdir) e evitando que o
+ * `envsubst` quebre secrets com cifrões.
+ *
+ * O original `.env` da worktree fica intacto para edição.
+ */
+async function prepareComposeProjectDir(srcEnv: string, destDir: string): Promise<void> {
+  await mkdir(destDir, { recursive: true });
+  // Copia o compose file (resolve paths relativos a partir do project dir)
+  const composeContent = await readFile(composeFile, 'utf8');
+  await writeFile(path.join(destDir, 'docker-compose.dev.yml'), composeContent);
+  // Lê o .env original e gera cópia com `$` → `$$` (escape do envsubst).
+  // Preserva comentários (linhas começando com `#`) e linhas em branco.
+  const lines = (await readFile(srcEnv, 'utf8')).split(/\r?\n/);
+  const escaped = lines.map((line) => {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('#') || trimmed === '') return line;
+    const eq = line.indexOf('=');
+    if (eq < 0) return line;
+    const key = line.slice(0, eq);
+    let value = line.slice(eq + 1);
+    if (value === '') return line;
+    // `replaceAll` no Bun/Node v22+ colapsa `"$$"` em `$` em alguns
+    // casos (observado no node v22.23.2). `split().join('$$')` preserva
+    // os dois cifrões literais de forma confiável.
+    if (value.includes('$')) value = value.split('$').join('$$');
+    return `${key}=${value}`;
+  });
+  await writeFile(path.join(destDir, '.env'), escaped.join('\n'));
 }
 
 function compose(
@@ -704,6 +752,8 @@ async function cleanup(exitCode: number): Promise<void> {
 
   await releaseLock();
   if (!keepStack && stateFile) await rm(stateFile, { force: true }).catch(() => {});
+  if (composeProjectDirPath && !keepStack)
+    await rm(composeProjectDirPath, { recursive: true, force: true }).catch(() => {});
   if (tunnelConfigPath && !keepStack) await rm(tunnelConfigPath, { force: true }).catch(() => {});
   terminateQuickTunnel();
   console.log('✓ Ambiente dev finalizado.');
@@ -782,6 +832,14 @@ async function main(): Promise<void> {
   try {
     await prepareTunnel();
     await persistState(ports);
+    // `docker compose` lê `.env` do workdir do compose file e passa por
+    // `envsubst` interno, que quebra secrets com `$` (ex: hash argon2id).
+    // Solução: cria diretório temporário com `.env` JÁ ESCAPADO (`$` → `$$`)
+    // e usa como `--project-directory`. O original `.env` fica intacto.
+    if (composeEnvFileRaw) {
+      await prepareComposeProjectDir(composeEnvFileRaw, composeProjectDir);
+      composeProjectDirPath = composeProjectDir;
+    }
     startStack();
   } catch (error) {
     if (stackStarted) stopStack();
@@ -800,6 +858,8 @@ main().catch(async (error) => {
   console.error(`\n✗ ${error instanceof Error ? error.message : String(error)}`);
   await releaseLock();
   if (stateFile && !keepStack) await rm(stateFile, { force: true }).catch(() => {});
+  if (composeProjectDirPath && !keepStack)
+    await rm(composeProjectDirPath, { recursive: true, force: true }).catch(() => {});
   if (tunnelConfigPath && !keepStack) await rm(tunnelConfigPath, { force: true }).catch(() => {});
   process.exit(1);
 });
