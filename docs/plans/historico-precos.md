@@ -185,7 +185,7 @@ O ingestor preenche `productKey` (já resolvido em 3.1) no `SendEvent` do fan-ou
 1. **`db-schema`** — migration `0016_add_product_catalog.sql` (tabelas `products`, `product_variations`, `price_history` + índices, inclusive o `UNIQUE price_history_dedup_idx` da Melhoria 2); + coluna `is_admin` em `users` (`0017_add_users_is_admin.sql`). Exportar tabelas em `schema/index.ts`/`db.ts`. `bun run db:migrate` (ou psql no container dev).
 2. **`catalog-publisher`** (no ingestor) — `apps/ingestor/src/catalog-publisher.ts` com `publishCatalogJob()` (resolve `product_key`/`marketplace` por parse, monta `CatalogJob` com `userId` do `SourceGroupConfig`); estender `SendEvent` com `productKey`/`variationKey` (seção 4); chamar `publishCatalogJob` em `logReflectedOffer` via `void`+try/catch. **NÃO** refatora `fetchProductImage` (worker busca o dado de preço sozinho).
 3. **`catalog-worker`** (NOVO app, isolado) — `apps/catalog-worker/` consumindo **Queue C `omestre:mirror:catalog`** (Redis Stream + consumer group + ACK + DLQ, padrão v2 de `packages/worker-common`). Grava via `catalog.repository.ts` (upsert `products`/`product_variations` + append `price_history` com `ON CONFLICT DO NOTHING` no índice único). Busca ML `GET items/{id}` aqui (isolado).
-4. **`catalog-api`** — `apps/api/src/modules/catalog/catalog.routes.ts` (rotas read-only, gate `isAdmin`) + `catalog.repository.ts`; `ADMIN_EMAILS` (env) + `isAdmin` no JWT/`/me`/`useAuth`.
+4. **`catalog-api`** — `apps/api/src/modules/catalog/catalog.routes.ts` (rotas read-only, gate `isAdmin`) + `catalog.repository.ts`; `isAdmin` no JWT/`/me`/`useAuth`.
 5. **`catalog-ui`** — `AppShell` filtra nav por `isAdmin`; rota `historico-precos` → `ProductHistoryPage` (tabela + drawer com gráfico de linha).
 6. **`backfill`** (Melhoria 5) — ✅ **entregue** (t_4b9d46cd): `apps/catalog-worker/src/backfill.ts` + `backfill-pure.ts` (CLI `bun run backfill`, flags `--limit N` / `--dry-run`; varre `reflected_offers` por keyset pagination e publica `CatalogJob` via `publishCatalogJob` do worker-common; `messageId = backfill:<rowId>`, `capturedAt = reflected_at` — preserva o bucket histórico; userId resolvido de `affiliates.evolution_instance_id`).
 7. **`infra`** — ✅ **entregue** (t_4b9d46cd): `catalog-worker` registrado no `docker-compose.yml` e `docker-compose.dev.yml` (metrics `:9094`; host `5456` no dev, `base+8` via dev.ts), no `scripts/dev.ts` (services/ports/env/banner), no `deploy-local.sh` (gate de build) e no `bun run build` da raiz (`build:catalog-worker`). Reusa `worker-common` (metrics, DLQ, step-tracker, `catalog-publisher`).
@@ -199,7 +199,7 @@ Hoje **não há papel/role** — `users` (`packages/db/src/schema/users.ts`) só
 
 - Migration `0017_add_users_is_admin.sql`: `ALTER TABLE omestre.users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;`
 - `packages/db/src/schema/users.ts`: adicionar `isAdmin: boolean('is_admin').notNull().default(false)`.
-- **Seed/setup**: como não há tela de "promover a admin", o primeiro admin é definido por env no startup OU por UPDATE manual no banco. Decisão simples (escolha do Matheus): `ADMIN_EMAILS` (env, CSV) — na criação/login, `UserRepository` marca `is_admin=true` se o email estiver na lista. Sem UI de gestão de admins nesta fase.
+- **Seed/setup**: como não há tela de "promover a admin", a promoção é feita exclusivamente via `UPDATE omestre.users SET is_admin = true WHERE email = '...'` no banco. Sem UI de gestão de admins nesta fase. (Bootstrap via `ADMIN_EMAILS` foi removido em 2026-08-06 — rev 0.3.0.)
 - **JWT**: incluir `isAdmin` no payload do `jwt.sign` (`auth.routes.ts:39,78`) e no `AuthUser` (`middleware/auth.ts`). `/api/auth/me` (`auth.routes.ts:104`) já usa `findPublicById` — garantir que o `user` retornado inclua `isAdmin`.
 
 #### 5.5.2. Rotas de leitura do catálogo (só admin)
@@ -289,7 +289,7 @@ Webhook → Queue A (omestre:mirror:raw) → Ingestor (converte + envia) → Que
 - **Enriquecimento Shopee de variações** reais via `modelVariationSku` (GraphQL) — hoje só variação única implícita.
 - **Coleta de preço periódica** (cron) para produtos já vistos, independente de aparecerem no WhatsApp.
 - **Alerta de preço** ("produto X caiu pra Y") — usa o histórico.
-- **Gestão de admins via UI** (promover/rebaixar) — hoje é só `ADMIN_EMAILS` (env).
+- **Gestão de admins via UI** (promover/rebaixar) — hoje é só `UPDATE` manual no DB (`is_admin=true`).
 - **Heartbeat diário** (Melhoria 4): subir `price_bucket` pra truncagem diária e inserir 1 snapshot/dia mesmo sem mudança de preço (mostrar "estável há N dias"). Opcional — o único índice de 1h já cobre dedup; se quiser heartbeat, trocar `date_trunc('hour')` por `date_trunc('day')` no `CatalogJob`.
 
 ## Revision history

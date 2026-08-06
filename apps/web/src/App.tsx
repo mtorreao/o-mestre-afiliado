@@ -10,10 +10,12 @@
  *   /               → DashboardPage (protegida)
  *   /settings       → SettingsPage (protegida)
  *   /mirror-logs    → MirrorLogsPage (protegida)
- *   /worker-status  → WorkerStatusPage (protegida)
  *   /historico-precos → ProductHistoryPage (protegida, admin)
+ *
+ * Telas administrativas (feature flags, worker status, maintenance) migraram
+ * para `apps/admin-web`. Rotas de admin que ficaram aqui continuam protegidas
+ * via gate `isAdmin` (ProductHistory → /api/catalog/*).
  */
-import { useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth.ts';
 import { ThemeProvider } from '@omestre/ui';
@@ -21,15 +23,13 @@ import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
 import { MirrorLogsPage } from './pages/MirrorLogsPage.tsx';
-import { WorkerStatusPage } from './pages/WorkerStatusPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { MirrorsPage } from './pages/MirrorsPage.tsx';
 import { MirrorFormPage } from './pages/MirrorFormPage.tsx';
-import { FeatureFlagsPage } from './pages/FeatureFlagsPage.tsx';
 import { ProductHistoryPage } from './pages/ProductHistoryPage.tsx';
 import { MaintenancePage } from './pages/MaintenancePage.tsx';
 import { AppShellLayout } from './components/layout/AppShell.tsx';
-import { ToastProvider, ThemeToggle } from '@omestre/ui';
+import { ToastProvider } from '@omestre/ui';
 import { Loader2 } from 'lucide-react';
 
 // ─── Protected route guard ──────────────────────────────
@@ -69,56 +69,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function SuperAdminRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isSuperAdmin, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'var(--color-bg)',
-          color: 'var(--color-text-muted)',
-        }}
-      >
-        Carregando...
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (!isSuperAdmin) {
-    return (
-      <div
-        style={{
-          minHeight: '60vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.75rem',
-          padding: 'var(--spacing-6)',
-          textAlign: 'center',
-        }}
-      >
-        <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700 }}>Acesso restrito</h1>
-        <p style={{ color: 'var(--color-text-secondary)' }}>
-          Esta página é exclusiva do super admin. Verifique se o seu e-mail está em
-          <code style={{ marginLeft: 4 }}>ADMIN_EMAILS</code>.
-        </p>
-      </div>
-    );
-  }
-
-  return <>{children}</>;
-}
-
 // ─── Auth-aware route redirect for login/register ────────
 
 function GuestRoute({ children }: { children: React.ReactNode }) {
@@ -153,8 +103,7 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
 // ─── Main App ────────────────────────────────────────────
 
 function App() {
-  const { user, token, login, register, logout, isAuthenticated, isAdmin, isSuperAdmin } =
-    useAuth();
+  const { user, token, login, register, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   return (
@@ -201,8 +150,6 @@ function App() {
               <ToastProvider>
                 <AppShellLayout
                   userName={user?.name ?? ''}
-                  isAdmin={isAdmin}
-                  isSuperAdmin={isSuperAdmin}
                   onLogout={() => {
                     logout();
                     navigate('/login');
@@ -216,14 +163,6 @@ function App() {
           <Route path="settings" element={<SettingsPage user={user!} token={token!} />} />
           <Route path="groups" element={<Navigate to="/mirrors" replace />} />
           <Route path="mirror-logs" element={<MirrorLogsPage token={token!} />} />
-          <Route
-            path="worker-status"
-            element={
-              <SuperAdminRoute>
-                <WorkerStatusPage />
-              </SuperAdminRoute>
-            }
-          />
           <Route path="mirrors" element={<MirrorsPage token={token!} />} />
           <Route
             path="mirror-form"
@@ -233,7 +172,6 @@ function App() {
             path="mirror-form/:id"
             element={<MirrorFormPage token={token!} onBack={() => navigate('/mirrors')} />}
           />
-          <Route path="feature-flags" element={<FeatureFlagsPage />} />
           <Route path="historico-precos" element={<ProductHistoryPage />} />
         </Route>
 

@@ -23,8 +23,6 @@ import { amazonRoutes } from './modules/amazon/amazon.routes.ts';
 import { magaluRoutes } from './modules/magalu/magalu.routes.ts';
 import { extensionRoutes } from './modules/extension/extension.routes.ts';
 import { extensionLogRoutes } from './modules/extension/extension-log.routes.ts';
-import { featureFlagsRoutes } from './modules/admin/feature-flags.routes.ts';
-import { workerAdminRoutes } from './modules/admin/worker-admin.routes.ts';
 import { catalogRoutes } from './modules/catalog/catalog.routes.ts';
 import { isFeatureEnabled, initFlagInvalidation } from '@omestre/feature-flags';
 import { warmSourceGroupCache } from './services/group-cache.ts';
@@ -74,8 +72,6 @@ app
   .use(magaluRoutes)
   .use(extensionRoutes)
   .use(extensionLogRoutes)
-  .use(featureFlagsRoutes)
-  .use(workerAdminRoutes)
   .use(catalogRoutes)
 
   // ─── Gate de manutenção (feature flag global) ────────────────────
@@ -85,7 +81,6 @@ app
       const isExempt =
         path.startsWith('/webhook') ||
         path.startsWith('/api/auth') ||
-        path.startsWith('/api/admin') ||
         path === '/health' ||
         path === '/docs' ||
         path.startsWith('/swagger');
@@ -123,7 +118,6 @@ app
       'whatsapp/status': 'GET /api/whatsapp/status',
       'whatsapp/disconnect': 'DELETE /api/whatsapp/disconnect',
       'whatsapp/regenerate-qr': 'POST /api/whatsapp/regenerate-qr',
-      'worker/status': 'GET /api/worker/status',
       docs: '/docs',
     },
   }))

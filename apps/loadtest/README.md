@@ -7,11 +7,11 @@ webhook da Evolution API v2 e isola toda a matemática de métricas em módulos
 
 ## Cenários
 
-| Cenário                | Descrição                                                       | Concorrência |
-| ---------------------- | --------------------------------------------------------------- | ------------ |
-| `webhook-ingest-burst` | Sustentado de `POST /webhook/message` (Evolution → ingestor)    | 25           |
-| `webhook-login-mixed`  | 70% webhook + 30% `POST /api/auth/login`                        | 20           |
-| `dashboard-reads`      | Leituras de painel: `/api/worker/status`, `/api/mirrors`, `/me` | 15           |
+| Cenário                | Descrição                                                    | Concorrência |
+| ---------------------- | ------------------------------------------------------------ | ------------ |
+| `webhook-ingest-burst` | Sustentado de `POST /webhook/message` (Evolution → ingestor) | 25           |
+| `webhook-login-mixed`  | 70% webhook + 30% `POST /api/auth/login`                     | 20           |
+| `dashboard-reads`      | Leituras de painel: `/api/mirrors`, `/me`                    | 15           |
 
 ## Uso
 

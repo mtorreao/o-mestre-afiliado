@@ -346,7 +346,6 @@ Arquivo `.env` na raiz, carregado automaticamente pelo Bun.
 | `FRONTEND_URL`          | Não (default http://localhost:5441)                 | api                        |
 | `ML_REDIRECT_URI`       | Não (default http://localhost:5442/api/ml/callback) | api                        |
 | `MAGALU_STORE_NAME`     | Não (fallback global p/ CLI; produção usa painel)   | converters, api            |
-| `ADMIN_EMAILS`          | Não (CSV vazio = ninguém vira admin via env)        | api                        |
 
 ---
 

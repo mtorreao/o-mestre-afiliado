@@ -1,10 +1,5 @@
 import { Elysia, t } from 'elysia';
-import {
-  UserRepository,
-  UserCredentialsRepository,
-  AuthRefreshTokenRepository,
-  isEmailAdminAllowed,
-} from '@omestre/db';
+import { UserRepository, UserCredentialsRepository, AuthRefreshTokenRepository } from '@omestre/db';
 import { createJwtPlugin, getAuthUser, getSuperAdminUser } from '../../middleware/auth.ts';
 import {
   getClientIp,
@@ -22,7 +17,6 @@ import {
   issueRefreshToken,
 } from '../../middleware/token-pure.ts';
 import { refreshSession } from './refresh-session.ts';
-import { config } from '../../config.ts';
 
 const userRepo = new UserRepository();
 const credentialsRepo = new UserCredentialsRepository();
@@ -87,8 +81,12 @@ export const authRoutes = new Elysia()
       }
 
       const passwordHash = await Bun.password.hash(password);
-      const isAdmin = isEmailAdminAllowed(email, config.ADMIN_EMAILS);
-      const user = await userRepo.create({ email, name, passwordHash, isAdmin });
+      const user = await userRepo.create({
+        email,
+        name,
+        passwordHash,
+        isAdmin: false,
+      });
       await credentialsRepo.upsert(user.id, {});
 
       const issue = issueRefreshToken();
@@ -102,7 +100,7 @@ export const authRoutes = new Elysia()
       const token = await jwt.sign({
         userId: user.id,
         userEmail: user.email,
-        isAdmin,
+        isAdmin: user.isAdmin,
         exp: buildAccessTokenExpiry(),
       });
 
@@ -110,7 +108,7 @@ export const authRoutes = new Elysia()
         success: true,
         token,
         refreshToken: issue.token,
-        user: { id: user.id, email: user.email, name: user.name, isAdmin },
+        user: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin },
       };
     },
     {
@@ -159,11 +157,7 @@ export const authRoutes = new Elysia()
         return { success: false, error: 'Email ou senha inválidos' };
       }
 
-      let isAdmin = user.isAdmin;
-      if (!isAdmin && isEmailAdminAllowed(email, config.ADMIN_EMAILS)) {
-        const updated = await userRepo.promoteToAdmin(email);
-        isAdmin = updated?.isAdmin ?? false;
-      }
+      const isAdmin = user.isAdmin;
 
       const issue = issueRefreshToken();
       await refreshTokenRepo.create({

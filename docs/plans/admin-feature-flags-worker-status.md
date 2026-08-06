@@ -1,9 +1,7 @@
 # Plan: Feature Flags + Worker Status no admin-center
 
-> **Status:** 📋 Proposto. Aguardando aprovação do owner.
-> **Branch:** `wt/admin-center` (já existe um branch com a Fase 0 — admin-api/admin-web base).
-> **Owner:** Matheus Torreão.
-> **Última atualização:** 2026-08-04.
+> **Status:** ✅ Entregue em 2026-08-04 (admin-api/admin-web). Mantido em `plans/` por referência histórica — Fase 8 de PRs fechou a migração.
+> **Atualização 2026-08-06** (rev 0.4.0): os endpoints `/api/admin/feature-flags/*` e `/api/worker/*` foram **removidos da `apps/api`** — agora vivem exclusivamente em `apps/admin-api` (gate `sessionAuth()` em vez de JWT+isAdmin). As páginas `WorkerStatusPage` e `FeatureFlagsPage` foram removidas do `apps/web`. O gate `maintenance_mode` em `apps/api/src/index.ts` continua usando a flag `isAdmin` do JWT (defesa em profundidade) — o toggle é feito via `apps/admin-api`.
 
 ## Contexto
 
@@ -50,7 +48,7 @@ cadeia fica verde de uma vez.
 
 - Factory `createWorkerAdminRoutes(deps?)` injeta `getSuperAdmin`, `getAggregatedWorkerStatus`, `listDlqItems`, `requeueDlqItem`, `removeDlqItem`, `purgeDlq`.
 - Endpoints: `GET /api/worker/status`, `GET /api/worker/dlq`, `POST /api/worker/dlq/requeue`, `POST /api/worker/dlq/remove`, `POST /api/worker/dlq/purge`.
-- Auth: `getSuperAdmin` (gate duplo `users.is_admin` **E** `ADMIN_EMAILS`).
+- Auth: `getSuperAdmin` (gate único `users.is_admin`).
 - **Decisão: ignorar `getSuperAdmin` — admin-api já é single-user com sessionAuth.**
 
 **Backend — `apps/api/src/services/worker-metrics.ts` (155 LOC) + `worker-metrics-pure.ts` (62 LOC)**

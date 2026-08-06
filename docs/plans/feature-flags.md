@@ -2,7 +2,9 @@
 
 > **Status:** Fases 1–6 (fundação admin + DB + package + API + Dispatcher + UI) **entregues**. Fases 5 (kill switch ingestor) e 7 (E2E dedicado) ainda pendentes. Ver [`docs/roadmap.md`](../roadmap.md) para o status operacional.
 >
-> **Bootstrap admin fechado em 2026-07-31** (rev 0.2.0): `users.is_admin` + migration `0019` + `ADMIN_EMAILS` no `auth.routes.ts` (register/login) + JWT com `isAdmin` + `/me` retornando `isAdmin`. Dívida crítica D do roadmap liquidada.
+> **Bootstrap admin fechado em 2026-07-31** (rev 0.2.0): `users.is_admin` + migration `0019` + promoção via `UPDATE` manual no DB + JWT com `isAdmin` + `/me` retornando `isAdmin`. Dívida crítica D do roadmap liquidada.
+>
+> **Atualização 2026-08-06** (rev 0.3.0): `ADMIN_EMAILS` removido do ambiente. Promoção é exclusivamente via `UPDATE omestre.users SET is_admin = true WHERE email = '...'` — não há mais bootstrap automático no login/register. E2E promove via `docker exec psql` direto no `postgres-e2e`.
 >
 > **Este arquivo é a fonte de detalhe das Fases pendentes** (5 + 7). Para o que já foi entregue, ver o resumo do item 8 em [`docs/roadmap.md`](../roadmap.md#-entregue-com-link-para-spec).
 
@@ -18,15 +20,15 @@
 
 ## 1. Estado atual (o que já temos e o que falta)
 
-| O que existe                    | Onde                                            | Observação                                                                                                   |
-| ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Auth JWT `{userId, userEmail, isAdmin}` | `apps/api/src/middleware/auth.ts` (verify) + `apps/api/src/modules/auth/auth.routes.ts` (sign) | **Admin implementado:** o payload carrega `isAdmin` (bootstrap via `ADMIN_EMAILS` no register/login) e `/api/auth/me` retorna `isAdmin`. |
-| Plano do admin (`is_admin`)     | `docs/plans/historico-precos.md` §5.5           | Já especifica `is_admin` + `ADMIN_EMAILS` + JWT. **Este plano reusa a mesma fundação** (prerequisito comum). |
-| Redis singleton (API)           | `apps/api/src/services/redis.ts`                | `cacheGet`/`cacheSet` com fallback silencioso.                                                               |
-| Redis nos workers               | `apps/ingestor`, `apps/dispatcher` (ioredis)    | Dispatcher já tem padrão de cache local 60s (`rate-limiter.ts:20`) — mesmo padrão serve para flags.          |
-| Loop do Dispatcher              | `apps/dispatcher/src/index.ts:149` (`mainLoop`) | Ponto ideal do kill switch: pausar ANTES do `XREADGROUP` → mensagens acumulam na Queue B, nada é perdido.    |
-| Design system Switch/Card/Badge | `apps/web/src/components/ui/`                   | A tela de flags usa `Switch` — zero componente novo.                                                         |
-| Migrations                      | `packages/db/src/migrations/` (última: `0021`)  | Sequência executada: `0016` feature_flags, `0019` is_admin (bootstrap admin), `0020` magalu; última `0021` catálogo (product catalog). Ver §9.             |
+| O que existe                            | Onde                                                                                           | Observação                                                                                                                                     |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth JWT `{userId, userEmail, isAdmin}` | `apps/api/src/middleware/auth.ts` (verify) + `apps/api/src/modules/auth/auth.routes.ts` (sign) | **Admin implementado:** o payload carrega `isAdmin` (bootstrap via `ADMIN_EMAILS` no register/login) e `/api/auth/me` retorna `isAdmin`.       |
+| Plano do admin (`is_admin`)             | `docs/plans/historico-precos.md` §5.5                                                          | Já especifica `is_admin` + `ADMIN_EMAILS` + JWT. **Este plano reusa a mesma fundação** (prerequisito comum).                                   |
+| Redis singleton (API)                   | `apps/api/src/services/redis.ts`                                                               | `cacheGet`/`cacheSet` com fallback silencioso.                                                                                                 |
+| Redis nos workers                       | `apps/ingestor`, `apps/dispatcher` (ioredis)                                                   | Dispatcher já tem padrão de cache local 60s (`rate-limiter.ts:20`) — mesmo padrão serve para flags.                                            |
+| Loop do Dispatcher                      | `apps/dispatcher/src/index.ts:149` (`mainLoop`)                                                | Ponto ideal do kill switch: pausar ANTES do `XREADGROUP` → mensagens acumulam na Queue B, nada é perdido.                                      |
+| Design system Switch/Card/Badge         | `apps/web/src/components/ui/`                                                                  | A tela de flags usa `Switch` — zero componente novo.                                                                                           |
+| Migrations                              | `packages/db/src/migrations/` (última: `0021`)                                                 | Sequência executada: `0016` feature_flags, `0019` is_admin (bootstrap admin), `0020` magalu; última `0021` catálogo (product catalog). Ver §9. |
 
 ---
 

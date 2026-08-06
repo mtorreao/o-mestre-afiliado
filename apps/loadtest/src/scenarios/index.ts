@@ -289,7 +289,7 @@ export const SCENARIOS: ScenarioDef[] = [
     flowStage: 8,
     build: (ctx) => {
       const token = ctx.authToken ?? 'mock-jwt-token';
-      const paths = ['/api/worker/status', '/api/mirrors', '/api/auth/me'];
+      const paths = ['/api/mirrors', '/api/auth/me'];
       const requests: ScenarioRequest[] = [];
       for (let i = 0; i < 60; i++) {
         const path = paths[i % paths.length]!;

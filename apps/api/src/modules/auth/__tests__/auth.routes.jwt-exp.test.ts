@@ -48,13 +48,10 @@ const createMock = mock(() =>
   }),
 );
 
-const isEmailAdminAllowed = mock(() => false);
-
 await mock.module('@omestre/db', () => ({
   UserRepository: class {
     findByEmail = findByEmailMock;
     create = createMock;
-    promoteToAdmin = mock(() => Promise.resolve(null));
   },
   UserCredentialsRepository: class {
     upsert = upsertMock;
@@ -67,7 +64,6 @@ await mock.module('@omestre/db', () => ({
     revokeById = mock(() => Promise.resolve());
     revokeFamilyByFamilyId = mock(() => Promise.resolve(1));
   },
-  isEmailAdminAllowed: () => false,
 }));
 
 const { Elysia } = await import('elysia');
