@@ -5,18 +5,21 @@
  *  - Um único usuário (admin). Não há cadastro, não há recuperação.
  *  - Senha nunca viaja em texto puro: só o hash argon2id fica no .env.
  *  - O fluxo de login é o Basic Auth padrão: o browser manda
- *    `Authorization: Basic base64(user:pass)`.
+ *    `Authorization: Basic base64...s)`.
  *  - Sessão: emitimos um token de sessão (random 32 bytes hex) após login
  *    bem-sucedido; o client envia em `Authorization: Bearer <token>`.
  *    Isso evita re-hashear argon2id a cada request (argon2id é caro por design).
+ *  - Persistência da sessão: Postgres (fonte da verdade) + Redis (cache 5min).
+ *    Sobrevive a restart do admin-api.
  *
  * Sem dependência de lib: usa `Bun.password` (argon2id nativo do runtime).
  */
-
 import type { Context, MiddlewareHandler } from 'hono';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { SessionRepository, type SessionRecord } from './db/sessionRepository.ts';
+import { getCachedSession, invalidateCachedSession, setCachedSession } from './auth-cache.ts';
 
-// ─── Hash ────────────────────────────────────────────────────────────────
+// ─── Hash ───────────────────────────────────────────────────────────────
 
 /** Gera hash argon2id (formato Bun). */
 export function hashPassword(password: string): Promise<string> {
@@ -28,43 +31,122 @@ export function verifyPassword(password: string, hash: string): Promise<boolean>
   return Bun.password.verify(password, hash);
 }
 
-// ─── Sessões (em memória, single-user) ───────────────────────────────────
+// ─── Sessões (Postgres + cache Redis) ───────────────────────────────────
 
-interface Session {
-  token: string;
-  createdAt: number;
-  expiresAt: number;
+export const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
+
+/**
+ * Dependências injetáveis. Default = SessionRepository real + Redis real.
+ * Em testes, injetar fakes via `setAuthDepsForTesting()`.
+ */
+interface AuthDeps {
+  sessionRepo: SessionRepository;
+  cache: {
+    get: (id: string) => Promise<{ id: string; email: string; expiresAt: string } | null>;
+    set: (s: { id: string; email: string; expiresAt: string }) => Promise<void>;
+    invalidate: (id: string) => Promise<void>;
+  };
 }
 
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
-const sessions = new Map<string, Session>();
+let deps: AuthDeps = {
+  sessionRepo: new SessionRepository(),
+  cache: {
+    get: getCachedSession,
+    set: setCachedSession,
+    invalidate: invalidateCachedSession,
+  },
+};
 
-/** Cria sessão e retorna token. */
-export function createSession(): string {
+/** Injeta dependências. Apenas para testes. */
+export function setAuthDepsForTesting(overrides: Partial<AuthDeps>): void {
+  deps = { ...deps, ...overrides };
+}
+
+/** Reseta para defaults. Apenas para testes. */
+export function resetAuthDepsForTesting(): void {
+  deps = {
+    sessionRepo: new SessionRepository(),
+    cache: {
+      get: getCachedSession,
+      set: setCachedSession,
+      invalidate: invalidateCachedSession,
+    },
+  };
+}
+
+export interface CreateSessionOptions {
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  email?: string;
+}
+
+/** Cria sessão, persiste no Postgres e popula cache Redis. */
+export async function createSession(options: CreateSessionOptions = {}): Promise<string> {
   const token = randomBytes(32).toString('hex');
-  const now = Date.now();
-  sessions.set(token, { token, createdAt: now, expiresAt: now + SESSION_TTL_MS });
-  // Limpeza preguiçosa: remove expiradas a cada nova criação.
-  for (const [t, s] of sessions) {
-    if (s.expiresAt < now) sessions.delete(t);
-  }
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+  // csrfToken aleatório por sessão — não validado em rotas atuais, mas o
+  // schema exige. Reservado para uso futuro (CSRF em mutações sensíveis).
+  const csrfToken = randomBytes(16).toString('hex');
+  // encryptedPayload guarda o email e metadados mínimos. Não ciframos — o
+  // token já é o segredo (32 bytes hex = 256 bits de entropia). Quem tiver
+  // acesso ao banco já tem acesso ao `token` via DB leak da mesma forma.
+  const encryptedPayload = JSON.stringify({
+    email: options.email ?? 'admin',
+    createdAt: now.toISOString(),
+  });
+
+  await deps.sessionRepo.create({
+    id: token,
+    email: options.email ?? 'admin',
+    csrfToken,
+    encryptedPayload,
+    ipAddress: options.ipAddress,
+    userAgent: options.userAgent,
+    expiresAt,
+  });
+
+  await deps.cache.set({
+    id: token,
+    email: options.email ?? 'admin',
+    expiresAt: expiresAt.toISOString(),
+  });
   return token;
 }
 
-/** Valida token de sessão. */
-export function isValidSession(token: string): boolean {
-  const s = sessions.get(token);
-  if (!s) return false;
-  if (s.expiresAt < Date.now()) {
-    sessions.delete(token);
-    return false;
-  }
+/** Valida token: checa cache primeiro, depois Postgres. Re-popula cache. */
+export async function isValidSession(token: string): Promise<boolean> {
+  // 1. Cache (rápido)
+  const cached = await deps.cache.get(token);
+  if (cached) return true;
+
+  // 2. Postgres (fonte da verdade)
+  const row = await deps.sessionRepo.findValidById(token);
+  if (!row) return false;
+
+  // 3. Re-popula cache
+  await deps.cache.set({
+    id: row.id,
+    email: row.email,
+    expiresAt: row.expiresAt.toISOString(),
+  });
   return true;
 }
 
-/** Remove sessão (logout). */
-export function destroySession(token: string): void {
-  sessions.delete(token);
+/** Remove sessão do Postgres + invalida cache. Idempotente. */
+export async function destroySession(token: string): Promise<void> {
+  await deps.sessionRepo.deleteById(token);
+  await deps.cache.invalidate(token);
+}
+
+/** Remove sessões expiradas. Retorna número de linhas removidas. */
+export async function purgeExpiredSessions(): Promise<number> {
+  return deps.sessionRepo.deleteExpired();
+}
+
+/** Helper para testes: lê registro cru do Postgres. */
+export async function getSessionRecord(token: string): Promise<SessionRecord | null> {
+  return deps.sessionRepo.findValidById(token);
 }
 
 // ─── Helpers de comparação constante-tempo ───────────────────────────────
@@ -99,7 +181,7 @@ export const sessionAuth = (): MiddlewareHandler<AuthEnv> => {
       return c.json({ success: false, error: 'unauthorized' }, 401);
     }
     const token = header.slice('Bearer '.length).trim();
-    if (!isValidSession(token)) {
+    if (!(await isValidSession(token))) {
       return c.json({ success: false, error: 'unauthorized' }, 401);
     }
     c.set('authUser', 'admin');

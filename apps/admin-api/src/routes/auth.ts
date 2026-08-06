@@ -44,15 +44,19 @@ export function authRoutes(log: Logger): Hono<AuthEnv> {
       return c.json({ success: false, error: 'invalid credentials' }, 401);
     }
 
-    const token = createSession();
+    const token = await createSession({
+      email: parsed.user,
+      ipAddress: c.req.header('x-forwarded-for') ?? null,
+      userAgent: c.req.header('user-agent') ?? null,
+    });
     log.info('login bem-sucedido', { user: parsed.user });
     return c.json({ success: true, token, expiresIn: 12 * 60 * 60 });
   });
 
-  app.post('/logout', sessionAuth(), (c) => {
+  app.post('/logout', sessionAuth(), async (c) => {
     const header = c.req.header('Authorization') ?? '';
     const token = header.slice('Bearer '.length).trim();
-    destroySession(token);
+    await destroySession(token);
     return c.json({ success: true });
   });
 

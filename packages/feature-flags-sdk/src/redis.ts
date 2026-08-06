@@ -18,8 +18,12 @@ import Redis from 'ioredis';
 
 type RedisFactory = () => Redis;
 
-/** Override injetável. Default = `ioredis`. */
-let factory: RedisFactory = () => new Redis();
+/** Override injetável. Default = ioredis com a URL do REDIS_URL do env. */
+let factory: RedisFactory = () => {
+  const url = process.env.REDIS_URL;
+  if (!url) throw new Error('REDIS_URL is not set');
+  return new Redis(url);
+};
 
 /**
  * Injeta o factory de cliente Redis. Usado por testes com ioredis-mock.
