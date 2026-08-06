@@ -361,6 +361,18 @@ services:
       - ${DEV_APP_ENV_FILE:-.env}
     environment:
       ADMIN_API_PORT: '9090'
+      # Aponta para os containers Docker da stack (igual ao `api`).
+      # Sem isso, o admin-api herdaria `localhost:5443` do `.env` do host
+      # (compose prod local) e falharia com ECONNREFUSED nas queries de
+      # feature flags e worker status.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_USERNAME: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_pass}
+      POSTGRES_DATABASE: omestre_db
+      POSTGRES_SCHEMA: omestre_admin
+      REDIS_URL: redis://redis:6379
+      METRICS_API_KEY: ${METRICS_API_KEY}
       # Substitui os paths do host por paths do container (deploy script fica
       # montado em /scripts; estado em /var/lib/oma — bind mount abaixo).
       OMA_DEPLOY_SCRIPT: ${OMA_DEPLOY_SCRIPT:-/scripts/deploy-prod.sh}
