@@ -15,7 +15,7 @@ export const users = omestre.table('users', {
   passwordHash: text('password_hash').notNull(),
 
   // Papel
-  // Bootstrap: aplicado em apps/api/src/modules/auth/auth.routes.ts via ADMIN_EMAILS (env).
+  // Promoção via UPDATE manual no DB (não há bootstrap por env).
   isAdmin: boolean('is_admin').notNull().default(false),
 
   // Metadados
